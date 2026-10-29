@@ -1,0 +1,189 @@
+// フレンド・トレード・対戦・引き継ぎの画面
+import * as ON from '../online.js';
+import { G, save, giveMon, registerDex } from '../game/state.js';
+import { SPECIES } from '../data/species.js';
+import { typeBadge } from '../data/types.js';
+import { calcStats, monName, ivTotal, cloneMon, healMon } from '../game/mon.js';
+import { $, el, esc, openScreen, toast, ask, confirmBox, inputText, say } from './ui.js';
+import { portrait } from '../render/portrait.js';
+import { pickFromAll } from './menus.js';
+import { startPvpBattle } from './battleUI.js';
+import { audio } from '../audio.js';
+import { writeGame } from '../game/save.js';
+
+const waitClose = (s) => new Promise(r => { s.onClose = r; });
+const notReady = () => `<div class="card"><b>オンライン機能が まだ使えません</b><p class="muted">${esc(ON.Online.error || '')}</p><p class="muted">ゲームの作者の方へ：js/firebase-config.js に Firebase プロジェクトの設定（projectId・appId など）を入れ、Authentication の「匿名」ログインと Cloud Firestore を有効にしてください。詳しくは README.md を参照してください。</p></div>`;
+
+// ---------- フレンド ----------
+export async function openFriends() {
+  const s = openScreen('フレンド');
+  s.body.innerHTML = '<p class="muted">サーバーに 接続中……</p>';
+  let me;
+  try { me = await ON.ensurePlayer(); } catch (e) { s.body.innerHTML = notReady() + `<p class="muted">${esc(e.message)}</p>`; await waitClose(s); return; }
+  s.body.innerHTML = `
+    <div class="card" style="margin-bottom:.6em"><div class="row"><div class="grow">あなたのフレンドコード：<b style="font-size:1.4em;letter-spacing:.12em;color:var(--acc)">${esc(me.code.replace(/(\d{4})(\d{4})/, '$1-$2'))}</b><div class="muted">このコードを 友だちに 教えてね</div></div><button class="btn sm copy">コピー</button></div></div>
+    <div class="row" style="margin-bottom:.6em"><input class="textin grow" placeholder="友だちのフレンドコード（8けた）" inputmode="numeric" style="max-width:20em"><button class="btn pri add">申請する</button></div>
+    <div class="inv"></div><div class="req"></div><h3 style="margin:.4em 0">フレンド</h3><div class="fr"><p class="muted">読み込み中…</p></div>`;
+  s.body.querySelector('.copy').onclick = () => { navigator.clipboard?.writeText(me.code).then(() => toast('コピーしました')); };
+  const inp = s.body.querySelector('input'); inp.onkeydown = (e) => e.stopPropagation();
+  s.body.querySelector('.add').onclick = async () => {
+    try { const nm = await ON.sendFriendRequest(inp.value); toast(`${nm || '相手'} に フレンド申請を 送りました！`); inp.value = ''; } catch (e) { toast(e.message); }
+  };
+  ON.watchSocial((st) => {
+    const inv = s.body.querySelector('.inv'), req = s.body.querySelector('.req'), fr = s.body.querySelector('.fr');
+    inv.innerHTML = st.invites.length ? '<h3 style="margin:.4em 0">招待が 届いています</h3>' : '';
+    for (const i of st.invites) {
+      const set = i.settings || {};
+      const r = el('div', 'itemrow', `<div class="grow"><div class="nm">${esc(i.fromName)} から ${i.type === 'battle' ? '対戦' : 'トレード'}の 招待</div><div class="ds">${i.type === 'battle' ? `${set.format === 'double' ? 'ダブル（2対2）' : 'シングル'}・${set.count}匹・${set.lv99 ? 'レベル99固定' : 'レベルそのまま'}` : ''}</div></div>`);
+      const ok = el('button', 'btn sm pri', '参加する'); ok.onclick = async () => { ON.stopWatch(); s.close(); await (i.type === 'battle' ? battleRoom(i.id, 'guest') : tradeRoom(i.id, 'guest')); };
+      const ng = el('button', 'btn sm', 'ことわる'); ng.onclick = () => ON.declineInvite(i.id);
+      r.append(ok, ng); inv.appendChild(r);
+    }
+    req.innerHTML = st.requests.length ? '<h3 style="margin:.4em 0">フレンド申請</h3>' : '';
+    for (const q of st.requests) {
+      const r = el('div', 'itemrow', `<div class="grow"><div class="nm">${esc(q.name)}</div><div class="ds">フレンドになりたいようです</div></div>`);
+      const ok = el('button', 'btn sm pri', '承認'); ok.onclick = async () => { await ON.acceptRequest(q.pid, q.name); toast(`${q.name} と フレンドに なった！`); };
+      const ng = el('button', 'btn sm', '拒否'); ng.onclick = () => ON.declineRequest(q.pid);
+      r.append(ok, ng); req.appendChild(r);
+    }
+    fr.innerHTML = st.friends.length ? '' : '<p class="muted">まだ フレンドが いません。フレンドコードで 申請してみよう！</p>';
+    for (const f of st.friends) {
+      const r = el('div', 'itemrow', `<div class="grow"><div class="nm">${esc(f.name)}</div></div>`);
+      const b1 = el('button', 'btn sm pri', '⚔ 対戦'); b1.onclick = async () => { const set = await battleSettings(); if (!set) return; ON.stopWatch(); s.close(); const id = await ON.createRoom(f.pid, f.name, 'battle', set); await battleRoom(id, 'host'); };
+      const b2 = el('button', 'btn sm grn', '🔄 トレード'); b2.onclick = async () => { ON.stopWatch(); s.close(); const id = await ON.createRoom(f.pid, f.name, 'trade', {}); await tradeRoom(id, 'host'); };
+      const b3 = el('button', 'btn sm', '削除'); b3.onclick = async () => { if (await confirmBox(`${f.name} を フレンドから 削除しますか？`)) ON.removeFriend(f.pid); };
+      r.append(b1, b2, b3); fr.appendChild(r);
+    }
+  });
+  await waitClose(s);
+  ON.stopWatch();
+}
+
+async function battleSettings() {
+  const f = await ask('対戦の形式は？', ['シングル（1対1）', 'ダブル（2対2）', 'やめる']); if (f === 2) return null;
+  const c = await ask('何匹で 戦う？', ['3匹', '6匹', 'やめる']); if (c === 2) return null;
+  const l = await ask('レベルは？', ['そのままのレベル', '全員レベル99に固定', 'やめる']); if (l === 2) return null;
+  return { format: f === 1 ? 'double' : 'single', count: c === 0 ? 3 : 6, lv99: l === 1 };
+}
+function waitingScreen(title, text) {
+  const s = openScreen(title, { noClose: true, extra: '<button class="btn sm red leave">やめる</button>' });
+  s.body.innerHTML = `<div class="card" style="margin:2em auto;max-width:30em;text-align:center"><p class="st2">${esc(text)}</p><p class="muted">⏳</p></div>`;
+  return s;
+}
+function teamPayload(mons) {
+  return mons.map(m => { const c = cloneMon(m); healMon(c); return c; });
+}
+
+// ---------- 対戦ルーム ----------
+async function battleRoom(id, role) {
+  if (role === 'guest') await ON.joinRoom(id);
+  let room = null;
+  const w = waitingScreen('フレンド対戦', role === 'host' ? '相手の 参加を 待っています……' : '準備中……');
+  let leave = false;
+  w.head.querySelector('.leave').onclick = () => { leave = true; ON.closeRoom(id, 'abandoned'); w.close(); };
+  const un = ON.watchRoom(id, (r) => { room = r; });
+  const until = async (fn, ms = 10 * 60 * 1000) => { const t0 = Date.now(); while (!leave && !(room && fn(room))) { if (Date.now() - t0 > ms) return false; if (room && (room.status === 'declined' || room.status === 'abandoned')) return false; await new Promise(r => setTimeout(r, 300)); } return !leave; };
+  try {
+    if (!await until(r => r.status === 'select' || r.status === 'ready')) { if (!leave) { w.close(); await say(['|相手が 参加しなかったようだ……']); } return; }
+    const set = room.settings;
+    w.body.querySelector('.st2').textContent = `${set.format === 'double' ? 'ダブル' : 'シングル'}・${set.count}匹・${set.lv99 ? 'Lv99固定' : 'レベルそのまま'}　チームを 選んでください`;
+    const all = [...G.save.party, ...G.save.box];
+    const uniq = new Set(all.map(m => m.sp));
+    if (uniq.size < set.count) { await say([`|${set.count}種類 以上の アニモンが 必要です。`]); ON.closeRoom(id, 'abandoned'); w.close(); return; }
+    const team = await pickFromAll(`対戦に 出す ${set.count}匹を 選ぶ`, null, set.count);
+    if (!team) { ON.closeRoom(id, 'abandoned'); w.close(); return; }
+    await ON.updateRoom(id, { [role + 'Team']: JSON.stringify(teamPayload(team)) });
+    w.body.querySelector('.st2').textContent = '相手の チーム選びを 待っています……';
+    if (!await until(r => r.hostTeam && r.guestTeam)) { if (!leave) { w.close(); await say(['|対戦が 中止されました。']); } return; }
+    w.onClose = null; w.close();
+    const hostTeam = JSON.parse(room.hostTeam), guestTeam = JSON.parse(room.guestTeam);
+    const lvo = set.lv99 ? 99 : null;
+    for (const m of [...hostTeam, ...guestTeam]) { m.hp = calcStats(m, lvo).hp; registerDex(m.sp, false); }
+    const mySide = role === 'host' ? 0 : 1;
+    const remote = ON.remoteFor(id, role);
+    const res = await startPvpBattle({
+      mySide, remote, format: set.format, seed: room.seed, lvOverride: lvo, biome: 'arena',
+      sides: [{ name: room.hostName, team: hostTeam, ai: role === 'host' ? 'player' : 'remote' }, { name: room.guestName, team: guestTeam, ai: role === 'guest' ? 'player' : 'remote' }],
+    });
+    remote.close();
+    const won = res && ((res.kind === 'forfeit' && res.by !== mySide) || (res.kind !== 'forfeit' && res.winner === mySide));
+    audio.playBgm('town');
+    if (won) audio.jingle('victory');
+    await say([won ? '|対戦に 勝った！ おめでとう！' : '|対戦に 負けてしまった…… でも いい勝負だった！', '|（フレンド対戦では アニモンの HPや経験値は 変化しません）']);
+    ON.closeRoom(id, 'done');
+  } finally { un(); }
+}
+
+// ---------- トレードルーム ----------
+async function tradeRoom(id, role) {
+  if (role === 'guest') await ON.joinRoom(id);
+  const other = role === 'host' ? 'guest' : 'host';
+  let room = null, myOffer = null, finished = false;
+  const s = openScreen('フレンドとトレード', { noClose: true, extra: '<button class="btn sm red leave">やめる</button>' });
+  const un = ON.watchRoom(id, (r) => { room = r; render(); });
+  s.head.querySelector('.leave').onclick = () => { ON.closeRoom(id, 'abandoned'); un(); s.close(); };
+  const card = (m) => m ? `<img class="portrait" style="width:6em;height:6em" src="${portrait(m.sp, m.shiny)}"><div><b>${m.shiny ? '✨' : ''}${esc(monName(m))}</b> Lv${m.lv}<div>${SPECIES[m.sp].types.map(typeBadge).join('')}</div><div class="muted">個体値 攻${m.iv.atk} 防${m.iv.def} 体${m.iv.hp} 速${m.iv.spe}（合計${ivTotal(m)}）</div><div class="muted">おや：${esc(m.ot || '')}</div></div>` : '<p class="muted">まだ 選ばれていません</p>';
+  const render = () => {
+    if (!room || finished) return;
+    if (room.status === 'abandoned' || room.status === 'declined') { finished = true; un(); s.close(); say(['|トレードは 中止されました。']); return; }
+    if (room.status === 'invited') { s.body.innerHTML = '<p class="muted" style="text-align:center;margin-top:2em">相手の 参加を 待っています……</p>'; return; }
+    const mine = room['offer_' + role] ? JSON.parse(room['offer_' + role]) : null;
+    const theirs = room['offer_' + other] ? JSON.parse(room['offer_' + other]) : null;
+    s.body.innerHTML = `<div class="detail" style="grid-template-columns:1fr 1fr"><div class="card"><h3 style="margin-top:0">あなたが 出す</h3><div class="row">${card(mine)}</div><div class="row" style="margin-top:.6em"><button class="btn sel">アニモンを 選ぶ</button><button class="btn pri ok" ${mine && theirs ? '' : 'disabled'}>${room['ok_' + role] ? 'OK済み' : 'これでOK'}</button></div></div>
+      <div class="card"><h3 style="margin-top:0">${esc(role === 'host' ? room.guestName : room.hostName)} が 出す</h3><div class="row">${card(theirs)}</div><p class="muted">${room['ok_' + other] ? '相手は OKしました' : ''}</p></div></div>
+      <p class="muted">※ 伝説のアニモンと ルルは トレードできません。</p>`;
+    s.body.querySelector('.sel').onclick = async () => {
+      const m = await pickFromAll('トレードに 出す アニモン', (x) => !SPECIES[x.sp].legend && x.uid !== G.save.story.luluUid && !(G.save.party.length === 1 && G.save.party[0] === x));
+      if (!m) return;
+      myOffer = m;
+      await ON.updateRoom(id, { ['offer_' + role]: JSON.stringify(m), ok_host: false, ok_guest: false });
+    };
+    s.body.querySelector('.ok').onclick = async () => { await ON.updateRoom(id, { ['ok_' + role]: true }); };
+    // 両方OKで交換
+    if (room.ok_host && room.ok_guest && mine && theirs && !room['done_' + role]) {
+      finished = true;
+      const uid = mine.uid;
+      for (const arr of [G.save.party, G.save.box]) { const i = arr.findIndex(x => x.uid === uid); if (i >= 0) arr.splice(i, 1); }
+      if (!G.save.party.length && G.save.box.length) G.save.party.push(G.save.box.shift());
+      theirs.uid = theirs.uid + '_t' + Date.now().toString(36);
+      giveMon(theirs);
+      save();
+      ON.updateRoom(id, { ['done_' + role]: true });
+      un(); s.close();
+      audio.sfx('evolve');
+      if (theirs.shiny) { audio.sfx('shiny'); toast(`✨ ${monName(theirs)} が キラキラと 光っている！`, 3500); }
+      say([`|${monName(mine)} と ${monName(theirs)} を 交換した！`, ...(theirs.shiny ? [`|✨ なんと 色違いの ${monName(theirs)} だ！`] : []), `|${monName(theirs)} を 大切に してあげてね！`]).then(() => ON.closeRoom(id, 'done'));
+    }
+  };
+  await waitClose(s);
+}
+
+// ---------- 引き継ぎ ----------
+export async function openTransfer(fromTitle) {
+  const s = openScreen('引き継ぎコードの発行・アカウント引き継ぎ');
+  s.body.innerHTML = `
+  <div class="card" style="margin-bottom:.8em"><h3 style="margin-top:0">📤 引き継ぎコードを 発行する</h3><p class="muted">この端末の データを 別の端末に 移すための コードを 発行します。発行後も この端末で 遊べますが、セーブのたびに 引き継ぎ用データも 更新されます。コードは 1回 使うと 無効になります。</p>
+  <button class="btn pri issue" ${G.save ? '' : 'disabled'}>コードを発行する</button>${G.save ? '' : '<p class="muted">（タイトル画面から「続きから始める」で データを読み込んでから 発行できます）</p>'}<div class="out"></div></div>
+  <div class="card"><h3 style="margin-top:0">📥 別の端末から 引き継ぐ</h3><p class="muted">別の端末で 発行した 引き継ぎコードを 入力すると、その データを この端末に 読み込みます。<b style="color:var(--ng)">この端末の 今のデータは 上書きされます。</b></p>
+  <div class="row"><input class="textin code grow" placeholder="XXXX-XXXX-XXXX" style="max-width:16em;text-transform:uppercase"><button class="btn red redeem">引き継ぐ</button></div></div>`;
+  const out = s.body.querySelector('.out');
+  const inp = s.body.querySelector('.code'); inp.onkeydown = (e) => e.stopPropagation();
+  s.body.querySelector('.issue').onclick = async () => {
+    out.innerHTML = '<p class="muted">発行中……</p>';
+    try {
+      const code = await ON.issueTransferCode();
+      out.innerHTML = `<p>引き継ぎコード：</p><p style="font-size:1.8em;font-weight:800;letter-spacing:.1em;color:var(--acc)">${esc(code)}</p><p class="muted">このコードは 他の人に 教えないでください。メモやスクリーンショットで 保存しておきましょう。</p>`;
+    } catch (e) { out.innerHTML = notReady() + `<p class="muted">${esc(e.message)}</p>`; }
+  };
+  s.body.querySelector('.redeem').onclick = async () => {
+    if (!inp.value.trim()) return;
+    if (!await confirmBox('この端末の データは 上書きされます。よろしいですか？')) return;
+    try {
+      const data = await ON.redeemTransferCode(inp.value);
+      writeGame(data);
+      await say([`|${data.name} さんの データを 引き継ぎました！`, '|タイトル画面に 戻ります。']);
+      location.reload();
+    } catch (e) { toast(e.message || 'エラー'); }
+  };
+  await waitClose(s);
+}

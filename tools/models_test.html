@@ -1,0 +1,19 @@
+<!doctype html><html><head><meta charset="utf-8"><style>body{margin:0;background:#222}canvas{display:block}</style></head><body>
+<canvas id="c" width="1600" height="1000"></canvas>
+<script type="module">
+import { Renderer, Scene, Camera, Node, initPrims, PRIM } from '../js/engine/gl3d.js';
+import { buildAnimon, animateAnimon, buildHuman, animateHuman, defaultLook } from '../js/render/models.js';
+const params = new URLSearchParams(location.search);
+const start = +(params.get('start')||1), count = +(params.get('n')||40), shiny = params.get('shiny')==='1';
+const cv = document.getElementById('c');
+const R = new Renderer(cv, {preserve:true}); R.setSize(1600,1000,1);
+const S = new Scene(); S.bg=[0.75,0.85,0.95]; S.fogNear=500; S.fogFar=900;
+initPrims();
+const ground = new Node(PRIM.box, {color:'#8fd07a'}); ground.setScale(200,1,200); ground.setPos(0,-0.5,0); S.add(ground);
+const cols = +(params.get("cols")||10); const ms=[];
+for (let i=0;i<count;i++){ const id=start+i; if(id>200) break; const M=buildAnimon(id, shiny); const x=(i%cols-cols/2+0.5)*4.2, z=Math.floor(i/cols)*4.5-8; M.root.setPos(x,0,z); M.root.rot[1]=0.5; S.add(M.root); animateAnimon(M,0.3,'idle'); ms.push(M);}
+const H = buildHuman(defaultLook()); H.root.setPos(-24,0,-12); S.add(H.root); animateHuman(H,0.2,'walk');
+const cz = +(params.get("cz")||38), cy=+(params.get("cy")||34); const C = new Camera(30); C.pos=[0,cy,cz]; C.target=[0,0,2];
+R.render(S,C);
+window.__done = true;
+</script></body></html>
