@@ -1,13 +1,16 @@
 // =============================================================
 //  フィールド（大陸・ダンジョン）の進行
 // =============================================================
-import { Scene, Camera, Node, GeoBuilder, PRIM, initPrims, M4, mixRgb } from '../engine/gl3d.js';
+import { Scene, Camera, Node, GeoBuilder, PRIM, initPrims, M4, mixRgb, MAT } from '../engine/gl3d.js';
+import { SkyRig } from '../render/sky.js';
+import { Ambient, BIOME_AMBIENT } from '../render/ambient.js';
 import { clamp, lerp, mulberry32, angleDiff, hashStr } from '../engine/util.js';
 import { World, buildBuilding, SKY, REGION_INDEX } from '../render/world.js';
-import { Dungeon } from '../render/dungeon.js';
-import { buildHuman, animateHuman, buildAnimon, animateAnimon, randomLook } from '../render/models.js';
+import { Dungeon, chestGeo } from '../render/dungeon.js';
+import { buildHuman, animateHuman, buildAnimon, animateAnimon, randomLook, pumpHumans } from '../render/models.js';
 import { TOWNS, STONES, DUNGEONS, ITEM_BALLS, REGIONS, RING, TRAINERS, routeTrainers, encounterTable, regionLevel, ringAt, polar, BUILD_JA, SANCT_R, INNER_R, START_POS, COAST_R, ALTAR } from '../data/world.js';
 import { SPECIES, BY_NAME } from '../data/species.js';
+import { DESIGN } from '../data/designs.js';
 import { NPCS, LOOKS, QUESTS, STEPS } from '../data/story.js';
 import { ITEMS } from '../data/items.js';
 import { createMon } from './mon.js';
@@ -19,9 +22,10 @@ import * as SE from './storyEngine.js';
 import { startWildBattle, startTrainerBattle } from '../ui/battleUI.js';
 import * as MENU from '../ui/menus.js';
 
+function norm(v) { const l = Math.hypot(...v); return v.map(x => x / l); }
 export const OW = {
   scene: null, cam: new Camera(42), player: null, npcs: [], wilds: [], trig: [], labels: [], spawned: {},
-  region: null, inTown: null, mode: 'walk', dungeon: null, encCool: 0, zoom: 1.12, lastToast: 0, follower: null, trail: [],
+  region: null, inTown: null, mode: 'walk', dungeon: null, encCool: 0, zoom: 0.95, lastToast: 0, follower: null, trail: [],
   skyCur: null, t: 0, camOverride: null,
 };
 const SPEED = { walk: 7, run: 11.5, land: 17, swim: 13, fly: 24 };
@@ -33,7 +37,7 @@ export async function buildOverworld(progress) {
     progress && progress(0.3, '大陸を生成中…');
     await new Promise(r => setTimeout(r, 30));
     const clear = [...NPCS.map(n => n.pos), ...QUESTS.flatMap(q => [q.giver.pos, ...q.steps.filter(st => st.trig.pos).map(st => st.trig.pos)]), ...routeTrainers().map(t => t.pos), [0, 30], ALTAR, [ALTAR[0], ALTAR[1] - 12], [ALTAR[0] - 16, ALTAR[1] - 32], [ALTAR[0] + 16, ALTAR[1] - 32], ...ITEM_BALLS.map(b => b[2])];
-    G.world = new World({ light: G.settings.light, clear });
+    G.world = new World({ light: G.settings.light, clear, instancing: !!G.renderer.inst });
   }
   const W = G.world;
   W.boxes.length = 0;
@@ -41,11 +45,20 @@ export async function buildOverworld(progress) {
   const S = new Scene();
   S.add(W.node);
   OW.scene = S;
-  // 水面
+  // アニメ調の光（低めの太陽で斜面の明暗をはっきり）
+  S.lightDir = norm([0.5, 0.66, 0.56]);
+  S.cloudShadow = [G.settings.light ? 0 : 0.38, 0.0105, 0, 0];
+  S.hmap = W.hmapInfo();
+  // 木・岩・建物・キャラクターの影（太陽から見た深度マップ）
+  S.shadow = G.settings.light ? null : { center: [0, 0, 0], radius: 44, strength: 0.85, bias: 0.18 };
+  S.outlineDist = 75;
+  OW.sky = new SkyRig(S, { light: G.settings.light, cloudR: 230, cloudY: 30 });
+  OW.amb = new Ambient(S, { light: G.settings.light });
+  // 水面（浅瀬・泡・きらめきはシェーダーで）
   const wb = new GeoBuilder(); const WN = G.settings.light ? 40 : 64, WS = 4;
   for (let j = 0; j <= WN; j++) for (let i = 0; i <= WN; i++) wb._push((i - WN / 2) * WS, 0, (j - WN / 2) * WS, 0, 1, 0, [1, 1, 1]);
   for (let j = 0; j < WN; j++) for (let i = 0; i < WN; i++) { const a = j * (WN + 1) + i; wb.tri(a, a + WN + 1, a + 1); wb.tri(a + 1, a + WN + 1, a + WN + 2); }
-  OW.water = new Node(wb.build(), { color: [0.3, 0.6, 0.95], alpha: 0.72, wave: 1 }); OW.water.cull = false; OW.water.noDepthWrite = true;
+  OW.water = new Node(wb.build(), { color: [1, 1, 1], alpha: 0.85, wave: 1, kind: 2, outline: 0, cloudShadow: 0 }); OW.water.cull = false; OW.water.noDepthWrite = true;
   S.add(OW.water);
   progress && progress(0.6, '町を建設中…');
   // 町と建物
@@ -55,13 +68,26 @@ export async function buildOverworld(progress) {
       const rc = { forest: '#3c9a4a', lake: '#2a78d0', desert: '#d0a040', canyon: '#b0603a', snow: '#6ab0e0', swamp: '#6a5a9a', highland: '#e080c0', volcano: '#d04020', start: '#d0503c', sanctuary: '#c0a050' }[t.region] || '#c8643c';
       const B = buildBuilding(type, ti * 31 + bi, rc);
       const x = t.pos[0] + dx, z = t.pos[1] + dz;
-      const n = new Node(B.geo); n.setPos(x, h, z); S.add(n);
+      const n = new Node(B.geo, { mat: MAT.building }); n.setPos(x, h, z); S.add(n);
       W.boxes.push({ x0: x - B.w / 2, x1: x + B.w / 2, z0: z - B.d / 2, z1: z + B.d / 2 });
       OW.trig.push({ kind: 'door', type, town: t.id, x: x + B.door[0], z: z + B.door[1], r: 2.8, label: type === 'house' ? '' : (type === 'hall' ? t.name.replace(/町|村|里|集落|タウン|まち/, '') + 'の守護者の館' : BUILD_JA[type]), ly: B.h + 3, lx: x, lz: z, bi });
     });
     // 町の広場の飾り（噴水）
-    const f = new GeoBuilder(); f.cylinder(3, 3.4, 0.8, [0.75, 0.75, 0.78], 0, 0, 0, 12); f.cylinder(2.6, 2.6, 0.82, [0.45, 0.7, 0.95], 0, 0.01, 0, 12); f.cylinder(0.4, 0.5, 2.2, [0.8, 0.8, 0.85], 0, 0, 0, 8);
-    const fn = new Node(f.build()); fn.setPos(t.pos[0], h, t.pos[1] - 2); S.add(fn); W.boxes.push({ x0: t.pos[0] - 3, x1: t.pos[0] + 3, z0: t.pos[1] - 5, z1: t.pos[1] + 1 });
+    const f = new GeoBuilder();
+    f.cylinder(3.1, 3.5, 0.9, [0.86, 0.84, 0.8], 0, 0, 0, 16); f.cylinder(3.15, 3.15, 0.18, [0.95, 0.93, 0.9], 0, 0.9, 0, 16);
+    f.cylinder(2.7, 2.7, 0.86, [0.4, 0.72, 0.98], 0, 0.02, 0, 16);
+    f.cylinder(0.45, 0.6, 1.6, [0.9, 0.88, 0.85], 0, 0, 0, 10); f.cylinder(1.4, 0.5, 0.35, [0.92, 0.9, 0.86], 0, 1.6, 0, 12); f.cylinder(1.2, 1.2, 0.2, [0.45, 0.76, 1], 0, 1.75, 0, 12);
+    f.cylinder(0.25, 0.35, 0.9, [0.9, 0.88, 0.85], 0, 1.9, 0, 8);
+    // 街灯・ベンチ・花だん（広場のまわり）
+    const lamp = (x, z) => { f.cylinder(0.12, 0.16, 3.4, [0.22, 0.24, 0.3], x, 0, z, 6); f.box(0.6, 0.12, 0.6, [0.22, 0.24, 0.3], x, 3.4, z); f.box(0.45, 0.55, 0.45, [1, 0.92, 0.6], x, 3.75, z); f.cone(0.45, 0.4, [0.22, 0.24, 0.3], x, 4.05, z, 4); };
+    const bench = (x, z, ry) => { f.setMatrix(M4.fromTRS([x, 0, z], [0, ry, 0], [1, 1, 1])); f.box(2.2, 0.15, 0.7, [0.66, 0.44, 0.26], 0, 0.55, 0); f.box(2.2, 0.55, 0.12, [0.66, 0.44, 0.26], 0, 0.95, -0.3); for (const s of [-1, 1]) f.box(0.12, 0.55, 0.6, [0.25, 0.25, 0.3], s * 0.9, 0.27, 0); f.setMatrix(null); };
+    const bed = (x, z) => { f.cylinder(1.2, 1.25, 0.45, [0.8, 0.78, 0.74], x, 0, z, 12); f.cylinder(1.05, 1.05, 0.5, [0.42, 0.3, 0.22], x, 0, z, 12); const cols = [[1, 0.42, 0.55], [1, 0.85, 0.3], [1, 1, 1], [0.75, 0.5, 1]]; for (let k = 0; k < 7; k++) { const a = k / 7 * Math.PI * 2; f.sphere(0.26, k % 3 === 2 ? [0.4, 0.75, 0.32] : cols[k % 4], x + Math.cos(a) * 0.65, 0.65, z + Math.sin(a) * 0.65, 6, 4); } f.sphere(0.32, [0.4, 0.75, 0.32], x, 0.75, z, 6, 4); };
+    for (const [dx, dz] of [[-6.5, -6], [6.5, -6], [-6.5, 3], [6.5, 3]]) lamp(dx, dz);
+    bench(0, 5.2, Math.PI); bench(-5.4, -2, Math.PI / 2); bench(5.4, -2, -Math.PI / 2);
+    bed(-8.5, -1.5); bed(8.5, -1.5);
+    const fn = new Node(f.build(), { mat: MAT.building }); fn.setPos(t.pos[0], h, t.pos[1] - 2); S.add(fn);
+    for (const [dx, dz] of [[-6.5, -6], [6.5, -6], [-6.5, 3], [6.5, 3]]) { const lx = t.pos[0] + dx, lz = t.pos[1] - 2 + dz; W.boxes.push({ x0: lx - 0.3, x1: lx + 0.3, z0: lz - 0.3, z1: lz + 0.3 }); }
+    const spout = new Node(PRIM.drop, { color: [0.75, 0.92, 1], alpha: 0.7, outline: 0, emis: [0.1, 0.2, 0.3] }); spout.setPos(t.pos[0], h + 2.6, t.pos[1] - 2); spout.setScale(0.35, 0.5, 0.35); S.add(spout); (OW.spouts ||= []).push(spout); W.boxes.push({ x0: t.pos[0] - 3, x1: t.pos[0] + 3, z0: t.pos[1] - 5, z1: t.pos[1] + 1 });
   });
   // ファストトラベルの岩
   for (const s of STONES) {
@@ -91,7 +117,7 @@ export async function buildOverworld(progress) {
     else { g.sphere(6, col, 0, 0, -4, 8, 5, 0.9); }
     g.box(1.4, 5, 1.4, mixRgb(col, [0, 0, 0], 0.2), -2.6, 2.5, 1.6); g.box(1.4, 5, 1.4, mixRgb(col, [0, 0, 0], 0.2), 2.6, 2.5, 1.6); g.box(7, 1.2, 1.6, mixRgb(col, [0, 0, 0], 0.2), 0, 5.4, 1.6);
     g.box(3.8, 4.6, 0.3, [0.03, 0.03, 0.05], 0, 2.3, 1.8);
-    const n = new Node(g.build()); n.setPos(x, h, z); S.add(n);
+    const n = new Node(g.build(), { mat: MAT.building }); n.setPos(x, h, z); S.add(n);
     W.boxes.push({ x0: x - 6, x1: x + 6, z0: z - 10, z1: z + 1 });
     OW.trig.push({ kind: 'dungeon', id, x, z: z + 3.5, r: 3, label: d.name + `（推奨Lv${d.rec}）`, ly: 8 });
   }
@@ -101,7 +127,7 @@ export async function buildOverworld(progress) {
     const g = new GeoBuilder();
     g.cylinder(7, 7.6, 0.6, [0.88, 0.86, 0.8], 0, 0, 0, 16); g.cylinder(4.5, 4.8, 0.5, [0.95, 0.93, 0.88], 0, 0.6, 0, 16);
     for (let k = 0; k < 6; k++) { const a = k / 6 * Math.PI * 2; g.cylinder(0.45, 0.55, big ? 5 : 3.5, [0.9, 0.88, 0.82], Math.cos(a) * 6.4, 0.3, Math.sin(a) * 6.4, 8); g.box(1.4, 0.4, 1.4, [0.95, 0.85, 0.5], Math.cos(a) * 6.4, (big ? 5 : 3.5) + 0.4, Math.sin(a) * 6.4); }
-    const n = new Node(g.build()); n.setPos(ax, h - 0.2, az); S.add(n);
+    const n = new Node(g.build(), { mat: MAT.building }); n.setPos(ax, h - 0.2, az); S.add(n);
     const gem = new Node(PRIM.gem, { color: big ? [1, 0.75, 0.4] : [0.8, 0.7, 1], emis: big ? [0.5, 0.3, 0.1] : [0.4, 0.3, 0.7] }); gem.setScale(0.8, 1.6, 0.8); gem.setPos(ax, h + 3, az); S.add(gem);
     OW.trig.push({ kind: 'altar', x: ax, z: az, r: 0.1, label: big ? 'いにしえの祭壇' : '星の祭壇', ly: 6, gem });
   }
@@ -154,7 +180,7 @@ export function buildBarriers() {
 // ---------- NPC・トレーナー ----------
 function makeNpc(def, look) {
   const lk = typeof look === 'string' ? (LOOKS[look] || randomLook(mulberry32(hashStr(look)))) : look;
-  const H = buildHuman(lk);
+  const H = buildHuman(lk, { lazy: true });
   const W = G.world;
   const x = def.pos[0], z = def.pos[1];
   H.root.setPos(x, W.groundAt(x, z), z); H.root.rot[1] = def.ry ?? 0;
@@ -217,8 +243,9 @@ export function refreshFollower() {
   if (OW.follower) { OW.follower.root.parent?.remove(OW.follower.root); OW.follower = null; }
   const lead = G.save.party.find(m => m.hp > 0) || G.save.party[0];
   if (!lead || !OW.scene) return;
-  const M = buildAnimon(lead.sp, lead.shiny);
-  const s = Math.min(1, 1.3 / Math.max(0.6, M.height));
+  const M = buildAnimon(lead.sp, lead.shiny, { lod: 'mid' });
+  // 連れ歩きは本来の大きさ（大きすぎる子だけ少し小さく）
+  const s = Math.min(1, 2.3 / Math.max(0.6, M.height));
   M.root.setScale(s);
   OW.follower = { M, uid: lead.uid, root: M.root, x: OW.player.x, z: OW.player.z + 2, ry: 0 };
   M.root.setPos(OW.follower.x, 0, OW.follower.z);
@@ -230,7 +257,7 @@ export function startRide(mon) {
   const P = OW.player;
   const sp = SPECIES[mon.sp];
   stopRide(true);
-  const M = buildAnimon(mon.sp, mon.shiny);
+  const M = buildAnimon(mon.sp, mon.shiny, { lod: 'mid' });
   const sc = clamp(2.5 / M.height, 1.0, 2.6) * (sp.legend ? 0.75 : 1);
   M.root.setScale(sc);
   P.rideM = M; P.rideSp = mon.sp; P.rideScale = sc; P.rideH = M.height * sc;
@@ -295,31 +322,40 @@ function updateWilds(dt) {
       if (!water && W.blockedByObst(x, z, 0.8)) return;
       const w = rollWild(reg === 'sea' ? 'sea' : reg, water, x, z);
       if (w) {
+        // 体の大きさに合わせた広さがある場所にだけ出る（大きい子は開けた場所・水辺の広いところ）
+        const big = SPECIES[w.sp].legend ? 2.4 : (DESIGN[SPECIES[w.sp].name]?.s || 1);
+        const room = 0.6 + big * 0.9;
+        if (!water && big > 1.2) {
+          for (const [ox, oz] of [[room, 0], [-room, 0], [0, room], [0, -room]]) if (W.blockedByObst(x + ox, z + oz, 0.5) || W.heightAt(x + ox, z + oz) < -0.4) return;
+          if (Math.abs(W.heightAt(x + room, z) - W.heightAt(x - room, z)) > room * 0.9) return;
+        }
+        if (water && big > 1.2 && [[room, 0], [-room, 0], [0, room], [0, -room]].some(([ox, oz]) => W.heightAt(x + ox, z + oz) > -0.8)) return;
         const mon = createMon(w.sp, w.lv);
-        const M = buildAnimon(w.sp, mon.shiny);
+        const M = buildAnimon(w.sp, mon.shiny, { lod: 'mid' });
         M.root.setPos(x, water ? -0.3 : h, z);
         OW.scene.add(M.root);
-        OW.wilds.push({ mon, M, x, z, hx: x, hz: z, tx: x, tz: z, water, t: 0, life: 70, sparkle: 0 });
+        OW.wilds.push({ mon, M, x, z, hx: x, hz: z, tx: x, tz: z, water, t: 0, life: 70, sparkle: 0, big, room });
       }
     }
   }
   for (let i = OW.wilds.length - 1; i >= 0; i--) {
     const w = OW.wilds[i];
     w.t -= dt; w.life -= dt;
-    if (w.t <= 0) { w.t = 2 + Math.random() * 4; const a = Math.random() * Math.PI * 2, r = Math.random() * 8; w.tx = w.hx + Math.cos(a) * r; w.tz = w.hz + Math.sin(a) * r; }
+    if (w.t <= 0) { w.t = 2 + Math.random() * 4; const a = Math.random() * Math.PI * 2, r = Math.random() * (6 + w.big * 4); w.tx = w.hx + Math.cos(a) * r; w.tz = w.hz + Math.sin(a) * r; }
     const dx = w.tx - w.x, dz = w.tz - w.z, l = Math.hypot(dx, dz);
     let moving = false;
     if (l > 0.3) {
-      const sp = 2.2 * dt; const nx = w.x + dx / l * sp, nz = w.z + dz / l * sp;
+      // 小さい子はちょこちょこ、大きい子はのっしのっし
+      const sp = (1.5 + Math.min(w.big, 2.4) * 0.7) * dt; const nx = w.x + dx / l * sp, nz = w.z + dz / l * sp;
       const h = W.heightAt(nx, nz);
-      if ((w.water ? h < -0.6 : (h > -0.3 && !W.blockedByObst(nx, nz, 0.6))) && isUnlocked(W.regionAt(nx, nz))) { w.x = nx; w.z = nz; moving = true; w.M.root.rot[1] = Math.atan2(dx, dz); } else w.t = 0;
+      if ((w.water ? h < -0.6 : (h > -0.3 && !W.blockedByObst(nx, nz, 0.3 + w.big * 0.35))) && isUnlocked(W.regionAt(nx, nz))) { w.x = nx; w.z = nz; moving = true; w.M.root.rot[1] = Math.atan2(dx, dz); } else w.t = 0;
     }
     w.M.root.setPos(w.x, w.water ? -0.35 : W.heightAt(w.x, w.z), w.z);
-    animateAnimon(w.M, dt, moving ? 'walk' : 'idle');
+    animateAnimon(w.M, dt, moving ? 'walk' : 'idle', moving ? 1.25 / Math.sqrt(Math.max(0.5, w.big)) : 1);
     if (w.mon.shiny) { w.sparkle -= dt; if (w.sparkle <= 0) { w.sparkle = 0.25; sparkleAt(w.x, W.heightAt(w.x, w.z) + w.M.height, w.z); } }
     const pd = Math.hypot(w.x - P.x, w.z - P.z);
     if (pd > 80 || w.life <= 0) { OW.scene.root.remove(w.M.root); OW.wilds.splice(i, 1); continue; }
-    if (!G.busy && OW.mode !== 'fly' && !OW.noEnc && pd < 1.4 + w.M.height * 0.35 && OW.encCool <= 0) {
+    if (!G.busy && OW.mode !== 'fly' && !OW.noEnc && pd < 1.1 + w.big * 0.8 && OW.encCool <= 0) {
       OW.scene.root.remove(w.M.root); OW.wilds.splice(i, 1);
       runFlow(async () => { await startWildBattle(w.mon, { biome: biomeHere(), water: w.water }); });
       return;
@@ -356,6 +392,7 @@ export function updateOverworld(dt) {
   const W = G.world;
   const D = OW.dungeon;
   OW.encCool = Math.max(0, OW.encCool - dt);
+  if (!D) pumpHumans(P.x, P.z);
   let moved = 0;
   if (!G.busy && G.state === 'world') {
     const mv = readMove();
@@ -446,10 +483,14 @@ export function updateOverworld(dt) {
     const sky = SKY[reg] || SKY.plains;
     if (!OW.skyCur) OW.skyCur = { bg: sky.bg.slice(), fog: sky.fog.slice() };
     for (let i = 0; i < 3; i++) { OW.skyCur.bg[i] = lerp(OW.skyCur.bg[i], sky.bg[i], dt); OW.skyCur.fog[i] = lerp(OW.skyCur.fog[i], sky.fog[i], dt); }
-    OW.scene.bg = OW.skyCur.bg; OW.scene.fogColor = OW.skyCur.fog;
-    const far = (G.settings.light ? 120 : 165) * OW.zoom * (OW.mode === 'fly' ? 1.3 : 1);
-    OW.scene.fogNear = far * 0.45; OW.scene.fogFar = far;
-    OW.scene.cullCenter = [P.x, 0, P.z]; OW.scene.cullRadius = (OW.mode === 'fly' ? 120 : 72) * OW.zoom;
+    OW.scene.bg = OW.skyCur.bg;
+    // 遠くは空の地平線の色に溶けこませる（描画範囲の切れ目が見えないように）
+    { const hz = OW.scene.horizon || OW.skyCur.fog; OW.scene.fogColor = [hz[0] * 0.7 + OW.skyCur.fog[0] * 0.3, hz[1] * 0.7 + OW.skyCur.fog[1] * 0.3, hz[2] * 0.7 + OW.skyCur.fog[2] * 0.3]; }
+    const far = (G.settings.light ? 130 : 160) * Math.max(0.9, OW.zoom) * (OW.mode === 'fly' ? 1.3 : 1);
+    OW.scene.fogNear = far * 0.4; OW.scene.fogFar = far;
+    // 見えている範囲（カメラは南から北を見下ろす）に合わせて、描画範囲の中心を少し北へ
+    OW.scene.cullCenter = [P.x, 0, P.z - 26 * OW.zoom]; OW.scene.cullRadius = (OW.mode === 'fly' ? 160 : (G.settings.light ? 105 : 125)) * Math.max(0.9, OW.zoom);
+    if (OW.scene.shadow) { const sh = OW.scene.shadow; sh.center = [P.x, W.heightAt(P.x, P.z), P.z - 6]; sh.radius = 44 * Math.max(1, OW.zoom); sh.strength = OW.mode === 'fly' ? 0.5 : 0.85; }
     // 草むら・水上エンカウント
     if (moved > 0 && !G.busy && OW.encCool <= 0 && OW.mode !== 'fly' && !OW.noEnc) {
       const info = W.cellInfo(P.x, P.z);
@@ -485,11 +526,18 @@ export function updateOverworld(dt) {
     for (let i = 0; i < 3; i++) { OW.cam.pos[i] = lerp(co.fromPos[i], co.pos[i], k); OW.cam.target[i] = lerp(co.fromLook[i], co.look[i], k); }
   } else {
     const z = OW.zoom * (OW.mode === 'fly' ? 1.35 : 1);
-    const tx = P.x, ty = P.y + 1.2, tz = P.z;
-    const want = D ? [tx, ty + 19 * z, tz + 9 * z] : [tx, ty + 17.5 * z, tz + 17.5 * z];
+    // 少し低めの見下ろし＋少し先を見る（遠くの丘や山まで見えて奥行きが出る）
+    const tx = P.x, ty = P.y + 1.2 + (D ? 0 : 0.6 * z), tz = P.z - (D ? 0 : 4.5 * z);
+    const want = D ? [tx, ty + 17.5 * z, tz + 10.5 * z] : [tx, ty + 9.6 * z, tz + 19.5 * z];
     for (let i = 0; i < 3; i++) OW.cam.pos[i] = lerp(OW.cam.pos[i], want[i], Math.min(1, dt * 6));
     OW.cam.target = [lerp(OW.cam.target[0], tx, Math.min(1, dt * 8)), lerp(OW.cam.target[1], ty, Math.min(1, dt * 8)), lerp(OW.cam.target[2], tz, Math.min(1, dt * 8))];
     if (Math.hypot(OW.cam.pos[0] - want[0], OW.cam.pos[2] - want[2]) > 60) { OW.cam.pos = want; OW.cam.target = [tx, ty, tz]; }
+  }
+  // 空（カメラについてくる）・空気中を舞うもの
+  if (!D && OW.sky) {
+    OW.sky.update(dt, OW.cam);
+    if (OW.skyTheme) OW.sky.setTheme(OW.skyTheme, Math.min(1, dt * 1.5));
+    if (OW.amb) OW.amb.update(dt, [P.x, (P.y || 0) + 0.5, P.z - 4], OW.scene.wind);
   }
   updatePrompt();
   updateLabels();
@@ -525,6 +573,9 @@ function onRegionChange(reg, town) {
     rn.classList.add('show'); clearTimeout(OW.rnT); OW.rnT = setTimeout(() => rn.classList.remove('show'), 2600);
   }
   audio.playBgm(town ? 'town' : 'field');
+  // 空の色・舞うもの（花びら・雪・火の粉など）を地域に合わせる
+  OW.skyTheme = (SKY[reg] || SKY.plains).theme || 'day';
+  if (OW.amb) OW.amb.setKind(G.settings.light && reg !== 'snow' ? null : (BIOME_AMBIENT[reg] ?? null));
   if (prev !== null) save();
 }
 
@@ -574,7 +625,7 @@ export function interact() {
       OW.dungeon.opened.add(t.i); audio.sfx('item');
       const pool = ['superherb', 'revive', 'ppdrop', 'fullmed', 'food3', 'food4', 'h_berry', 'h_clear', 'candy', 'h_bread', 'h_claw', 'h_belt', 'h_spike', 'h_glass'];
       const it = pool[(t.i * 5 + OW.dungeon.id.length * 3 + Math.floor(Math.random() * 3)) % pool.length];
-      addItem(it, 1); t.node.setColor([0.4, 0.3, 0.2]);
+      addItem(it, 1); t.node.setColor([0.55, 0.5, 0.48]);
       await say([`|宝箱を 開けた！ ${itemName(it)} を 手に入れた！`]); save();
     } else if (t.kind === 'boss') await dungeonBoss();
   });
@@ -651,7 +702,7 @@ async function dungeonEnter(id) {
   // 出口の光
   const ex = new Node(PRIM.disc, { color: [1, 1, 0.8], emis: [0.6, 0.6, 0.4] }); ex.setScale(1.4); ex.setPos(Dg.entrance[0], 0.05, Dg.entrance[1] + 2.2); S.add(ex);
   Dg.chests.forEach((c, i) => {
-    const n = new Node(PRIM.box, { color: [0.85, 0.6, 0.2], emis: [0.15, 0.1, 0] }); n.setScale(1.4, 1, 1); n.setPos(c[0], 0.5, c[1]); S.add(n);
+    const n = new Node(chestGeo(), { emis: [0.08, 0.05, 0] }); n.setPos(c[0], 0, c[1]); n.rot[1] = (i % 4) * Math.PI / 2; S.add(n);
     OW.dtrig.push({ kind: 'chest', x: c[0], z: c[1], r: 2.4, i, node: n });
   });
   if (!G.save.cleared[id]) {

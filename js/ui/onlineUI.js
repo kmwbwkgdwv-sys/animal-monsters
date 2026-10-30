@@ -12,7 +12,7 @@ import { audio } from '../audio.js';
 import { writeGame } from '../game/save.js';
 
 const waitClose = (s) => new Promise(r => { s.onClose = r; });
-const notReady = () => `<div class="card"><b>オンライン機能が まだ使えません</b><p class="muted">${esc(ON.Online.error || '')}</p><p class="muted">ゲームの作者の方へ：js/firebase-config.js に Firebase プロジェクトの設定（projectId・appId など）を入れ、Authentication の「匿名」ログインと Cloud Firestore を有効にしてください。詳しくは README.md を参照してください。</p></div>`;
+const notReady = () => `<div class="card"><b>オンライン機能が まだ使えません</b><p class="muted">${esc(ON.Online.error || '')}</p><p class="muted">ゲームの作者の方へ：Firebase コンソールで Authentication の「匿名」ログインを有効にし、Realtime Database の「ルール」に database.rules.json の内容を貼り付けて公開してください。詳しくは README.md を参照してください。</p></div>`;
 
 // ---------- フレンド ----------
 export async function openFriends() {
@@ -185,5 +185,75 @@ export async function openTransfer(fromTitle) {
       location.reload();
     } catch (e) { toast(e.message || 'エラー'); }
   };
+  await waitClose(s);
+}
+
+// ---------- ランキング（図鑑登録数） ----------
+const MEDAL = ['🥇', '🥈', '🥉'];
+export async function openRanking() {
+  const s = openScreen('ランキング', { extra: '<button class="btn sm reload">🔄 更新</button>' });
+  const load = async () => {
+    s.body.innerHTML = '<p class="muted">ランキングを 読み込み中……</p>';
+    let R;
+    try { R = window.__ANIMON_MOCK_RANK ? await window.__ANIMON_MOCK_RANK() : await ON.fetchRanking(50); } catch (e) { s.body.innerHTML = notReady() + `<p class="muted">${esc(e.message)}</p>`; return; }
+    const me = R.me;
+    s.body.innerHTML = `
+      <div class="rankme card"><div class="rk">${R.myRank ? R.myRank + '<small>位</small>' : '―'}</div>
+        <div class="grow"><div class="nm">${esc(me.name)}<span class="muted">（あなた）</span></div>
+        <div class="muted">図鑑登録 <b>${me.dex}</b>匹　✨色違い ${me.shiny}　💎個体値MAX ${me.ivMax}${R.total ? `　／ 参加 ${R.total}人` : ''}</div></div></div>
+      <p class="muted" style="margin:.4em 0">図鑑に登録した（なつかせた）アニモンの数で 順位が決まります。名前を押すと、その人のパーティーや記録が 見られます。</p>
+      <div class="ranklist"></div>`;
+    const list = s.body.querySelector('.ranklist');
+    if (!R.rows.length) list.innerHTML = '<p class="muted">まだ だれも 登録されていません。</p>';
+    const top = Math.max(1, R.rows[0]?.dex || 1);
+    for (const r of R.rows) {
+      const mine = r.pid === G.save.pid;
+      const row = el('button', 'rankrow' + (mine ? ' mine' : '') + (r.rank <= 3 ? ' top' + r.rank : ''), `
+        <div class="rk">${r.rank <= 3 ? MEDAL[r.rank - 1] : r.rank}</div>
+        <img class="lead" src="">
+        <div class="grow"><div class="nm">${esc(r.name || '???')}${r.clear ? ' <span class="clr">★</span>' : ''}</div>
+          <div class="bar"><i style="width:${Math.round(r.dex / top * 100)}%"></i></div></div>
+        <div class="num"><b>${r.dex}</b><small>匹</small></div>`);
+      const lead = r.party && r.party[0];
+      const img = row.querySelector('img');
+      if (lead && SPECIES[lead.sp]) portraitAsyncSafe(lead.sp, lead.shiny, img); else img.style.visibility = 'hidden';
+      row.onclick = () => { audio.sfx('select'); openProfile(r); };
+      list.appendChild(row);
+    }
+  };
+  s.head.querySelector('.reload').onclick = () => { audio.sfx('select'); load(); };
+  await load();
+  await waitClose(s);
+}
+function portraitAsyncSafe(sp, shiny, img) {
+  import('../render/portrait.js').then(m => m.portraitAsync(sp, shiny, false, (url) => { img.src = url; }));
+}
+// プレイヤーの記録（パーティー・色違い・個体値MAX・図鑑）
+async function openProfile(r) {
+  const s = openScreen(`${r.name || '???'} の 記録`);
+  const party = (r.party || []).filter(m => SPECIES[m.sp]);
+  s.body.innerHTML = `
+    <div class="profstats">
+      <div class="st"><div class="v">${r.rank ? r.rank + '<small>位</small>' : '―'}</div><div class="k">順位</div></div>
+      <div class="st"><div class="v">${r.dex}<small>/200</small></div><div class="k">📖 図鑑登録数</div></div>
+      <div class="st"><div class="v">${r.shiny ?? 0}</div><div class="k">✨ 色違い 獲得数</div></div>
+      <div class="st"><div class="v">${r.ivMax ?? 0}</div><div class="k">💎 個体値MAX 所持数</div></div>
+      <div class="st"><div class="v">${r.seen ?? '―'}</div><div class="k">👀 見つけた数</div></div>
+      <div class="st"><div class="v">${r.crests ?? 0}<small>/8</small></div><div class="k">🏅 紋章</div></div>
+    </div>
+    <p class="muted" style="margin:.3em 0 .5em">${r.clear ? '★ ストーリークリア済み　' : ''}${r.owned != null ? `持っているアニモン ${r.owned}匹　` : ''}${r.hours != null ? `プレイ時間 ${r.hours}時間以上` : ''}</p>
+    <h3 style="margin:.2em 0 .4em">パーティー編成</h3>
+    <div class="profparty">${party.length ? '' : '<p class="muted">パーティーの情報が ありません</p>'}</div>`;
+  const pp = s.body.querySelector('.profparty');
+  for (const m of party) {
+    const sp = SPECIES[m.sp];
+    const c = el('div', 'pcard' + (m.shiny ? ' shiny' : ''), `<img src="">
+      <div class="nm">${m.shiny ? '<span class="shiny">✨</span>' : ''}${esc(m.nick || sp.name)}</div>
+      <div class="muted">${m.nick ? esc(sp.name) + '　' : ''}Lv${m.lv}</div>
+      <div>${sp.types.map(typeBadge).join('')}</div>
+      <div class="ivbar" title="個体値の合計"><i style="width:${Math.round((m.iv || 0) / 60 * 100)}%"></i><span>個体値 ${m.iv ?? '?'}/60${m.iv >= 60 ? ' 💎MAX' : ''}</span></div>`);
+    portraitAsyncSafe(m.sp, m.shiny, c.querySelector('img'));
+    pp.appendChild(c);
+  }
   await waitClose(s);
 }

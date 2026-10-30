@@ -3,7 +3,7 @@
 // =============================================================
 import { SPECIES, DEX_COUNT, REGION_JA } from '../data/species.js';
 import { MOVES } from '../data/moves.js';
-import { ITEMS, CAT_JA } from '../data/items.js';
+import { ITEMS, CAT_JA, SHOP_FOODS, FOOD_STARS } from '../data/items.js';
 import { ABILITIES } from '../data/abilities.js';
 import { TYPES, TYPE_JA, TYPE_COLOR, typeBadge } from '../data/types.js';
 import { TOWNS, STONES, DUNGEONS, REGIONS, RING, howToGet, hiddenInDex, WORLD, START_POS } from '../data/world.js';
@@ -33,7 +33,7 @@ export async function openMainMenu() {
   <div class="boxgrid" style="grid-template-columns:repeat(auto-fill,minmax(8.5em,1fr))"></div>`;
   const grid = s.body.querySelector('.boxgrid');
   const items = [['🐾', 'パーティー', () => openParty()], ['📦', 'ボックス', () => openBox()], ['📖', '図鑑', () => openDex()], ['🎒', 'バッグ', () => openBag()],
-    ['🗺️', 'マップ', () => openMap()], ['🐎', 'ライド', () => openRide()], ['🤝', 'フレンド', async () => (await import('./onlineUI.js')).openFriends()],
+    ['🗺️', 'マップ', () => openMap()], ['🐎', 'ライド', () => openRide()], ['🤝', 'フレンド', async () => (await import('./onlineUI.js')).openFriends()], ['🏆', 'ランキング', async () => (await import('./onlineUI.js')).openRanking()],
     ['💾', 'セーブ', async () => { save(); toast('セーブしました！'); }], ['⚙️', '設定', () => openSettings(false)], ['🏠', 'タイトルへ', async () => { if (await confirmBox('セーブして タイトル画面に 戻りますか？')) { save(); location.reload(); } }]];
   for (const [ic, nm, fn] of items) {
     const b = el('button', 'bcell', `<div style="font-size:1.8em">${ic}</div><div style="font-weight:800;font-size:.9em">${nm}</div>`);
@@ -325,23 +325,43 @@ async function useOnMon(it) {
 // ---------- ショップ・病院 ----------
 export function shopList() {
   const c = crests(), post = G.save.postGame;
-  const L = ['food1', 'herb', 'cureall'];
-  if (c >= 1) L.push('food2', 'goodherb', 'revive', 'ppdrop');
+  const L = ['herb', 'cureall'];
+  if (c >= 1) L.push('goodherb', 'revive', 'ppdrop');
   if (c >= 2) L.push('scroll');
-  if (c >= 3) L.push('food3', 'superherb', 'h_berry', 'h_clear');
+  if (c >= 3) L.push('superherb', 'h_berry', 'h_clear');
   if (c >= 4) L.push('h_charm', 'h_bread');
   if (c >= 5) L.push('fullmed', 'ppspring', 'h_glass', 'h_belt');
-  if (c >= 6) L.push('food4', 'h_spike', 'h_claw', 'h_vest');
+  if (c >= 6) L.push('h_spike', 'h_claw', 'h_vest');
   if (post) L.push('h_band', 'h_shoes', 'h_orb');
   return L;
 }
+// いま買えるエサ（ストーリーの進み具合で増える）
+export function shopFoods() { return SHOP_FOODS.filter(id => crests() >= ITEMS[id].unlock || G.save.postGame); }
 const TOWN_BOOST = { start: ['b_normal'], forest: ['b_grass', 'b_bug'], lake: ['b_water', 'b_electric'], desert: ['b_ground', 'b_poison'], canyon: ['b_rock', 'b_fighting', 'b_steel'], snow: ['b_ice', 'b_flying'], swamp: ['b_ghost', 'b_dark', 'b_poison'], highland: ['b_fairy', 'b_psychic', 'b_flying'], volcano: ['b_fire', 'b_dragon'], sanctuary: ['b_dragon', 'b_psychic', 'b_dark', 'b_fairy'] };
 export async function openShop(townId) {
   const s = openScreen('ショップ', { extra: `<b class="money" style="color:var(--acc)"></b>` });
   const list = [...shopList(), ...(crests() >= 3 ? (TOWN_BOOST[townId] || []) : [])];
+  const seen = G.save.seenFoods || (G.save.seenFoods = ['food1']);
+  const fresh = shopFoods().filter(id => !seen.includes(id));
   const render = () => {
     s.head.querySelector('.money').textContent = '所持金 ¥' + G.save.money.toLocaleString();
     s.body.innerHTML = '';
+    // エサ（4種類）：まだ入荷していないものも、何個目の紋章で並ぶかを見せる
+    s.body.appendChild(el('div', 'shophead', '🍖 エサ（なつきやすさ）'));
+    const avail = shopFoods();
+    for (const id of SHOP_FOODS) {
+      const it = ITEMS[id];
+      if (!avail.includes(id)) { s.body.appendChild(el('div', 'itemrow locked', `<div class="grow"><div class="nm">${it.icon} ？？？ <span class="stars">${FOOD_STARS(id)}</span></div><div class="ds">紋章を ${it.unlock}個 集めると 入荷します（ストーリーを進めよう）</div></div>`)); continue; }
+      const r = el('div', 'itemrow food', `<div class="grow"><div class="nm">${it.icon} ${esc(it.name)} <span class="stars">${FOOD_STARS(id)}</span>${fresh.includes(id) ? '<span class="newtag">NEW</span>' : ''} <span style="color:var(--acc)">¥${it.price.toLocaleString()}</span></div><div class="ds">${esc(it.desc)}</div></div><div class="cnt">所持 ${itemCount(id)}</div>`);
+      for (const n of [1, 5, 10]) {
+        const b = el('button', 'btn sm' + (n === 1 ? ' pri' : ''), `×${n}`);
+        b.disabled = G.save.money < it.price * n;
+        b.onclick = () => { if (G.save.money < it.price * n) return; addMoney(-it.price * n); addItem(id, n); audio.sfx('item'); toast(`${it.name} を ${n}個 買った！`); render(); save(); };
+        r.appendChild(b);
+      }
+      s.body.appendChild(r);
+    }
+    s.body.appendChild(el('div', 'shophead', '🧰 どうぐ'));
     for (const id of list) {
       const it = ITEMS[id];
       const r = el('div', 'itemrow', `<div class="grow"><div class="nm">${esc(it.name)} <span style="color:var(--acc)">¥${it.price.toLocaleString()}</span></div><div class="ds">${esc(it.desc)}</div></div><div class="cnt">所持 ${itemCount(id)}</div>`);
@@ -356,6 +376,8 @@ export async function openShop(townId) {
     if (crests() < 6) s.body.appendChild(el('p', 'muted', '※ 紋章を集めると、より レア度の高いエサや 道具が 買えるようになります。'));
   };
   render();
+  for (const id of fresh) seen.push(id);
+  save();
   await waitClose(s);
 }
 export function healAll() { healParty(); }
@@ -509,7 +531,7 @@ export function chooseLegend() {
   return new Promise(res => {
     const s = openScreen('心を つなぐ 伝説を 選んでください', { noClose: true });
     const ids = [199, 200];
-    s.body.innerHTML = '<div class="pickrow"></div><p style="text-align:center;color:var(--acc);font-weight:800">⚠ 選べるのは 1匹だけ。選んだあとは 変更できません。</p>';
+    s.body.innerHTML = '<div class="pickrow"></div><p style="text-align:center;color:var(--acc);font-weight:800">⚠ 選べるのは 1匹だけ。選んだあとは 変更できません。<br><span style="font-size:.85em;color:var(--sub)">個体値は 4つとも 10以上（10〜15）のランダムで、受け取った瞬間に 決まります。</span></p>';
     const row = s.body.querySelector('.pickrow');
     for (const id of ids) {
       const sp = SPECIES[id];

@@ -3,8 +3,7 @@
     "public": ".",
     "ignore": [
       "firebase.json",
-      "firestore.rules",
-      "firestore.indexes.json",
+      "database.rules.json",
       "README.md",
       "package.json",
       "tools/**",
@@ -12,12 +11,27 @@
       "**/node_modules/**"
     ],
     "headers": [
-      { "source": "**/*.js", "headers": [{ "key": "Cache-Control", "value": "no-cache" }] },
-      { "source": "index.html", "headers": [{ "key": "Cache-Control", "value": "no-cache" }] }
+      {
+        "source": "**/*.js",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache"
+          }
+        ]
+      },
+      {
+        "source": "index.html",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache"
+          }
+        ]
+      }
     ]
   },
-  "firestore": {
-    "rules": "firestore.rules",
-    "indexes": "firestore.indexes.json"
+  "database": {
+    "rules": "database.rules.json"
   }
 }

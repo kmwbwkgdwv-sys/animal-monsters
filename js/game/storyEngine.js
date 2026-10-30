@@ -4,8 +4,9 @@
 import { STEPS, STEP_INDEX, SCENES, CHAPTERS, QUESTS, GUARDIAN_STEP, CREST_JA, NPCS } from '../data/story.js';
 import { TOWNS, TRAINERS } from '../data/world.js';
 import { SPECIES, BY_NAME } from '../data/species.js';
-import { createMon } from './mon.js';
+import { createMon, legendIv } from './mon.js';
 import { G, giveMon, addItem, addMoney, healParty, save, itemName, registerDex } from './state.js';
+import { ITEMS, SHOP_FOODS } from '../data/items.js';
 import { UI, $, say, sayLine, hideDialog, narrate, fade, flash, letterbox, chapterTitle, toast } from '../ui/ui.js';
 import { audio } from '../audio.js';
 import { OW, spawnActor, despawnActor, camTo, buildBarriers, refreshActors, refreshFollower, runFlow } from './overworld.js';
@@ -54,7 +55,7 @@ async function runList(list, ctx) {
     }
     hideDialog();
     if (c.if) { const ok = c.if === 'won' ? ctx.won : !!G.save.story.flags[c.if]; await runList(ok ? c.then : (c.else || []), ctx); continue; }
-    if (c.narr) { if (!UI.skipping) await narrate(c.narr); continue; }
+    if (c.narr) { if (!UI.skipping) await narrate(c.narr, c.pic, c.mood); continue; }
     if (c.title) { await chapterTitle(c.title); continue; }
     if (c.bgm) { audio.playBgm(c.bgm); continue; }
     if (c.fade) { await fade(c.fade === 'out', UI.skipping ? 50 : (c.ms || 500)); continue; }
@@ -96,10 +97,13 @@ async function doAction(c) {
       break;
     }
     case 'crest': {
+      const before = S.crests;
       S.crests = Math.max(S.crests, c.n);
       G.save.defeated['g' + c.n] = true;
       audio.sfx('lvup');
       await sayLine('', `${CREST_JA[c.n - 1]} を 手に入れた！`);
+      // 新しいエサがショップに入荷
+      for (const id of SHOP_FOODS) { const u = ITEMS[id].unlock; if (u > before && u <= S.crests) await sayLine('', `ショップに 新しいエサ「${ITEMS[id].name}」（なつきやすさ ${'★'.repeat(ITEMS[id].rank)}）が 入荷した！`); }
       break;
     }
     case 'takeLulu': case 'loseLulu': {
@@ -121,7 +125,9 @@ async function doAction(c) {
       break;
     }
     case 'giveLegend': {
-      const mon = createMon(S.legend, 80, { ot: G.save.name, metAt: 'さいはての聖域' });
+      // 個体値は1回だけ決めてセーブに記録（読み込み直しても変わらない）
+      if (!S.legendIv) { S.legendIv = legendIv(); save(); }
+      const mon = createMon(S.legend, 80, { ot: G.save.name, metAt: 'さいはての聖域', iv: { ...S.legendIv } });
       const where = giveMon(mon); S.legendUid = mon.uid; audio.sfx('catch');
       save(); // 伝説は1発勝負：すぐ保存
       if (where === 'box') toast(`${SPECIES[S.legend].name}は ボックスに 送られた`);

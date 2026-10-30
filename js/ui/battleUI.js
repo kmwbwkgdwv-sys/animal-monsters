@@ -10,7 +10,7 @@ import { TRAINERS, rivalTeam, DUNGEONS, REGIONS } from '../data/world.js';
 import { typeBadge, TYPE_COLOR, TYPE_JA, typeEff } from '../data/types.js';
 import { createMon, monName, calcStats, evolveMon, healMon, cloneMon } from '../game/mon.js';
 import { G, giveMon, registerDex, itemCount, useItem, addMoney, save, healParty, findMon } from '../game/state.js';
-import { $, el, esc, UI, toast, say, ask, confirmBox, inputText, fade, flash, hpClass, hideDialog } from './ui.js';
+import { $, el, esc, UI, toast, say, ask, confirmBox, inputText, fade, flash, hpClass, hideDialog, letterbox } from './ui.js';
 import { audio } from '../audio.js';
 import { portrait } from '../render/portrait.js';
 import { STATUS_JA } from '../game/battle.js';
@@ -60,15 +60,18 @@ async function runBattle(cfg) {
   if (cfg.kind !== 'pvp') mySide = 0;
   const prevState = G.state;
   G.state = 'battle';
-  $('#hud').classList.add('hidden'); $('#touch').classList.add('hidden');
+  $('#hud').classList.add('hidden'); $('#touch').classList.add('hidden'); $('#labels').style.display = 'none'; letterbox(false);
   $('#screens').style.display = 'none'; // 開いているメニューはバトル中は隠す
   audio.sfx('encounter');
   audio.playBgm(cfg.boss || cfg.kind === 'pvp' ? 'boss' : 'battle');
-  await flash(200); await flash(200);
+  await battleWipe(true);
   bv = new BattleView();
   bv.setup(cfg.biome || 'plains', cfg.format);
   G.battleView = bv;
   buildUI(cfg);
+  battleWipe(false);
+  if (cfg.trainerName) cutIn(`VS ${cfg.trainerName}`);
+  else if (cfg.boss) cutIn('強敵 出現！');
   const seed = cfg.seed ?? Math.floor(Math.random() * 2 ** 31);
   B = new Battle({ sides: cfg.sides, format: cfg.format, seed, kind: cfg.kind, lvOverride: cfg.lvOverride, postGame: G.save?.postGame });
   if (cfg.trainerName) await msg(`${cfg.trainerName} が 勝負を しかけてきた！`);
@@ -109,7 +112,7 @@ async function runBattle(cfg) {
 
 function teardown() {
   if (root) root.remove(); root = null;
-  $('#screens').style.display = '';
+  $('#screens').style.display = ''; $('#labels').style.display = '';
   G.battleView = null;
   $('#hud').classList.remove('hidden');
   if (Input.touch) $('#touch').classList.remove('hidden');
@@ -167,6 +170,21 @@ export async function blackout() {
 }
 
 // ---------- UI構築 ----------
+// ---------- 演出（画面の切りかえ・カットイン） ----------
+function battleWipe(cover) {
+  return new Promise(res => {
+    let w = $('#bwipe');
+    if (!w) { w = el('div', ''); w.id = 'bwipe'; for (let i = 0; i < 7; i++) w.appendChild(el('i', '')); $('#ui').appendChild(w); }
+    w.className = cover ? 'in' : 'out';
+    setTimeout(() => { if (!cover) w.remove(); res(); }, cover ? 620 : 700);
+  });
+}
+function cutIn(text, cls = '') {
+  if (!root) return;
+  const c = el('div', 'bcut ' + cls, `<span>${esc(text)}</span>`);
+  root.appendChild(c);
+  setTimeout(() => c.remove(), 1000);
+}
 function buildUI(cfg) {
   root = el('div', ''); root.id = 'battleUI';
   root.innerHTML = `<div id="bmsg"><div class="msg"></div><div class="cmds"></div></div>`;
@@ -189,7 +207,7 @@ function renderPanel(side, slot) {
   const sp = SPECIES[m.sp];
   p.innerHTML = `<div class="top"><span>${m.shiny ? '<span class="shiny">✨</span>' : ''}${esc(monName(m))}${m.status ? `<span class="st ${m.status}">${STATUS_JA[m.status]}</span>` : ''}</span><span class="lv">Lv${b.lv}</span></div>
   <div style="font-size:.7em">${sp.types.map(typeBadge).join('')}</div>
-  <div class="hpbar"><i class="${hpClass(r)}" style="width:${Math.max(0, r * 100)}%"></i></div>
+  <div class="hprow"><b>HP</b><div class="hpbar"><i class="${hpClass(r)}" style="width:${Math.max(0, r * 100)}%"></i></div></div>
   ${v === 0 ? `<div class="hpnum">${Math.max(0, m.hp)} / ${max}</div>` : ''}`;
 }
 function renderAll() { for (const s of [0, 1]) for (let k = 0; k < B.n; k++) renderPanel(s, k); }
@@ -224,7 +242,7 @@ async function play(events) {
         break;
       }
       case 'withdraw': await bv.withdraw(vs(e.side), e.slot); break;
-      case 'move': audio.sfx(e.status ? 'stat' : 'select'); await bv.playMove(vs(e.side), e.slot, vs(e.tside), e.tslot, e.type, e.status); break;
+      case 'move': audio.sfx(e.status ? 'stat' : 'select'); if (MOVES[e.move]) cutIn(MOVES[e.move].name, 'mv ' + (vs(e.side) === 0 ? 'me' : 'foe')); await bv.playMove(vs(e.side), e.slot, vs(e.tside), e.tslot, e.type, e.status); break;
       case 'dmg': renderPanel(e.side, e.slot); if (!e.chip) { audio.sfx(e.eff > 1 || e.crit ? 'super' : 'hit'); await bv.hit(vs(e.side), e.slot, e.eff, e.crit); } else await bv.wait(250); break;
       case 'heal': renderPanel(e.side, e.slot); audio.sfx('heal'); await bv.healFx(vs(e.side), e.slot); break;
       case 'faint': audio.sfx('faint'); await bv.faint(vs(e.side), e.slot); renderPanel(e.side, e.slot); panel(vs(e.side), e.slot).style.opacity = 0; break;
@@ -284,14 +302,14 @@ function chooseCommand(b, slot, pvp, already, setAuto) {
       setMsg(`${monName(b.m)} は どうする？`);
       const box = cmdBox(); box.innerHTML = '';
       const add = (cls, label, fn, dis = false) => { const bt = el('button', 'cmd ' + cls, label); bt.disabled = dis; bt.onclick = () => { audio.sfx('select'); fn(); }; box.appendChild(bt); };
-      add('fight', 'たたかう', () => moves());
+      add('fight', '<span class="ic">⚔️</span>たたかう', () => moves());
       if (pvp) {
-        add('party', 'てもち', () => partyCmd());
-        add('run', '降参する', async () => { if (await confirmBox('本当に 降参しますか？')) done({ forfeit: true }); else main(); });
+        add('party', '<span class="ic">🐾</span>てもち', () => partyCmd());
+        add('run', '<span class="ic">🏳️</span>降参する', async () => { if (await confirmBox('本当に 降参しますか？')) done({ forfeit: true }); else main(); });
       } else {
-        add('catch', 'つかまえる', () => catchCmd(), B.kind !== 'wild' || ctx.noCatch || B.n > 1);
-        add('party', 'てもち', () => partyCmd());
-        add('run', 'にげる', () => done({ type: 'run' }), B.kind !== 'wild' || ctx.noRun);
+        add('catch', '<span class="ic">🍖</span>つかまえる', () => catchCmd(), B.kind !== 'wild' || ctx.noCatch || B.n > 1);
+        add('party', '<span class="ic">🐾</span>てもち', () => partyCmd());
+        add('run', '<span class="ic">💨</span>にげる', () => done({ type: 'run' }), B.kind !== 'wild' || ctx.noRun);
       }
     };
     const moves = () => {
@@ -325,14 +343,14 @@ function chooseCommand(b, slot, pvp, already, setAuto) {
       setMsg('どの 技を つかう？');
     };
     const catchCmd = () => {
-      const foods = Object.values(ITEMS).filter(i => i.cat === 'food' && itemCount(i.id) > 0);
+      const foods = Object.values(ITEMS).filter(i => i.cat === 'food' && itemCount(i.id) > 0).sort((a, b) => (a.rank || 0) - (b.rank || 0));
       const box = cmdBox(); box.innerHTML = '';
       if (!foods.length) { setMsg('エサを 持っていない！ ショップで 買おう。'); }
       const foe = B.foesOf(b)[0];
       for (const f of foods) {
         const p = B.catchChance(f.id, b, foe);
         const hint = p >= 0.6 ? 'なつきそう！' : p >= 0.3 ? 'まあまあ' : p >= 0.08 ? 'むずかしい' : 'ほぼ無理';
-        const bt = el('button', 'cmd catch', `${esc(f.name)} ×${itemCount(f.id)}<small>${hint}</small>`);
+        const bt = el('button', 'cmd catch', `${f.icon || ''} ${esc(f.name)} ×${itemCount(f.id)}<small>${'★'.repeat(f.rank || 1)}　${hint}</small>`);
         bt.style.textAlign = 'left';
         bt.onclick = () => { audio.sfx('select'); useItem(f.id); done({ type: 'catch', item: f.id }); };
         box.appendChild(bt);
@@ -451,11 +469,10 @@ export async function learnMove(m, moveId) {
 export async function evolveScene(m) {
   const prev = G.state;
   G.state = 'battle';
-  $('#hud').classList.add('hidden'); $('#touch').classList.add('hidden');
+  $('#hud').classList.add('hidden'); $('#touch').classList.add('hidden'); $('#labels').style.display = 'none';
   $('#screens').style.display = 'none';
-  const v = new BattleView(); v.setup('inner', 'single');
-  v.camBase = [0, 2.2, 7.5]; v.camLook = [0, 1.1, 0];
-  v.slotPos = () => [0, 0, 0];
+  const v = new BattleView(); v.setup('inner', 'evolve');
+  v.camBase = [0, 2.4, 8]; v.camLook = [0, 1.2, 0];
   bv = v; G.battleView = v;
   const fromName = monName(m), oldSp = m.sp;
   await v.setMon(0, 0, { sp: oldSp, shiny: m.shiny }, { instant: true });
@@ -480,7 +497,7 @@ export async function evolveScene(m) {
   for (const id of res.pending) await learnMove(m, id);
   G.battleView = null; bv = null;
   G.state = prev === 'battle' ? 'world' : prev;
-  $('#screens').style.display = '';
+  $('#screens').style.display = ''; $('#labels').style.display = '';
   $('#hud').classList.remove('hidden'); if (Input.touch) $('#touch').classList.remove('hidden');
 }
 
@@ -489,8 +506,25 @@ export function dexRegister(m) {
   return new Promise(res => {
     const sp = SPECIES[m.sp];
     audio.sfx('catch');
-    const d = el('div', 'dexreg', `<div class="in"><div class="ribbon">図鑑に 登録しました！</div><div class="muted">No.${String(sp.id).padStart(3, '0')}</div><img src="${portrait(m.sp, m.shiny)}"><h3>${m.shiny ? '<span class="shiny">✨</span>' : ''}${esc(sp.name)}</h3><div>${sp.types.map(typeBadge).join('')}</div><p style="max-width:34em;margin:.6em auto">${esc(sp.desc)}</p><div class="muted">タップして つづける</div></div>`);
-    $('#screens').appendChild(d);
-    setTimeout(() => { d.onclick = () => { audio.sfx('select'); d.remove(); res(); }; }, 500);
+    const d = el('div', 'dexreg', `<div class="rays"></div><div class="in"><div class="pic"><img src="${portrait(m.sp, m.shiny)}"></div><div class="txt"><div class="ribbon">図鑑に 登録しました！</div><div class="no">No.${String(sp.id).padStart(3, '0')}</div><h3>${m.shiny ? '<span class="shiny">✨</span>' : ''}${esc(sp.name)}</h3><div>${sp.types.map(typeBadge).join('')}</div><p>${esc(sp.desc)}</p><button class="btn pri ok">完了</button><span class="hint">画面のどこをタップしても閉じます</span></div></div>`);
+    // 図鑑登録はバトル後に出るので、画面レイヤーが隠れていても必ず見えるように #ui 直下に置く
+    $('#ui').appendChild(d);
+    let fin = false;
+    const close = () => { if (fin) return; fin = true; window.removeEventListener('keydown', key, true); audio.sfx('select'); d.remove(); res(); };
+    d.querySelector('.ok').onclick = (e) => { e.stopPropagation(); close(); };
+    // 画面のどこをタップしても閉じる（スクロールしたときは閉じない）。
+    // スマホでは click が届かないことがあるので pointerup で判定する
+    let sx = 0, sy = 0, down = false;
+    const t0 = performance.now();
+    d.addEventListener('pointerdown', (e) => { sx = e.clientX; sy = e.clientY; down = true; });
+    d.addEventListener('pointerup', (e) => {
+      if (!down) return; down = false;
+      if (performance.now() - t0 < 500) return;
+      if (Math.hypot(e.clientX - sx, e.clientY - sy) < 10) close();
+    });
+    d.addEventListener('pointercancel', () => { down = false; });
+    // キーボードでも閉じられる
+    function key(e) { if (['Space', 'Enter', 'KeyZ', 'Escape', 'KeyX'].includes(e.code)) { e.preventDefault(); e.stopPropagation(); close(); } }
+    setTimeout(() => { if (!fin) window.addEventListener('keydown', key, true); }, 400);
   });
 }

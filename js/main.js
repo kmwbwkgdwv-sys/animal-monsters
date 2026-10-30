@@ -1,9 +1,13 @@
 // =============================================================
 //  アニマルモンスター  起動・タイトル・メインループ
 // =============================================================
-import { Renderer, Scene, Camera, Node, PRIM, initPrims, GeoBuilder } from './engine/gl3d.js';
-import { mulberry32 } from './engine/util.js';
-import { buildAnimon, animateAnimon, defaultLook, SKIN, HAIR_COL, CLOTH, HAIR_STYLES, HAIR_JA, HATS, HAT_JA, BOTTOMS, BOTTOM_JA } from './render/models.js';
+import { Renderer, Scene, Camera, Node, PRIM, initPrims, GeoBuilder, MAT, mixRgb, norm3 } from './engine/gl3d.js';
+import { mulberry32, fbm } from './engine/util.js';
+import { SkyRig } from './render/sky.js';
+import { Ambient } from './render/ambient.js';
+import { getFlora, getSmallFlora, instanceNodes, stamp } from './render/flora.js';
+import { LOGO_SVG } from './ui/logo.js';
+import { buildAnimon, animateAnimon, setModelDetail, defaultLook, SKIN, HAIR_COL, CLOTH, HAIR_STYLES, HAIR_JA, HATS, HAT_JA, BOTTOMS, BOTTOM_JA } from './render/models.js';
 import { HumanPreview } from './render/portrait.js';
 import { G, save } from './game/state.js';
 import { loadSettings, saveSettings, hasSave, loadGame, newState, deleteGame } from './game/save.js';
@@ -24,10 +28,12 @@ function pixelRatio() { const dpr = window.devicePixelRatio || 1; return G.setti
 function resize() { G.renderer.setSize(window.innerWidth, window.innerHeight, pixelRatio()); }
 
 async function boot() {
+  { const lg = $('#loading .logo'); if (lg) lg.innerHTML = LOGO_SVG; }
   G.settings = loadSettings();
+  setModelDetail(!!G.settings.light);
   UI.textSpeed = G.settings.textSpeed;
   audio.configure(G.settings.bgm, G.settings.sfx);
-  try { G.renderer = new Renderer(canvas, { antialias: !G.settings.light }); }
+  try { G.renderer = new Renderer(canvas, { antialias: !G.settings.light, shadowSize: G.settings.light ? 0 : 1024 }); }
   catch (e) { $('#loading .msg').textContent = 'この端末では 3D表示（WebGL）が 使えません。'; return; }
   initPrims();
   resize();
@@ -44,7 +50,9 @@ async function boot() {
   $('#btnMenu').onclick = () => { if (G.state === 'world') runFlow(() => MENU.openMainMenu()); };
   $('#btnMap').onclick = () => { if (G.state === 'world') runFlow(() => MENU.openMap()); };
   document.addEventListener('visibilitychange', () => { if (document.hidden && G.save && G.state === 'world') { save(); import('./online.js').then(m => m.syncTransferSave(true)); } });
-  G.onSaved = () => { import('./online.js').then(m => m.syncTransferSave()); };
+  G.onSaved = () => { import('./online.js').then(m => { m.syncTransferSave(); m.publishRanking(); }); };
+  // タイトルの3D（風景とアニモン）を読み込み画面のあいだに作る
+  title = await buildTitleScene((p) => loadingProgress(0.1 + p * 0.9, 'タイトルを 準備中…'));
   loadingProgress(1, '');
   hideLoading();
   showTitle();
@@ -52,36 +60,84 @@ async function boot() {
 }
 
 // ---------- タイトル ----------
-function buildTitleScene() {
+//  夕方の光に照らされた丘。手前に御三家、まわりにアニモンたち、奥の丘には炎の王竜、空には天海の龍。
+async function buildTitleScene(progress) {
+  const light = !!G.settings.light;
   const S = new Scene();
-  S.bg = [0.45, 0.68, 0.95]; S.fogColor = [0.62, 0.8, 0.98]; S.fogNear = 30; S.fogFar = 90;
-  const g = new Node(PRIM.disc, { color: [0.45, 0.75, 0.35] }); g.setScale(120, 1, 120); S.add(g);
-  const gb = new GeoBuilder(); const r = mulberry32(5);
-  for (let i = 0; i < 60; i++) { const a = r() * Math.PI * 2, d = 18 + r() * 40, x = Math.cos(a) * d, z = Math.sin(a) * d; gb.cylinder(0.3, 0.4, 2.2, [0.45, 0.3, 0.18], x, 0, z, 6); gb.sphere(1.7, [0.25 + r() * 0.1, 0.6, 0.22], x, 3.4, z, 7, 5); }
-  for (let i = 0; i < 200; i++) { const x = (r() - 0.5) * 60, z = (r() - 0.5) * 60; gb.cylinder(0.03, 0.03, 0.5, [0.3, 0.6, 0.25], x, 0, z, 3, false); gb.sphere(0.16, [[1, 0.5, 0.5], [1, 0.9, 0.3], [0.8, 0.6, 1], [1, 1, 1]][i % 4], x, 0.55, z, 5, 3); }
-  S.add(new Node(gb.build()));
+  S.lightDir = norm3([0.62, 0.5, 0.42]);
+  S.sun = [0.98, 0.86, 0.7]; S.shadowC = [0.38, 0.32, 0.55];
+  S.fogNear = 50; S.fogFar = 170; S.wind = [0.8, 0.5, 0.6];
+  S.outlineDist = 140;
+  S.cloudShadow = [light ? 0 : 0.25, 0.02, 0, 0];
+  const sky = new SkyRig(S, { light, clouds: light ? 7 : 14, cloudR: 150, cloudY: 26, mountR: 240, dome: 420, theme: 'morning' });
+  S.fogColor = S.horizon.slice(); S.bg = S.horizon.slice();
+  S.shadow = light ? null : { center: [0, 0, -4], radius: 22, strength: 0.7, bias: 0.08 };
+  // 丘（手前はなだらか、奥はせり上がる）
+  const hAt = (x, z) => {
+    let h = Math.max(0, -z - 6) * 0.12 + smoothstep(14, 60, Math.hypot(x, z + 10)) * 12 + (fbm(x / 20, z / 20, 3, 4) - 0.5) * 3;
+    h += Math.max(0, 1 - Math.hypot(x + 15, z + 23) / 9) * 6;   // 王竜の丘
+    h += Math.max(0, 1 - Math.hypot(x - 2, z - 5) / 7) * 0.9;     // 手前の小さな丘
+    return h;
+  };
+  const g = new GeoBuilder();
+  const R = 140, NR = 30, NA = 56, rows = [];
+  for (let i = 0; i <= NR; i++) {
+    const rr = R * Math.pow(i / NR, 1.6), row = [];
+    for (let k = 0; k <= NA; k++) {
+      const a = k / NA * Math.PI * 2, x = Math.cos(a) * rr, z = Math.sin(a) * rr - 6, h = hAt(x, z), e = 0.5;
+      const nx = hAt(x - e, z) - hAt(x + e, z), nz = hAt(x, z - e) - hAt(x, z + e), l = Math.hypot(nx, 2 * e, nz);
+      const n = fbm(x / 9, z / 9, 2, 11);
+      const c = mixRgb(mixRgb([0.38, 0.7, 0.28], [0.66, 0.84, 0.34], smoothstep(0.35, 0.7, n)), [0.62, 0.72, 0.5], smoothstep(8, 20, h) * 0.5);
+      row.push(g._push(x, h, z, nx / l, 2 * e / l, nz / l, c));
+    }
+    rows.push(row);
+  }
+  for (let i = 0; i < NR; i++) for (let k = 0; k < NA; k++) { const a = rows[i][k], b = rows[i][k + 1], c = rows[i + 1][k], d = rows[i + 1][k + 1]; g.tri(a, b, c); g.tri(b, d, c); }
+  S.add(new Node(g.build(), { mat: MAT.terrain, outline: 0, kind: 4, castShadow: false }));
+  // 木・しげみ・花・草
+  const F = getFlora(light), SM = getSmallFlora(light), r = mulberry32(5);
+  const items = [];
+  const put = (list, x, z, s, tint) => { if (Math.abs(x) < 15 && z > -4 && z < 10) return; if (x < -2 && x > -11 && z > 1 && z < 9) return; items.push({ proto: list[Math.floor(r() * list.length)], x, y: hAt(x, z) - 0.15, z, ry: r() * 6.28, s, tint }); };
+  for (let i = 0; i < (light ? 26 : 60); i++) { const a = r() * Math.PI * 2, d = 16 + r() * 60, x = Math.cos(a) * d, z = Math.sin(a) * d - 14; if (z > -8 && Math.abs(x) < 24) continue; put(r() < 0.35 ? F.blossom : F.round, x, z, 1.1 + r() * 0.9); }
+  for (let i = 0; i < (light ? 12 : 28); i++) { const a = r() * Math.PI * 2, d = 10 + r() * 26, x = Math.cos(a) * d, z = Math.sin(a) * d - 6; put(F.bush, x, z, 0.9 + r() * 0.5); }
+  for (let i = 0; i < (light ? 6 : 12); i++) { const a = r() * Math.PI * 2, d = 12 + r() * 30; put(F.rock, Math.cos(a) * d, Math.sin(a) * d - 8, 0.6 + r() * 0.8); }
+  const fcols = [[1, 0.42, 0.55], [1, 0.86, 0.3], [1, 1, 1], [0.75, 0.5, 1], [1, 0.62, 0.85]];
+  for (let i = 0; i < (light ? 60 : 200); i++) { const x = (r() - 0.5) * 50, z = 10 - r() * 40; items.push({ proto: SM.flower[Math.floor(r() * 3)], x, y: hAt(x, z), z, ry: r() * 6.28, s: 1 + r() * 0.3, tint: fcols[Math.floor(r() * fcols.length)] }); }
+  for (let i = 0; i < (light ? 100 : 360); i++) { const x = (r() - 0.5) * 60, z = 9 - r() * 42; items.push({ proto: SM.tuft[Math.floor(r() * 2)], x, y: hAt(x, z), z, ry: r() * 6.28, s: 0.7 + r() * 0.6, tint: [0.5, 0.86, 0.34] }); }
+  for (const [geo, gp] of instanceNodes(items)) {
+    const a = gp.arr, n = a.length / 8; let ms = 0; for (let i = 0; i < a.length; i += 8) ms = Math.max(ms, a[i + 4]);
+    if (G.renderer.inst) { const nd = new Node(geo, { mat: gp.mat || MAT.decor, outline: geo.data.length / 13 < 200 ? 0 : 1, castShadow: geo.data.length / 13 >= 200 }); nd.inst = { data: new Float32Array(a), count: n, center: [0, 0, -10], radius: 160, maxS: ms }; nd.cull = false; S.add(nd); }
+    else { const gb = new GeoBuilder(); for (let i = 0; i < a.length; i += 8) stamp(gb, { parts: [geo] }, a[i], a[i + 1], a[i + 2], a[i + 3], a[i + 4], [a[i + 5], a[i + 6], a[i + 7]]); S.add(new Node(gb.build(), { mat: gp.mat || MAT.decor, outline: 0 })); }
+  }
+  // アニモン（1体ずつ作り、そのたびに読み込みバーを進める）
   const mons = [];
-  const ids = [1, 4, 7, 10, 16, 46, 109, 160];
-  ids.forEach((id, i) => { const M = buildAnimon(id, i === 5); const a = i / ids.length * Math.PI * 2; M.root.setPos(Math.cos(a) * 7, 0, Math.sin(a) * 7); M.root.rot[1] = -a; S.add(M.root); mons.push({ M, a, r: 7 + (i % 2) * 2.5 }); });
-  const L1 = buildAnimon(199, false); L1.root.setPos(-14, 0, -18); L1.root.rot[1] = 0.5; S.add(L1.root);
-  const L2 = buildAnimon(200, false); L2.root.setPos(14, 3, -18); L2.root.rot[1] = -0.5; S.add(L2.root);
-  const C = new Camera(42);
-  return { S, C, mons, L: [L1, L2], t: 0 };
+  let built = 0;
+  const yieldUI = async () => { built++; if (progress) { progress(built / 12); await new Promise(r => setTimeout(r, 0)); } };
+  const add = (id, x, z, ry, state, o = {}) => { const M = buildAnimon(id, !!o.shiny, { lod: o.lod || 'hi' }); M.root.setPos(x, hAt(x, z) + (o.y || 0), z); M.root.rot[1] = ry; if (o.s) M.root.setScale(o.s); S.add(M.root); const m = { M, x, z, ry, state, ...o }; mons.push(m); return m; };
+  // 左手前：御三家 ／ 右手前〜奥：仲間たち ／ 左奥の丘：炎の王竜 ／ 右の空：天海の龍
+  add(1, -7.4, 4.2, 0.65, 'idle'); await yieldUI(); add(4, -5.6, 5.4, 0.45, 'happy'); await yieldUI(); add(7, -3.9, 3.8, 0.3, 'idle'); await yieldUI();
+  const walkers = [10, 16, 46, 109, 160, 22, 31];
+  for (let i = 0; i < walkers.length; i++) { add(walkers[i], 0, 0, 0, 'walk', { lod: 'mid', walker: true, a: i / walkers.length * Math.PI * 2, rad: 5 + (i % 3) * 2, cx: 9, cz: 0, spd: 0.13 + (i % 2) * 0.05, shiny: i === 3 }); await yieldUI(); }
+  const L1 = add(199, -15, -23, 0.6, 'battle', { s: 1.25 }); await yieldUI();
+  const L2 = add(200, 14, -24, -1.25, 'fly', { y: 8, s: 1.3, flyer: true }); await yieldUI();
+  const C = new Camera(38);
+  return { S, C, mons, sky, amb: (() => { const a = new Ambient(S, { light, count: light ? 14 : 36, radius: 13, height: 9 }); a.setKind('petals'); return a; })(), t: 0, L: [L1, L2] };
 }
-function showTitle() {
+function smoothstep(a, b, x) { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); }
+async function showTitle() {
   G.state = 'title';
-  title = buildTitleScene();
+  if (!title) title = await buildTitleScene();
   audio.playBgm('title');
   closeAllScreens();
   const s = el('div', 'screen clear'); s.id = 'title';
   const has = hasSave();
-  s.innerHTML = `<div class="logo">アニマル<br>モンスター</div><div class="sub">〜 異世界の動物たちと 旅にでよう 〜</div>
+  s.innerHTML = `<div class="rays"></div><div class="tbg"></div><div class="tin"><div class="brand"><div class="logo">${LOGO_SVG}</div><div class="sub">〜 異世界の動物たちと 旅にでよう 〜</div></div>
     <div class="menu">
-      <button class="btn pri new">最初から始める</button>
-      <button class="btn cont" ${has ? '' : 'disabled'}>続きから始める</button>
-      <button class="btn trans">引き継ぎコードの発行・アカウント引き継ぎ</button>
-      <button class="btn set">設定</button>
-    </div><div class="ver">ver 1.0　PC・スマホ（横画面）対応</div>`;
+      <button class="btn pri new"><span class="ic">✨</span>最初から始める</button>
+      <button class="btn cont" ${has ? '' : 'disabled'}><span class="ic">▶</span>続きから始める</button>
+      <button class="btn trans"><span class="ic">🔑</span>引き継ぎコードの発行・アカウント引き継ぎ</button>
+      <button class="btn set"><span class="ic">⚙️</span>設定</button>
+    </div></div><div class="copy">© アニマルモンスター</div><div class="ver">ver 1.2　PC・スマホ（横画面）対応</div>`;
   $('#screens').appendChild(s);
   s.querySelector('.new').onclick = async () => {
     audio.sfx('select');
@@ -97,6 +153,39 @@ function showTitle() {
   };
   s.querySelector('.set').onclick = () => { audio.sfx('select'); MENU.openSettings(true); };
 }
+function updateTitle(dt) {
+  const T = title; T.t += dt;
+  const t = T.t;
+  // カメラ：ゆっくり横にすべりながら、少し上下
+  const a = Math.sin(t * 0.08) * 0.22;
+  T.C.pos = [Math.sin(a) * 14, 5.6 + Math.sin(t * 0.13) * 0.35, 4 + Math.cos(a) * 13];
+  T.C.target = [Math.sin(a) * 3, 3.4, -6];
+  for (const m of T.mons) {
+    if (m.walker) {
+      m.a += dt * m.spd; const x = m.cx + Math.cos(m.a) * m.rad, z = m.cz + Math.sin(m.a) * m.rad * 0.6;
+      const nx = m.cx + Math.cos(m.a + 0.05) * m.rad, nz = m.cz + Math.sin(m.a + 0.05) * m.rad * 0.6;
+      m.M.root.setPos(x, 0, z); m.M.root.pos[1] = titleH(x, z); m.M.root.rot[1] = Math.atan2(nx - x, nz - z);
+      animateAnimon(m.M, dt, 'walk');
+    } else if (m.flyer) {
+      m.M.root.pos[0] = m.x + Math.sin(t * 0.3) * 3; m.M.root.pos[1] = 8 + Math.sin(t * 0.5) * 1.0; m.M.root.rot[1] = m.ry + Math.sin(t * 0.3) * 0.2;
+      animateAnimon(m.M, dt, 'fly');
+    } else {
+      // 御三家：ときどき跳ねたり、ほえたり
+      const ph = (t * 0.25 + m.x * 0.1) % 1;
+      const st = m.M.sp.legend ? (ph > 0.82 ? 'roar' : 'battle') : (ph > 0.86 ? 'happy' : m.state);
+      animateAnimon(m.M, dt, st);
+    }
+  }
+  T.sky.update(dt, T.C);
+  T.amb.update(dt, [T.C.target[0], 1.5, -6], T.S.wind);
+  G.renderer.render(T.S, T.C);
+}
+function titleH(x, z) {
+  let h = Math.max(0, -z - 6) * 0.12 + smoothstep(14, 60, Math.hypot(x, z + 10)) * 12 + (fbm(x / 20, z / 20, 3, 4) - 0.5) * 3;
+  h += Math.max(0, 1 - Math.hypot(x + 15, z + 23) / 9) * 6;
+  h += Math.max(0, 1 - Math.hypot(x - 2, z - 5) / 7) * 0.9;
+  return h;
+}
 function tryFullscreen() {
   if (!Input.touch) return;
   const de = document.documentElement;
@@ -107,10 +196,10 @@ function tryFullscreen() {
 function characterCreate() {
   const look = { ...defaultLook() };
   const s = openScreen('主人公を つくろう', { noClose: true });
-  s.body.innerHTML = `<div class="create"><div class="preview"><canvas></canvas></div><div style="overflow:auto">
+  s.body.innerHTML = `<div class="create"><div class="preview"><canvas></canvas></div><div class="side">
     <div class="opt"><label>なまえ</label><input class="textin name" maxlength="8" placeholder="なまえ（8文字まで）" value=""></div>
     <div class="opts"></div>
-    <div class="row" style="margin-top:.8em;justify-content:flex-end"><button class="btn rnd">おまかせ</button><button class="btn pri go">この姿で はじめる！</button></div></div></div>`;
+    <div class="row actions" style="margin-top:.8em;justify-content:flex-end"><button class="btn rnd">🎲 おまかせ</button><button class="btn pri go">この姿で はじめる！</button></div></div></div>`;
   const prev = new HumanPreview(s.body.querySelector('canvas'));
   const OPTS = [
     ['肌の色', 'skin', SKIN.map((c, i) => i), (v) => `<span class="sw" style="background:${SKIN[v]}"></span>`],
@@ -158,8 +247,13 @@ async function startGame(state, isNew) {
   G.save = state;
   // 旧データ互換
   state.cleared ||= {}; state.quests ||= {}; state.items ||= {};
+  for (const m of [...(state.party || []), ...(state.box || [])]) {
+    if (!SPECIES[m.sp]?.legend || !m.iv) continue;
+    let h = 0; for (const ch of String(m.uid)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+    for (const k of ['atk', 'def', 'hp', 'spe']) { h = (h * 1103515245 + 12345) >>> 0; if (m.iv[k] < 10) m.iv[k] = 10 + (h >>> 8) % 6; }
+  }
   UI.vars = { P: state.name, S: state.story.starter != null ? SPECIES[[1, 4, 7][state.story.starter]].name : '相棒', L: state.story.legend ? SPECIES[state.story.legend].name : '伝説' };
-  const ld = el('div', ''); ld.id = 'loading'; ld.innerHTML = `<div class="logo">アニマルモンスター</div><div class="bar"><i></i></div><div class="msg">冒険の準備中…</div>`;
+  const ld = el('div', ''); ld.id = 'loading'; ld.innerHTML = `<div class="logo">${LOGO_SVG}</div><div class="bar"><i></i></div><div class="msg">冒険の準備中…</div>`;
   document.body.appendChild(ld);
   await new Promise(r => setTimeout(r, 50));
   await buildOverworld((p, m) => loadingProgress(p, m));
@@ -179,6 +273,8 @@ async function startGame(state, isNew) {
     audio.playBgm('field');
     toast(`おかえりなさい、${state.name}さん！`);
   }
+  // オンラインが使える設定なら、裏でランキングに自分の成績を載せておく
+  setTimeout(() => import('./online.js').then(m => { if (m.isConfigured()) m.ensurePlayer().then(() => m.publishRanking(true)).catch(() => {}); }), 4000);
 }
 
 // ---------- HUD ----------
@@ -203,12 +299,7 @@ function loop(now) {
   R.time += dt;
   try {
     if (G.state === 'title' && title) {
-      title.t += dt;
-      const a = title.t * 0.12;
-      title.C.pos = [Math.cos(a) * 17, 7.5, Math.sin(a) * 17]; title.C.target = [0, 1.6, 0];
-      for (const m of title.mons) { m.a += dt * 0.15; m.M.root.setPos(Math.cos(m.a) * m.r, 0, Math.sin(m.a) * m.r); m.M.root.rot[1] = -m.a + Math.PI; animateAnimon(m.M, dt, 'walk'); }
-      for (const L of title.L) animateAnimon(L, dt, 'fly');
-      R.render(title.S, title.C);
+      updateTitle(dt);
     } else if (G.state === 'battle' && G.battleView) {
       G.battleView.update(dt);
       R.render(G.battleView.scene, G.battleView.cam);

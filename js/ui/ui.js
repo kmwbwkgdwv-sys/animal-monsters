@@ -1,5 +1,6 @@
 // UIの基本部品（会話・選択肢・トースト・画面）
 import { audio } from '../audio.js';
+import { bigPortrait } from '../render/portrait.js';
 
 export const $ = (s, r = document) => r.querySelector(s);
 export const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -75,14 +76,18 @@ export function toast(text, ms = 2200) {
 }
 export function inputText(title, def = '', max = 10) {
   return new Promise(res => {
-    const s = openScreen(title, { noClose: true });
-    s.body.innerHTML = `<div class="card" style="max-width:520px;margin:2em auto"><input class="textin" maxlength="${max}" value="${esc(def)}"><div class="row" style="margin-top:1em;justify-content:flex-end"><button class="btn cancel">やめる</button><button class="btn pri ok">けってい</button></div></div>`;
+    const s = openScreen(title, { noClose: true, cls: 'inputscr' });
+    // 画面上部に入力欄とボタンを並べる（スマホのキーボードで隠れないように）
+    s.body.innerHTML = `<div class="card inputcard"><input class="textin" maxlength="${max}" value="${esc(def)}" enterkeyhint="done" autocomplete="off"><div class="row btns"><button class="btn cancel">やめる</button><button class="btn pri ok">けってい</button></div><div class="muted hint">キーボードの「完了」を押したあと「けってい」を押してください</div></div>`;
     const inp = s.body.querySelector('input');
-    setTimeout(() => { inp.focus(); inp.select(); }, 50);
-    const done = (v) => { s.close(); res(v); };
+    // スマホではキーボードを自動で出さない（タップしたときに出す）
+    if (!matchMedia('(pointer: coarse)').matches) setTimeout(() => { inp.focus(); inp.select(); }, 50);
+    let fin = false;
+    const done = (v) => { if (fin) return; fin = true; inp.blur(); window.scrollTo(0, 0); s.close(); res(v); };
     s.body.querySelector('.ok').onclick = () => done(inp.value.trim());
     s.body.querySelector('.cancel').onclick = () => done(null);
     inp.onkeydown = (e) => { e.stopPropagation(); if (e.key === 'Enter') done(inp.value.trim()); };
+    inp.addEventListener('blur', () => setTimeout(() => window.scrollTo(0, 0), 60));
   });
 }
 
@@ -106,13 +111,17 @@ export function closeAllScreens() { while (stack.length) stack[stack.length - 1]
 export function fade(on, ms = 500) { const f = $('#fade'); f.style.transitionDuration = ms + 'ms'; f.style.opacity = on ? 1 : 0; return new Promise(r => setTimeout(r, ms)); }
 export function flash(ms = 250) { const f = $('#flash'); f.style.transitionDuration = '0ms'; f.style.opacity = 1; requestAnimationFrame(() => { f.style.transitionDuration = ms + 'ms'; f.style.opacity = 0; }); return new Promise(r => setTimeout(r, ms)); }
 export function letterbox(on) { $('#letterbox').classList.toggle('on', on); }
-export function narrate(text) {
+export function narrate(text, pics = null, mood = '') {
   return new Promise(res => {
-    const n = $('#narr'); n.querySelector('.t').textContent = UI.fmt(text); n.classList.add('on');
+    const n = $('#narr'); n.querySelector('.t').textContent = UI.fmt(text);
+    // 挿し絵（伝説のアニモンなど）を文章の上に出す
+    const pc = n.querySelector('.pics');
+    if (pc) { pc.innerHTML = pics ? pics.map((id, i) => `<img src="${bigPortrait(id, 'roar')}" style="animation-delay:${i * 0.25}s">`).join('') : ''; }
+    n.className = 'on' + (mood ? ' ' + mood : '');
     if (UI.skipping) { n.classList.remove('on'); res(); return; }
     let done = false;
     const fin = () => { if (done) return; done = true; n.classList.remove('on'); advanceFn = null; setTimeout(res, 400); };
-    const timer = setTimeout(fin, 2200 + text.length * 90);
+    const timer = setTimeout(fin, 2200 + text.length * 90 + (pics ? 800 : 0));
     advanceFn = () => { clearTimeout(timer); fin(); };
   });
 }

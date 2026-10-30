@@ -1,5 +1,5 @@
 // アニモンの顔写真（アイコン）を小さなキャンバスに描いて画像化
-import { Renderer, Scene, Camera, Node, PRIM, initPrims } from '../engine/gl3d.js';
+import { Renderer, Scene, Camera, Node, PRIM, initPrims, treeBounds } from '../engine/gl3d.js';
 import { buildAnimon, animateAnimon, buildHuman, animateHuman } from './models.js';
 
 let R = null, cv = null;
@@ -11,24 +11,50 @@ function ensure() {
   if (R) return;
   initPrims();
   cv = document.createElement('canvas'); cv.width = 192; cv.height = 192;
-  R = new Renderer(cv, { alpha: true, preserve: true, antialias: true });
+  R = new Renderer(cv, { alpha: true, preserve: true, antialias: true, shadowSize: 0 });
   R.setSize(192, 192, 1);
 }
 function render(spId, shiny, sil) {
   ensure();
   const S = new Scene(); S.bg = [0, 0, 0]; S.bgAlpha = 0; S.fogNear = 900; S.fogFar = 1000;
-  const M = buildAnimon(spId, shiny);
+  const M = buildAnimon(spId, shiny, { lod: 'mid', noCache: true });
   animateAnimon(M, 0.4, 'idle');
   M.root.rot[1] = 0.55;
   if (sil) M.root.traverse(n => { if (n.geo) { n.color = [0.08, 0.1, 0.18, 1]; n.unlit = true; n.emis = [0, 0, 0]; } });
   S.add(M.root);
   const C = new Camera(30);
-  const h = M.height;
-  const w = M.plan === 'serpent' || M.plan === 'leviathan' || M.plan === 'dragon' ? 1.25 : 1;
-  const d = Math.max(h, 1.2 * M.size * w) * 2.3 + 0.6;
-  C.pos = [0, h * 0.65 + d * 0.22, d]; C.target = [0, h * 0.42, -0.1 * M.size];
+  // 実際の形の外接箱から、はみ出さないように写す（翼・しっぽ・宙に浮く種も）
+  const b = treeBounds(M.root);
+  const cx = (b[0] + b[3]) / 2, cy = (b[1] + b[4]) / 2, cz = (b[2] + b[5]) / 2;
+  const ext = Math.max(b[4] - b[1], (b[3] - b[0]) * 0.86, 0.6);
+  const d = ext * 0.5 / Math.tan(15 * Math.PI / 180) * 1.04 + (b[5] - b[2]) * 0.5;
+  C.pos = [cx, cy + d * 0.2, cz + d]; C.target = [cx, cy - ext * 0.02, cz];
   R.render(S, C);
   return cv.toDataURL('image/png');
+}
+// ムービー用の大きな絵（512px）
+let R2 = null, cv2 = null;
+const bigCache = new Map();
+export function bigPortrait(spId, state = 'idle') {
+  const k = spId + state;
+  if (bigCache.has(k)) return bigCache.get(k);
+  initPrims();
+  if (!R2) { cv2 = document.createElement('canvas'); cv2.width = cv2.height = 512; R2 = new Renderer(cv2, { alpha: true, preserve: true, antialias: true, shadowSize: 0 }); R2.setSize(512, 512, 1); }
+  const S = new Scene(); S.bg = [0, 0, 0]; S.bgAlpha = 0; S.fogNear = 900; S.fogFar = 1000;
+  const M = buildAnimon(spId, false, { noCache: true });
+  animateAnimon(M, 0.5, state);
+  M.root.rot[1] = 0.6;
+  S.add(M.root);
+  const C = new Camera(30);
+  const b = treeBounds(M.root);
+  const cx = (b[0] + b[3]) / 2, cy = (b[1] + b[4]) / 2, cz = (b[2] + b[5]) / 2;
+  const ext = Math.max(b[4] - b[1], (b[3] - b[0]) * 0.86, 0.6);
+  const d = ext * 0.5 / Math.tan(15 * Math.PI / 180) * 1.02 + (b[5] - b[2]) * 0.5;
+  C.pos = [cx, cy + d * 0.12, cz + d]; C.target = [cx, cy, cz];
+  R2.render(S, C);
+  const url = cv2.toDataURL('image/png');
+  bigCache.set(k, url);
+  return url;
 }
 export function portrait(spId, shiny = false, sil = false) {
   const k = spId + (shiny ? 's' : '') + (sil ? 'x' : '');
@@ -57,7 +83,7 @@ export const BLANK = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAA
 export class HumanPreview {
   constructor(canvas) {
     initPrims();
-    this.cv = canvas; this.R = new Renderer(canvas, { alpha: true });
+    this.cv = canvas; this.R = new Renderer(canvas, { alpha: true, shadowSize: 0 });
     this.S = new Scene(); this.S.bg = [0, 0, 0]; this.S.bgAlpha = 0; this.S.fogNear = 500; this.S.fogFar = 600;
     const g = new Node(PRIM.disc, { color: [0.3, 0.5, 0.85] }); g.setScale(1.6, 1, 1.6); this.S.add(g);
     this.C = new Camera(30); this.C.pos = [0, 1.6, 6.2]; this.C.target = [0, 1.05, 0];

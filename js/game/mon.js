@@ -27,10 +27,16 @@ export function movesAtLevel(spId, lv) {
   return res;
 }
 
+// 伝説の個体値：4つとも 10〜15 のランダム
+export const LEGEND_IV_MIN = 10;
+export function legendIv(r = Math.random) {
+  const v = () => LEGEND_IV_MIN + Math.floor(r() * (16 - LEGEND_IV_MIN));
+  return { atk: v(), def: v(), hp: v(), spe: v() };
+}
 export function createMon(spId, lv, o = {}) {
   const r = o.rng || Math.random;
-  const iv = o.iv || { atk: Math.floor(r() * 16), def: Math.floor(r() * 16), hp: Math.floor(r() * 16), spe: Math.floor(r() * 16) };
   const s = SPECIES[spId];
+  const iv = o.iv || (s.legend ? legendIv(r) : { atk: Math.floor(r() * 16), def: Math.floor(r() * 16), hp: Math.floor(r() * 16), spe: Math.floor(r() * 16) });
   const shiny = s.legend ? false : (o.shiny ?? (r() < 0.001));
   const mon = {
     uid: o.uid || uid('m'), sp: spId, nick: o.nick || '', lv, exp: expForLevel(lv), iv,

@@ -1,22 +1,23 @@
 // =============================================================
-//  Firebase の設定
-//  Firebaseコンソール →（歯車）プロジェクトの設定 → マイアプリ（ウェブ）
-//  に表示される firebaseConfig の値をここに貼り付けてください。
-//  ※ apiKey はいただいたものを入れてあります。
-//    projectId などの残りの値を入れると、フレンド・トレード・対戦・引き継ぎが使えます。
+//  Firebase の設定（プロジェクト：animal-monsters）
+//  Firebaseコンソール →（歯車）プロジェクトの設定 → マイアプリ（ウェブ）の値です。
+//  オンライン機能（フレンド・トレード・対戦・引き継ぎ・ランキング）は
+//  Realtime Database（シンガポール：asia-southeast1）を使います。
 // =============================================================
 export const firebaseConfig = {
   apiKey: 'AIzaSyAlcoqLJZokY6CDbARtwFbzG7-_BUTVBCQ',
-  authDomain: 'YOUR_PROJECT_ID.firebaseapp.com',
-  projectId: 'YOUR_PROJECT_ID',
-  storageBucket: 'YOUR_PROJECT_ID.appspot.com',
-  messagingSenderId: 'YOUR_SENDER_ID',
-  appId: 'YOUR_APP_ID',
+  authDomain: 'animal-monsters.firebaseapp.com',
+  databaseURL: 'https://animal-monsters-default-rtdb.asia-southeast1.firebasedatabase.app',
+  projectId: 'animal-monsters',
+  storageBucket: 'animal-monsters.firebasestorage.app',
+  messagingSenderId: '756002084669',
+  appId: '1:756002084669:web:d62e294998960f12d55754',
 };
 
 // Firebase JS SDK のバージョン（CDNから読み込みます）
 export const FIREBASE_SDK_VERSION = '10.12.2';
 
 export function firebaseReady() {
-  return !!firebaseConfig.apiKey && !!firebaseConfig.projectId && !/YOUR_/.test(firebaseConfig.projectId + firebaseConfig.appId);
+  const c = firebaseConfig;
+  return !!c.apiKey && !!c.projectId && !!c.databaseURL && !/YOUR_/.test(c.projectId + c.appId + c.databaseURL);
 }
