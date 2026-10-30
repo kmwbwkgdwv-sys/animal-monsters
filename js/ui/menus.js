@@ -543,18 +543,9 @@ export async function openHospital(townId) {
 }
 
 // ---------- ファストトラベル ----------
+// 光る岩に さわったとき：地図が 出て、行きたい 岩を 押して ワープ
 export async function openTravel(fromId) {
-  const s = openScreen('ファストトラベル', { extra: '<span class="muted">登録した岩へ ワープ</span>' });
-  const reg = STONES.filter(x => G.save.stones[x.id] && x.id !== fromId);
-  if (!reg.length) s.body.innerHTML = '<p class="muted">ほかに 登録した岩が ありません。大陸の各地の 光る岩に さわって 登録しよう！</p>';
-  let chosen = null;
-  for (const st of reg) {
-    const r = el('div', 'itemrow', `<div class="grow"><div class="nm">${st.town ? '🏥 ' : '💎 '}${esc(st.name)}</div><div class="ds">${st.town ? '病院のある町' : ''}</div></div>`);
-    const b = el('button', 'btn sm pri', 'ワープ'); b.onclick = () => { chosen = st.id; s.close(); };
-    r.appendChild(b); s.body.appendChild(r);
-  }
-  await waitClose(s);
-  if (chosen) await (await import('../game/overworld.js')).warpTo(chosen);
+  return openMap(null, { warp: { from: fromId } });
 }
 
 // ---------- ライド ----------
@@ -575,16 +566,22 @@ export async function openRide() {
 }
 
 // ---------- マップ（全体）：画面に合わせて表示・ドラッグで移動・ピンチ／ホイール／ボタンで拡大 ----------
-export async function openMap(focus = null) {
+export async function openMap(focus = null, opts = {}) {
   const ov = await import('../game/overworld.js');
   const SE = await import('../game/storyEngine.js');
   const { getMapImage, worldToImg } = await import('./mapimage.js');
-  const s = openScreen('大陸マップ', { cls: 'mapscreen' });
+  // opts.warp = { from: 岩のid }：光る岩に さわったとき。地図の 岩を 押して ワープ
+  const warp = opts.warp || null;
+  const s = openScreen(warp ? 'ファストトラベル' : '大陸マップ', { cls: 'mapscreen' + (warp ? ' warpmap' : '') });
   // focus：ストーリー一覧の「地図で見る」から来たときの 行き先 { x, z, label, obj }
   const tgt = focus || SE.navTarget();
-  s.body.innerHTML = `<div class="mapview"><canvas></canvas>
+  const dests = warp ? STONES.filter(x => G.save.stones[x.id] && x.id !== warp.from) : [];
+  let sel = null, chosen = null;
+  s.body.innerHTML = `<div class="mapview"><canvas></canvas>${warp ? '<div class="warppop"><div class="nm"></div><button class="btn pri go">💎 ワープ！</button></div>' : ''}
       <div class="mapbtns"><button class="btn sm zin">＋</button><button class="btn sm zout">－</button><button class="btn sm here">📍現在地</button>${tgt ? '<button class="btn sm pri goal">⭐行き先</button>' : ''}<button class="btn sm all">全体</button></div></div>
     <div class="mapside">
+      ${warp ? `<div class="mapgoal warpinfo"><b>💎 光っている 岩を 押して ワープ</b><div>${dests.length ? '地図の 💎（病院のある町は 🏥）を 押すと、そこへ ワープできます。' : 'ほかに 登録した岩が ありません。大陸の各地の 光る岩に さわって 登録しよう！'}</div></div>
+        <div class="warplist">${dests.map(d => `<button class="btn sm wdest" data-id="${d.id}">${d.town ? '🏥' : '💎'} ${esc(d.name)}</button>`).join('')}</div>` : ''}
       ${tgt ? `<div class="mapgoal"><b>⭐ ${focus ? esc(focus.title || '行き先') : '次の行き先'}</b><div>${esc(UI_fmt(focus ? (focus.obj || focus.label || '') : SE.objective().txt))}</div></div>` : ''}
       <div class="legend"><span>🏠 町</span><span><b style="color:#5ef">◆</b> 登録済みの岩</span><span><b style="color:#999">◆</b> 未登録の岩</span><span>⛩ ダンジョン</span><span><b style="color:#f44">▲</b> 現在地</span><span>⭐ 行き先</span><span>🔒 まだ行けない</span></div>
       <p class="muted maphint">ドラッグで移動・2本指／ホイールで拡大縮小</p>
@@ -620,7 +617,7 @@ export async function openMap(focus = null) {
     const fs = Math.max(11, Math.min(20, 14 * us));
     for (const id of RING) { const a = REGIONS[id].ang * Math.PI / 180; const p = toSw(Math.cos(a) * 560, Math.sin(a) * 560); text(REGIONS[id].name, p[0], p[1], fs, '#fff'); }
     for (const t of TOWNS) { const p = toSw(t.pos[0], t.pos[1]); icon('🏠', p[0], p[1], Math.max(14, 18 * us)); text(t.name, p[0], p[1] + Math.max(14, 18 * us), Math.max(10, 12 * us), '#ffe680'); }
-    for (const st of STONES) { if (st.town) continue; const p = toSw(st.pos[0], st.pos[1]); text('◆', p[0], p[1], Math.max(12, 16 * us), G.save.stones[st.id] ? '#55eeff' : '#aaa'); }
+    if (!warp) for (const st of STONES) { if (st.town) continue; const p = toSw(st.pos[0], st.pos[1]); text('◆', p[0], p[1], Math.max(12, 16 * us), G.save.stones[st.id] ? '#55eeff' : '#aaa'); }
     for (const d of Object.values(DUNGEONS)) { const p = toSw(d.pos[0], d.pos[1]); icon('⛩', p[0], p[1], Math.max(13, 16 * us)); }
     // 行き先（光る星と、現在地からの点線）
     const pp = toSw(P.x, P.z);
@@ -631,6 +628,24 @@ export async function openMap(focus = null) {
       g.save(); g.shadowColor = '#ffd23f'; g.shadowBlur = 14; icon('⭐', q[0], q[1], Math.max(20, 24 * us) * pulse); g.restore();
       // 町そのものが行き先なら 町の名前と重なるので 星だけにする
       if (!TOWNS.some(t => Math.hypot(t.pos[0] - tgt.x, t.pos[1] - tgt.z) < t.r + 6)) text(tgt.label, q[0], q[1] - Math.max(18, 22 * us), Math.max(11, 13 * us), '#ffe14d');
+    }
+    // ワープ先の 岩（押せる 岩は 光る）
+    if (warp) {
+      const t = performance.now() / 1000, R0 = Math.max(11, 13 * Math.min(1.6, us));
+      for (const st of STONES) {
+        const p = toSw(st.pos[0], st.pos[1]), on = !!G.save.stones[st.id], here = st.id === warp.from, isSel = sel && sel.id === st.id;
+        if (!on) { if (!st.town) text('◆', p[0], p[1], Math.max(12, 15 * us), '#9aa'); continue; }
+        const R = R0 * (isSel ? 1.35 : 1) * (here ? 1 : 1 + Math.sin(t * 3 + st.pos[0]) * 0.08);
+        g.save(); g.shadowColor = here ? '#ff6b6b' : '#5ef'; g.shadowBlur = isSel ? 22 : 12;
+        g.fillStyle = here ? 'rgba(255,110,110,.9)' : isSel ? 'rgba(255,230,90,.95)' : 'rgba(80,220,255,.88)'; g.strokeStyle = '#fff'; g.lineWidth = 2.5;
+        g.beginPath(); g.arc(p[0], p[1], R, 0, Math.PI * 2); g.fill(); g.stroke(); g.restore();
+        icon(st.town ? '🏥' : '💎', p[0], p[1] + 1, R * 1.05);
+        if (here) text('いまここ', p[0], p[1] - R - 9, Math.max(11, 12 * us), '#ffb0b0');
+        else if (!st.town && us > 0.9) text(st.name, p[0], p[1] + R + 10, Math.max(10, 11 * us), '#bff6ff');
+      }
+      // 選んだ 岩の 吹き出しを ついていかせる
+      const pop = view.querySelector('.warppop');
+      if (sel) { const q = toSw(sel.pos[0], sel.pos[1]); pop.style.left = q[0] + 'px'; pop.style.top = q[1] + 'px'; pop.classList.add('on'); } else pop.classList.remove('on');
     }
     // 現在地（向きつきの三角）
     g.save(); g.translate(pp[0], pp[1]); g.rotate(-P.ry + Math.PI); const z = Math.max(1, Math.min(1.6, us));
@@ -655,8 +670,33 @@ export async function openMap(focus = null) {
     if (pts.size === 2 && pinch) { const [a, b] = [...pts.values()]; V.k = pinch.k * Math.hypot(a[0] - b[0], a[1] - b[1]) / Math.max(1, pinch.d); }
     clampV();
   });
-  const up = (e) => { pts.delete(e.pointerId); if (pts.size < 2) pinch = null; };
+  // 押しただけ（ほとんど 動かさない）なら 岩を 選ぶ
+  let tap0 = null;
+  cv.addEventListener('pointerdown', (e) => { tap0 = pts.size === 1 ? { x: e.clientX, y: e.clientY, id: e.pointerId } : null; });
+  const pick = (cx, cy) => {
+    if (!warp) return;
+    const r = cv.getBoundingClientRect(), x = cx - r.left, y = cy - r.top;
+    const us = V.k * N / 768, lim = Math.max(28, 22 * Math.min(1.6, us));
+    let best = null, bd = lim;
+    for (const d of dests) { const p = toSw(d.pos[0], d.pos[1]); const dd = Math.hypot(p[0] - x, p[1] - y); if (dd < bd) { bd = dd; best = d; } }
+    sel = best;
+    if (best) { audio.sfx('select'); view.querySelector('.warppop .nm').textContent = `${best.town ? '🏥' : '💎'} ${best.name}`; }
+  };
+  const up = (e) => {
+    if (tap0 && e.pointerId === tap0.id && e.type === 'pointerup' && Math.hypot(e.clientX - tap0.x, e.clientY - tap0.y) < 10) pick(e.clientX, e.clientY);
+    tap0 = null;
+    pts.delete(e.pointerId); if (pts.size < 2) pinch = null;
+  };
   cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', up);
+  if (warp) {
+    const goB = view.querySelector('.warppop .go');
+    goB.onclick = (e) => { e.stopPropagation(); if (!sel) return; chosen = sel.id; s.close(); };
+    s.body.querySelectorAll('.wdest').forEach(b => b.onclick = () => {
+      const d = STONES.find(x => x.id === b.dataset.id); sel = d;
+      view.querySelector('.warppop .nm').textContent = `${d.town ? '🏥' : '💎'} ${d.name}`;
+      go(d.pos[0], d.pos[1], 1.6); audio.sfx('select');
+    });
+  }
   cv.addEventListener('wheel', (e) => { e.preventDefault(); V.k *= e.deltaY < 0 ? 1.2 : 1 / 1.2; clampV(); }, { passive: false });
   const go = (x, z, k) => { const q = worldToImg(x, z); V.cx = q[0]; V.cy = q[1]; if (k) V.k = Math.max(V.k, Math.min(cw, ch) / N * k); clampV(); };
   s.body.querySelector('.zin').onclick = () => { V.k *= 1.4; clampV(); };
@@ -671,6 +711,7 @@ export async function openMap(focus = null) {
   requestAnimationFrame(frame);
   await waitClose(s);
   alive = false; ro.disconnect();
+  if (chosen) await ov.warpTo(chosen);
 }
 const UI_fmt = (t) => t.replace(/\{P\}/g, G.save.name);
 

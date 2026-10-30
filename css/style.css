@@ -615,3 +615,16 @@ b, strong { font-weight: 800; }
 .chbar i.done { background: linear-gradient(#7dffb0, #2fbf71); color: #053; font-weight: 800; }
 .chbar i.now { background: linear-gradient(#fff3a0, #ffc83a); color: #4a2400; font-weight: 900; box-shadow: 0 0 6px rgba(255, 210, 63, .8); }
 .qrow.done2 { border-color: rgba(125, 255, 176, .5); }
+/* ---------- ファストトラベル（地図の 岩を 押して ワープ） ---------- */
+.mapview { position: relative; }
+.warppop { position: absolute; z-index: 3; display: none; flex-direction: column; align-items: center; gap: .3em; padding: .45em .6em .55em; border-radius: 14px; background: linear-gradient(rgba(14, 20, 56, .96), rgba(30, 44, 100, .94)); border: 2px solid #5ef; box-shadow: 0 6px 16px rgba(0, 0, 0, .45); transform: translate(-50%, calc(-100% - 24px)); pointer-events: auto; white-space: nowrap; }
+.warppop.on { display: flex; animation: wpop .15s ease-out; }
+@keyframes wpop { from { opacity: 0; transform: translate(-50%, calc(-100% - 14px)) scale(.92); } to { opacity: 1; transform: translate(-50%, calc(-100% - 24px)); } }
+.warppop::after { content: ''; position: absolute; left: 50%; bottom: -9px; width: 14px; height: 14px; background: rgba(30, 44, 100, .94); border-right: 2px solid #5ef; border-bottom: 2px solid #5ef; transform: translateX(-50%) rotate(45deg); }
+.warppop .nm { font-weight: 900; text-shadow: var(--outline-s); }
+.warppop .go { font-size: .95em; padding: .3em 1.1em; }
+.warplist { display: flex; flex-wrap: wrap; gap: .35em; margin: .2em 0 .6em; max-height: 9em; overflow-y: auto; }
+.warpinfo { border-color: rgba(85, 238, 255, .7) !important; }
+/* ワープの地図：スマホでは 凡例を 隠して 行き先の ボタンを 広く */
+.warpmap .warplist { max-height: none; }
+@media (max-height: 520px) { .warpmap .legend, .warpmap .maphint { display: none; } .warpmap .warpinfo div { font-size: .85em; } }
