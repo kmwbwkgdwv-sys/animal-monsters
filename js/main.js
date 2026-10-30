@@ -48,7 +48,7 @@ async function boot() {
   resize();
   window.addEventListener('resize', resize);
   // 画面を回したとき、端末によっては 大きさが 少しずつ 変わるので 何回か 合わせなおす
-  window.addEventListener('orientationchange', () => { for (const ms of [60, 200, 450, 800, 1300, 2000]) setTimeout(resize, ms); });
+  window.addEventListener('orientationchange', () => { canvas.style.height = ''; canvas.style.width = ''; for (const ms of [60, 200, 450, 800, 1300, 2000]) setTimeout(() => { if (window.scrollY) window.scrollTo(0, 0); resize(); }, ms); });
   if (screen.orientation && screen.orientation.addEventListener) screen.orientation.addEventListener('change', () => { for (const ms of [60, 300, 900, 1600]) setTimeout(resize, ms); });
   // 3D表示が こわれた（WebGL のコンテキスト消失）ときは、セーブして 自動で 読み込みなおす
   canvas.addEventListener('webglcontextlost', (e) => {
@@ -202,8 +202,8 @@ async function buildTitleScene(progress) {
   add(1, -7.4, 4.2, 0.65, 'idle'); await yieldUI(); add(4, -5.6, 5.4, 0.45, 'happy'); await yieldUI(); add(7, -3.9, 3.8, 0.3, 'idle'); await yieldUI();
   const walkers = [10, 16, 46, 109, 160, 22, 31];
   for (let i = 0; i < walkers.length; i++) { add(walkers[i], 0, 0, 0, 'walk', { lod: 'mid', walker: true, a: i / walkers.length * Math.PI * 2, rad: 5 + (i % 3) * 2, cx: 9, cz: 0, spd: 0.13 + (i % 2) * 0.05, shiny: i === 3 }); await yieldUI(); }
-  const L1 = add(199, -15, -23, 0.6, 'battle', { s: 1.25 }); await yieldUI();
-  const L2 = add(200, 14, -24, -1.25, 'fly', { y: 8, s: 1.3, flyer: true }); await yieldUI();
+  const L1 = add(199, -16.5, -27, 0.62, 'battle', { s: 1.45, y: -2.4 }); await yieldUI();
+  const L2 = add(200, 15, -27, -1.2, 'fly', { y: 4.7, s: 1.5, flyer: true }); await yieldUI();
   const C = new Camera(38);
   return { S, C, mons, sky, amb: (() => { const a = new Ambient(S, { light, count: light ? 14 : 36, radius: 13, height: 9 }); a.setKind('petals'); return a; })(), t: 0, L: [L1, L2] };
 }
@@ -256,7 +256,7 @@ function updateTitle(dt) {
       m.M.root.setPos(x, 0, z); m.M.root.pos[1] = titleH(x, z); m.M.root.rot[1] = Math.atan2(nx - x, nz - z);
       animateAnimon(m.M, dt, 'walk');
     } else if (m.flyer) {
-      m.M.root.pos[0] = m.x + Math.sin(t * 0.3) * 3; m.M.root.pos[1] = 8 + Math.sin(t * 0.5) * 1.0; m.M.root.rot[1] = m.ry + Math.sin(t * 0.3) * 0.2;
+      m.M.root.pos[0] = m.x + Math.sin(t * 0.3) * 3; m.M.root.pos[1] = (m.y ?? 8) + Math.sin(t * 0.5) * 1.0; m.M.root.rot[1] = m.ry + Math.sin(t * 0.3) * 0.2;
       animateAnimon(m.M, dt, 'fly');
     } else {
       // 御三家：ときどき跳ねたり、ほえたり
@@ -404,7 +404,15 @@ function loop(now) {
   if (G.ctxLost) { requestAnimationFrame(loop); return; }
   // 表示の大きさと 描画の大きさが ずれていたら 合わせる（画面の回転で 下が黒くなるのを防ぐ）
   sizeChk -= dt;
-  if (sizeChk <= 0) { sizeChk = 0.5; const r = canvas.getBoundingClientRect(); if (Math.abs(Math.round(r.width) - R.cssW) > 1 || Math.abs(Math.round(r.height) - R.cssH) > 1) resize(); }
+  if (sizeChk <= 0) {
+    sizeChk = 0.5;
+    let r = canvas.getBoundingClientRect();
+    // iPhone：画面を回したあと キャンバスが 画面の下まで 届いていなければ、高さを 直接 合わせる（下に 色の帯が 出たままに ならないように）
+    const vv = window.visualViewport, needW = Math.max(window.innerWidth, vv ? vv.width + vv.offsetLeft : 0), needH = Math.max(window.innerHeight, vv ? vv.height + vv.offsetTop : 0, document.documentElement.clientHeight);
+    if (r.bottom < needH - 2 || r.right < needW - 2) { canvas.style.height = Math.ceil(needH) + 'px'; canvas.style.width = Math.ceil(needW) + 'px'; r = canvas.getBoundingClientRect(); }
+    else if (canvas.style.height && r.bottom > needH + 120) { canvas.style.height = ''; canvas.style.width = ''; r = canvas.getBoundingClientRect(); }
+    if (Math.abs(Math.round(r.width) - R.cssW) > 1 || Math.abs(Math.round(r.height) - R.cssH) > 1) resize();
+  }
   R.time += dt;
   try {
     if (G.state === 'title' && title) {
@@ -430,5 +438,5 @@ function loop(now) {
 }
 
 // デバッグ用（ブラウザのコンソールから確認できます）
-window.ANIMON = { G, OW, SE, MENU, BATTLE, createMon, runFlow, buildBarriers, refreshActors };
+window.ANIMON = { G, OW, SE, MENU, BATTLE, createMon, runFlow, buildBarriers, refreshActors, titleCam: () => title && title.C, titleScene: () => title };  // titleCam：アイコン作成ツール用
 boot();
