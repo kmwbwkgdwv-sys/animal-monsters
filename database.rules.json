@@ -3,58 +3,67 @@
     "players": {
       ".read": "auth != null",
       "$pid": {
-        ".write": "auth != null && newData.exists() && newData.child('owner').val() === auth.uid && (!data.exists() || data.child('owner').val() === auth.uid || (newData.child('claimCode').isString() && root.child('transfers').child(newData.child('claimCode').val()).child('pid').val() === $pid))",
+        ".write": "auth != null && newData.exists() && ((!data.exists() && newData.child('owner').val() === auth.uid) || data.child('owner').val() === auth.uid || data.child('devices').child(auth.uid).val() === true || (newData.child('devices').child(auth.uid).val() === true && newData.child('claimCode').isString() && root.child('transfers').child(newData.child('claimCode').val()).child('pid').val() === $pid))",
         ".validate": "newData.hasChildren(['owner', 'name']) && newData.child('name').isString() && newData.child('name').val().length <= 20"
+      }
+    },
+    "saves": {
+      "$pid": {
+        ".read": "auth != null && (root.child('players').child($pid).child('owner').val() === auth.uid || root.child('players').child($pid).child('devices').child(auth.uid).val() === true)",
+        ".write": "auth != null && (root.child('players').child($pid).child('owner').val() === auth.uid || root.child('players').child($pid).child('devices').child(auth.uid).val() === true)",
+        ".validate": "newData.child('data').isString() && newData.child('rev').isNumber()"
       }
     },
     "friends": {
       "$pid": {
-        ".read": "auth != null && root.child('players').child($pid).child('owner').val() === auth.uid",
+        ".read": "auth != null && (root.child('players').child($pid).child('owner').val() === auth.uid || root.child('players').child($pid).child('devices').child(auth.uid).val() === true)",
         "$fpid": {
-          ".write": "auth != null && (root.child('players').child($pid).child('owner').val() === auth.uid || root.child('players').child($fpid).child('owner').val() === auth.uid)"
+          ".write": "auth != null && ((root.child('players').child($pid).child('owner').val() === auth.uid || root.child('players').child($pid).child('devices').child(auth.uid).val() === true) || (root.child('players').child($fpid).child('owner').val() === auth.uid || root.child('players').child($fpid).child('devices').child(auth.uid).val() === true))"
         }
       }
     },
     "requests": {
       "$pid": {
-        ".read": "auth != null && root.child('players').child($pid).child('owner').val() === auth.uid",
+        ".read": "auth != null && (root.child('players').child($pid).child('owner').val() === auth.uid || root.child('players').child($pid).child('devices').child(auth.uid).val() === true)",
         "$fromPid": {
-          ".write": "auth != null && (root.child('players').child($pid).child('owner').val() === auth.uid || root.child('players').child($fromPid).child('owner').val() === auth.uid)"
+          ".write": "auth != null && ((root.child('players').child($pid).child('owner').val() === auth.uid || root.child('players').child($pid).child('devices').child(auth.uid).val() === true) || (root.child('players').child($fromPid).child('owner').val() === auth.uid || root.child('players').child($fromPid).child('devices').child(auth.uid).val() === true))"
         }
       }
     },
     "invites": {
       "$pid": {
-        ".read": "auth != null && root.child('players').child($pid).child('owner').val() === auth.uid",
+        ".read": "auth != null && (root.child('players').child($pid).child('owner').val() === auth.uid || root.child('players').child($pid).child('devices').child(auth.uid).val() === true)",
         "$roomId": {
-          ".write": "auth != null && (root.child('players').child($pid).child('owner').val() === auth.uid || (newData.exists() && newData.child('from').isString() && root.child('players').child(newData.child('from').val()).child('owner').val() === auth.uid))"
+          ".write": "auth != null && ((root.child('players').child($pid).child('owner').val() === auth.uid || root.child('players').child($pid).child('devices').child(auth.uid).val() === true) || (newData.exists() && newData.child('from').isString() && (root.child('players').child(newData.child('from').val()).child('owner').val() === auth.uid || root.child('players').child(newData.child('from').val()).child('devices').child(auth.uid).val() === true)))"
         }
       }
     },
     "codes": {
       "$code": {
         ".read": "auth != null",
-        ".write": "auth != null && !data.exists() && newData.child('pid').isString() && root.child('players').child(newData.child('pid').val()).child('owner').val() === auth.uid"
+        ".write": "auth != null && !data.exists() && newData.child('pid').isString() && (root.child('players').child(newData.child('pid').val()).child('owner').val() === auth.uid || root.child('players').child(newData.child('pid').val()).child('devices').child(auth.uid).val() === true)"
       }
     },
     "rooms": {
       "$roomId": {
-        ".read": "auth != null && (data.child('hostUid').val() === auth.uid || data.child('guestUid').val() === auth.uid || (data.child('guest').isString() && root.child('players').child(data.child('guest').val()).child('owner').val() === auth.uid))",
-        ".write": "auth != null && ((!data.exists() && newData.child('hostUid').val() === auth.uid && newData.child('host').isString() && root.child('players').child(newData.child('host').val()).child('owner').val() === auth.uid) || (data.exists() && (data.child('hostUid').val() === auth.uid || data.child('guestUid').val() === auth.uid || (data.child('guest').isString() && root.child('players').child(data.child('guest').val()).child('owner').val() === auth.uid))))"
+        ".read": "auth != null && (data.child('hostUid').val() === auth.uid || data.child('guestUid').val() === auth.uid || (data.child('guest').isString() && (root.child('players').child(data.child('guest').val()).child('owner').val() === auth.uid || root.child('players').child(data.child('guest').val()).child('devices').child(auth.uid).val() === true)))",
+        ".write": "auth != null && ((!data.exists() && newData.child('hostUid').val() === auth.uid && newData.child('host').isString() && (root.child('players').child(newData.child('host').val()).child('owner').val() === auth.uid || root.child('players').child(newData.child('host').val()).child('devices').child(auth.uid).val() === true)) || (data.exists() && (data.child('hostUid').val() === auth.uid || data.child('guestUid').val() === auth.uid || (data.child('guest').isString() && (root.child('players').child(data.child('guest').val()).child('owner').val() === auth.uid || root.child('players').child(data.child('guest').val()).child('devices').child(auth.uid).val() === true)))))"
       }
     },
     "transfers": {
       "$code": {
         ".read": "auth != null",
-        ".write": "auth != null && (!newData.exists() || (newData.child('pid').isString() && root.child('players').child(newData.child('pid').val()).child('owner').val() === auth.uid))"
+        ".write": "auth != null && ((newData.exists() && newData.child('pid').isString() && (root.child('players').child(newData.child('pid').val()).child('owner').val() === auth.uid || root.child('players').child(newData.child('pid').val()).child('devices').child(auth.uid).val() === true)) || (!newData.exists() && data.child('pid').isString() && (root.child('players').child(data.child('pid').val()).child('owner').val() === auth.uid || root.child('players').child(data.child('pid').val()).child('devices').child(auth.uid).val() === true)))"
       }
     },
     "rankings": {
       ".read": "auth != null",
-      ".indexOn": ["dex"],
+      ".indexOn": [
+        "dex"
+      ],
       "$pid": {
-        ".write": "auth != null && root.child('players').child($pid).child('owner').val() === auth.uid && (!newData.exists() || newData.child('owner').val() === auth.uid)",
-        ".validate": "!newData.exists() || (newData.child('name').isString() && newData.child('name').val().length <= 20 && newData.child('dex').isNumber() && newData.child('dex').val() >= 0 && newData.child('dex').val() <= 200)"
+        ".write": "auth != null && (root.child('players').child($pid).child('owner').val() === auth.uid || root.child('players').child($pid).child('devices').child(auth.uid).val() === true) && (!newData.exists() || newData.child('owner').val() === auth.uid)",
+        ".validate": "newData.child('name').isString() && newData.child('name').val().length <= 20 && newData.child('dex').isNumber() && newData.child('dex').val() >= 0 && newData.child('dex').val() <= 200"
       }
     }
   }

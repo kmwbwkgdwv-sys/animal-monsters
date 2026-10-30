@@ -34,7 +34,7 @@ export async function openMainMenu() {
   const grid = s.body.querySelector('.boxgrid');
   const items = [['🐾', 'パーティー', () => openParty()], ['📦', 'ボックス', () => openBox()], ['📖', '図鑑', () => openDex()], ['🎒', 'バッグ', () => openBag()],
     ['🗺️', 'マップ', () => openMap()], ['🐎', 'ライド', () => openRide()], ['🤝', 'フレンド', async () => (await import('./onlineUI.js')).openFriends()], ['🏆', 'ランキング', async () => (await import('./onlineUI.js')).openRanking()],
-    ['💾', 'セーブ', async () => { save(); toast('セーブしました！'); }], ['⚙️', '設定', () => openSettings(false)], ['🏠', 'タイトルへ', async () => { if (await confirmBox('セーブして タイトル画面に 戻りますか？')) { save(); location.reload(); } }]];
+    ['💾', 'セーブ', async () => { save(); toast('セーブしました！'); try { const ON = await import('../online.js'); if (G.save.pid && ON.isConfigured() && await ON.pushSave(true)) toast('☁️ クラウドにも 保存しました（連携した端末と 共有）'); } catch (e) { /* */ } }], ['⚙️', '設定', () => openSettings(false)], ['🏠', 'タイトルへ', async () => { if (await confirmBox('セーブして タイトル画面に 戻りますか？')) { save(); location.reload(); } }]];
   for (const [ic, nm, fn] of items) {
     const b = el('button', 'bcell', `<div style="font-size:1.8em">${ic}</div><div style="font-weight:800;font-size:.9em">${nm}</div>`);
     b.style.aspectRatio = '1.3';

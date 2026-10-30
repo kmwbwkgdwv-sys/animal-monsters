@@ -352,8 +352,22 @@ export class Scene {
 export function norm3(v) { const l = Math.hypot(v[0], v[1], v[2]) || 1; return [v[0] / l, v[1] / l, v[2] / l]; }
 
 export class Camera {
-  constructor(fov = 45) { this.fov = fov * Math.PI / 180; this.near = 0.5; this.far = 900; this.pos = [0, 30, 30]; this.target = [0, 0, 0]; this.aspect = 1; this.view = M4.ident(); this.proj = M4.ident(); this.vp = M4.ident(); }
-  update() { M4.lookAt(this.pos, this.target, [0, 1, 0], this.view); M4.perspective(this.fov, this.aspect, this.near, this.far, this.proj); M4.mul(this.proj, this.view, this.vp); }
+  constructor(fov = 45) { this.fov = fov * Math.PI / 180; this.maxHFov = 70 * Math.PI / 180; this.near = 0.5; this.far = 900; this.pos = [0, 30, 30]; this.target = [0, 0, 0]; this.aspect = 1; this.view = M4.ident(); this.proj = M4.ident(); this.vp = M4.ident(); }
+  update() {
+    // 横に長い画面（スマホ横向き）では、横の画角が広がりすぎて端がゆがむ（引き伸ばされて見える）。
+    // 横の画角を maxHFov までにおさえ、そのぶんカメラを少し引いて、写る範囲は同じに保つ。
+    let fov = this.fov, eye = this.pos;
+    const lim = 2 * Math.atan(Math.tan(this.maxHFov / 2) / Math.max(0.01, this.aspect));
+    if (lim < fov) {
+      const k = Math.tan(fov / 2) / Math.tan(lim / 2);
+      const t = this.target, p = this.pos;
+      eye = this._eye || (this._eye = [0, 0, 0]);
+      eye[0] = t[0] + (p[0] - t[0]) * k; eye[1] = t[1] + (p[1] - t[1]) * k; eye[2] = t[2] + (p[2] - t[2]) * k;
+      fov = lim;
+    }
+    this.eye = eye;
+    M4.lookAt(eye, this.target, [0, 1, 0], this.view); M4.perspective(fov, this.aspect, this.near, this.far, this.proj); M4.mul(this.proj, this.view, this.vp);
+  }
   project(p, w, h) {
     const m = this.vp; const x = m[0] * p[0] + m[4] * p[1] + m[8] * p[2] + m[12], y = m[1] * p[0] + m[5] * p[1] + m[9] * p[2] + m[13], ww = m[3] * p[0] + m[7] * p[1] + m[11] * p[2] + m[15];
     return [(x / ww * 0.5 + 0.5) * w, (1 - (y / ww * 0.5 + 0.5)) * h, ww];
@@ -694,7 +708,7 @@ export class Renderer {
     const op = this._opaque, tr = this._trans, sk = this._sky, ol = this._ol; op.length = 0; tr.length = 0; sk.length = 0; ol.length = 0;
     const cs = this._cast || (this._cast = []); cs.length = 0;
     const cc = scene.cullCenter, cr = scene.cullRadius;
-    const cp = cam.pos;
+    const cp = cam.eye || cam.pos;
     const doOl = this.outlines && scene.outline;
     const olD = scene.outlineDist;
     const sh = scene.shadow && this.shadowOK && (scene.shadow.strength ?? 1) > 0 ? scene.shadow : null;
@@ -732,7 +746,7 @@ export class Renderer {
     gl.uniformMatrix4fv(L.uVP, false, cam.vp);
     gl.uniform1f(L.uTime, this.time);
     gl.uniform3fv(L.uLight, scene.lightDir); gl.uniform3fv(L.uSun, scene.sun); gl.uniform3fv(L.uShadowC, scene.shadowC); gl.uniform3fv(L.uSky, scene.sky); gl.uniform3fv(L.uGround, scene.ground);
-    gl.uniform3fv(L.uFogCol, scene.fogColor); gl.uniform2f(L.uFog, scene.fogNear, scene.fogFar); gl.uniform3fv(L.uCam, cam.pos);
+    gl.uniform3fv(L.uFogCol, scene.fogColor); gl.uniform2f(L.uFog, scene.fogNear, scene.fogFar); gl.uniform3fv(L.uCam, cam.eye || cam.pos);
     gl.uniform3fv(L.uZenith, scene.zenith); gl.uniform3fv(L.uHorizon, scene.horizon); gl.uniform3fv(L.uWind, scene.wind);
     gl.uniform4fv(L.uCloud, scene.cloudShadow);
     gl.activeTexture(gl.TEXTURE1);

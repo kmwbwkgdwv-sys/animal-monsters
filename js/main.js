@@ -10,11 +10,11 @@ import { LOGO_SVG } from './ui/logo.js';
 import { buildAnimon, animateAnimon, setModelDetail, defaultLook, SKIN, HAIR_COL, CLOTH, HAIR_STYLES, HAIR_JA, HATS, HAT_JA, BOTTOMS, BOTTOM_JA } from './render/models.js';
 import { HumanPreview } from './render/portrait.js';
 import { G, save } from './game/state.js';
-import { loadSettings, saveSettings, hasSave, loadGame, newState, deleteGame } from './game/save.js';
+import { loadSettings, saveSettings, hasSave, loadGame, newState, deleteGame, writeGame } from './game/save.js';
 import { initInput, Input } from './input.js';
 import { audio } from './audio.js';
-import { $, el, esc, UI, openScreen, toast, confirmBox, say, loadingProgress, hideLoading, advance, topScreen, fade, closeAllScreens } from './ui/ui.js';
-import { OW, buildOverworld, updateOverworld, runFlow, buildBarriers, refreshActors } from './game/overworld.js';
+import { $, el, esc, UI, openScreen, toast, confirmBox, say, ask, loadingProgress, hideLoading, advance, topScreen, fade, closeAllScreens } from './ui/ui.js';
+import { OW, buildOverworld, updateOverworld, runFlow, buildBarriers, refreshActors, resetCamera } from './game/overworld.js';
 import * as SE from './game/storyEngine.js';
 import * as MENU from './ui/menus.js';
 import { SPECIES } from './data/species.js';
@@ -25,7 +25,14 @@ const canvas = $('#game');
 let title = null, last = performance.now(), saveTimer = 0;
 
 function pixelRatio() { const dpr = window.devicePixelRatio || 1; return G.settings.light ? Math.min(1, dpr * 0.75) : Math.min(1.75, dpr); }
-function resize() { G.renderer.setSize(window.innerWidth, window.innerHeight, pixelRatio()); }
+// 3D の描画サイズは「画面に実際に表示されているキャンバスの大きさ」に合わせる
+// （スマホ横画面でツールバーの分だけ縦がつぶれて、横に引き伸ばされたように見えるのを防ぐ）
+function resize() {
+  if (!G.renderer) return;
+  const r = canvas.getBoundingClientRect();
+  const w = Math.round(r.width) || window.innerWidth, h = Math.round(r.height) || window.innerHeight;
+  G.renderer.setSize(w, h, pixelRatio());
+}
 
 async function boot() {
   { const lg = $('#loading .logo'); if (lg) lg.innerHTML = LOGO_SVG; }
@@ -38,6 +45,9 @@ async function boot() {
   initPrims();
   resize();
   window.addEventListener('resize', resize);
+  window.addEventListener('orientationchange', () => { setTimeout(resize, 120); setTimeout(resize, 500); });
+  if (window.visualViewport) window.visualViewport.addEventListener('resize', () => requestAnimationFrame(resize));
+  if (window.ResizeObserver) new ResizeObserver(() => resize()).observe(canvas);
   initInput();
   // 最初の操作で音を有効化（iOSは ambient にして他の音楽を止めない）
   const unlock = () => { audio.unlock(); };
@@ -49,14 +59,64 @@ async function boot() {
   // HUDボタン
   $('#btnMenu').onclick = () => { if (G.state === 'world') runFlow(() => MENU.openMainMenu()); };
   $('#btnMap').onclick = () => { if (G.state === 'world') runFlow(() => MENU.openMap()); };
-  document.addEventListener('visibilitychange', () => { if (document.hidden && G.save && G.state === 'world') { save(); import('./online.js').then(m => m.syncTransferSave(true)); } });
-  G.onSaved = () => { import('./online.js').then(m => { m.syncTransferSave(); m.publishRanking(); }); };
+  $('#btnCam').onclick = () => { if (G.state === 'world') { resetCamera(); toast('視点を 元に戻しました（北が上）'); } };
+  // アプリを閉じる・切り替えるときはクラウドにも保存。戻ってきたら、ほかの端末で進めていないか確認
+  let hiddenAt = 0;
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) { hiddenAt = Date.now(); if (G.save && G.state === 'world') { save(); import('./online.js').then(m => m.pushSave(true)); } return; }
+    if (Date.now() - hiddenAt > 3000) cloudResume();
+  });
+  G.onSaved = () => { import('./online.js').then(m => { m.scheduleCloudSave(); m.publishRanking(); }); };
+  import('./online.js').then(m => { m.Online.onConflict = () => cloudResume(); });
   // タイトルの3D（風景とアニモン）を読み込み画面のあいだに作る
   title = await buildTitleScene((p) => loadingProgress(0.1 + p * 0.9, 'タイトルを 準備中…'));
   loadingProgress(1, '');
   hideLoading();
   showTitle();
   requestAnimationFrame(loop);
+  // ほかの端末のデータを読み込んで再起動したときは、そのまま続きから
+  try { if (sessionStorage.getItem('animon_autocont')) { sessionStorage.removeItem('animon_autocont'); setTimeout(() => $('#title .cont')?.click(), 900); } } catch (e) { /* */ }
+}
+
+// ---------- クラウドセーブ（スマホ・パソコンで同じデータ） ----------
+const fmtTime = (sec) => `${Math.floor(sec / 3600)}時間${Math.floor(sec / 60) % 60}分`;
+const fmtAt = (ms) => { if (!ms) return '―'; const d = new Date(ms); return `${d.getMonth() + 1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`; };
+// 両方の端末で別々に進めたとき、どちらを使うか選んでもらう
+async function chooseConflict(local, r) {
+  const ON = await import('./online.js');
+  const a = ON.cloudSummary(local), b = ON.cloudSummary(r.data);
+  const k = await ask(`ほかの端末でも 別に進めた データが あります。\nどちらを 使いますか？\n📱 この端末：${fmtTime(a.playTime)}・図鑑${a.dex}・紋章${a.crests}（${fmtAt(a.saved)}）\n☁️ ほかの端末：${fmtTime(b.playTime)}・図鑑${b.dex}・紋章${b.crests}（${fmtAt(r.rec.at || b.saved)}）`,
+    ['☁️ ほかの端末のデータを使う', '📱 この端末のデータを使う（ほかの端末の進みは消えます）']);
+  if (k === 1) { await ON.forceUseLocal(local); return local; }
+  writeGame(r.data);
+  return r.data;
+}
+// 続きから始める前に、クラウドのほうが新しくないか確認
+async function cloudBeforeStart(st) {
+  if (!st || !st.pid) return st;
+  const ON = await import('./online.js');
+  if (!ON.isConfigured()) return st;
+  toast('☁️ クラウドのデータを 確認中…');
+  const r = await Promise.race([ON.checkCloud(st), new Promise(res => setTimeout(() => res({ status: 'timeout' }), 8000))]);
+  if (r.status === 'newer') { writeGame(r.data); toast('☁️ ほかの端末で 進めたデータを 読み込みました'); return r.data; }
+  if (r.status === 'conflict') return await chooseConflict(st, r);
+  if (r.status === 'unlinked') toast('この端末は データ連携が 解除されています（タイトルの「データ連携」から 連携しなおせます）');
+  return st;
+}
+// 遊んでいる途中（アプリに戻ってきたとき・ほかの端末が先にセーブしたとき）
+let resuming = false;
+async function cloudResume() {
+  if (resuming || !G.save || !G.save.pid || G.state !== 'world' || G.busy) return;
+  const ON = await import('./online.js');
+  if (!ON.isConfigured() || !ON.Online.ready) return;
+  resuming = true;
+  try {
+    const r = await ON.checkCloud();
+    if (G.state !== 'world' || G.busy) return;
+    const reload = (st) => { writeGame(st); try { sessionStorage.setItem('animon_autocont', '1'); } catch (e) { /* */ } location.reload(); };
+    if (r.status === 'newer') runFlow(async () => { await say(['|☁️ ほかの端末で 進めた データが あります。', '|新しい データを 読み込みます。']); reload(r.data); });
+    else if (r.status === 'conflict') runFlow(async () => { const st = await chooseConflict(G.save, r); if (st !== G.save) reload(st); else toast('☁️ この端末の データを クラウドに 保存しました'); });
+  } finally { resuming = false; }
 }
 
 // ---------- タイトル ----------
@@ -135,7 +195,7 @@ async function showTitle() {
     <div class="menu">
       <button class="btn pri new"><span class="ic">✨</span>最初から始める</button>
       <button class="btn cont" ${has ? '' : 'disabled'}><span class="ic">▶</span>続きから始める</button>
-      <button class="btn trans"><span class="ic">🔑</span>引き継ぎコードの発行・アカウント引き継ぎ</button>
+      <button class="btn trans"><span class="ic">🔗</span>データ連携（スマホ・パソコン共通）・引き継ぎ</button>
       <button class="btn set"><span class="ic">⚙️</span>設定</button>
     </div></div><div class="copy">© アニマルモンスター</div><div class="ver">ver 1.2　PC・スマホ（横画面）対応</div>`;
   $('#screens').appendChild(s);
@@ -145,7 +205,12 @@ async function showTitle() {
     tryFullscreen();
     s.remove(); characterCreate();
   };
-  s.querySelector('.cont').onclick = async () => { audio.sfx('select'); tryFullscreen(); s.remove(); await startGame(loadGame(), false); };
+  s.querySelector('.cont').onclick = async (e) => {
+    const b = e.currentTarget; if (b.disabled) return; b.disabled = true;
+    audio.sfx('select'); tryFullscreen();
+    const st = await cloudBeforeStart(loadGame());
+    s.remove(); await startGame(st, false);
+  };
   s.querySelector('.trans').onclick = async () => {
     audio.sfx('select');
     if (!G.save && hasSave()) G.save = loadGame();
@@ -272,6 +337,11 @@ async function startGame(state, isNew) {
   } else {
     audio.playBgm('field');
     toast(`おかえりなさい、${state.name}さん！`);
+  }
+  // 視点操作の案内（最初の1回だけ）
+  if (!G.settings.camHint) {
+    const hint = () => { if (G.state !== 'world') return; if (G.busy) { setTimeout(hint, 3000); return; } toast(Input.touch ? '👆 画面を指で なぞると 視点を 回せます（2本指で ズーム）' : '🖱 マウスで ドラッグ（または Q / E キー）で 視点を 回せます　C：元に戻す'); G.settings.camHint = true; saveSettings(G.settings); };
+    setTimeout(hint, 5000);
   }
   // オンラインが使える設定なら、裏でランキングに自分の成績を載せておく
   setTimeout(() => import('./online.js').then(m => { if (m.isConfigured()) m.ensurePlayer().then(() => m.publishRanking(true)).catch(() => {}); }), 4000);

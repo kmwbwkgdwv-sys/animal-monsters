@@ -158,30 +158,46 @@ async function tradeRoom(id, role) {
   await waitClose(s);
 }
 
-// ---------- 引き継ぎ ----------
+// ---------- データ連携（スマホ・パソコンで同じデータ）・引き継ぎ ----------
 export async function openTransfer(fromTitle) {
-  const s = openScreen('引き継ぎコードの発行・アカウント引き継ぎ');
+  const s = openScreen('データ連携（スマホ・パソコン共通）・引き継ぎ');
+  const synced = ON.Online.lastSync ? `（最後の同期 ${new Date(ON.Online.lastSync).toLocaleTimeString().slice(0, 5)}）` : '';
   s.body.innerHTML = `
-  <div class="card" style="margin-bottom:.8em"><h3 style="margin-top:0">📤 引き継ぎコードを 発行する</h3><p class="muted">この端末の データを 別の端末に 移すための コードを 発行します。発行後も この端末で 遊べますが、セーブのたびに 引き継ぎ用データも 更新されます。コードは 1回 使うと 無効になります。</p>
-  <button class="btn pri issue" ${G.save ? '' : 'disabled'}>コードを発行する</button>${G.save ? '' : '<p class="muted">（タイトル画面から「続きから始める」で データを読み込んでから 発行できます）</p>'}<div class="out"></div></div>
-  <div class="card"><h3 style="margin-top:0">📥 別の端末から 引き継ぐ</h3><p class="muted">別の端末で 発行した 引き継ぎコードを 入力すると、その データを この端末に 読み込みます。<b style="color:var(--ng)">この端末の 今のデータは 上書きされます。</b></p>
-  <div class="row"><input class="textin code grow" placeholder="XXXX-XXXX-XXXX" style="max-width:16em;text-transform:uppercase"><button class="btn red redeem">引き継ぐ</button></div></div>`;
+  <div class="card linkhow" style="margin-bottom:.8em"><b>☁️ しくみ</b><p class="muted" style="margin:.3em 0 0">1つの端末で「連携コード」を発行して、もう1つの端末で入力すると、<b style="color:var(--acc)">両方の端末で 同じデータ</b>を 遊べます。セーブは 自動で クラウドに 保存され、アプリを開いたときに 新しいほうが 読み込まれます（何台でもOK）。</p>
+  ${G.save && G.save.pid ? `<p style="margin:.4em 0 0">この端末のデータ：<b>${esc(G.save.name)}</b>　<span class="muted">${synced}</span> <button class="btn sm syncnow">🔄 今すぐ同期</button></p>` : ''}</div>
+  <div class="card" style="margin-bottom:.8em"><h3 style="margin-top:0">📤 この端末のデータを ほかの端末でも 使う</h3><p class="muted">連携コードを 発行します。ほかの端末の タイトル画面 →「データ連携」で 入力してください。コードは 何回でも 使えます（発行しなおすと 前のコードは 使えなくなります）。</p>
+  <button class="btn pri issue" ${G.save ? '' : 'disabled'}>連携コードを発行する</button>${G.save ? '' : '<p class="muted">（この端末に セーブデータが ありません）</p>'}<div class="out"></div></div>
+  <div class="card"><h3 style="margin-top:0">📥 コードを入力して 連携する</h3><p class="muted">ほかの端末で 発行した 連携コードを 入力すると、その データで 遊べるようになります。以後は 自動で 同期されます。<b style="color:var(--ng)">この端末の 今のデータは 置き換わります。</b></p>
+  <div class="row"><input class="textin code grow" placeholder="XXXX-XXXX-XXXX" style="max-width:16em;text-transform:uppercase" autocomplete="off" autocapitalize="characters"><button class="btn red redeem">連携する</button></div></div>`;
   const out = s.body.querySelector('.out');
   const inp = s.body.querySelector('.code'); inp.onkeydown = (e) => e.stopPropagation();
+  const sn = s.body.querySelector('.syncnow');
+  if (sn) sn.onclick = async () => {
+    sn.disabled = true;
+    try {
+      const r = await ON.checkCloud();
+      if (r.status === 'newer' || r.status === 'conflict') toast('☁️ ほかの端末の 新しいデータが あります。「続きから始める」で 読み込まれます');
+      else if (r.status === 'same' || r.status === 'pushed') toast('☁️ 同期しました');
+      else toast(r.error || '同期できませんでした');
+    } catch (e) { toast(e.message); }
+    sn.disabled = false;
+  };
   s.body.querySelector('.issue').onclick = async () => {
     out.innerHTML = '<p class="muted">発行中……</p>';
     try {
       const code = await ON.issueTransferCode();
-      out.innerHTML = `<p>引き継ぎコード：</p><p style="font-size:1.8em;font-weight:800;letter-spacing:.1em;color:var(--acc)">${esc(code)}</p><p class="muted">このコードは 他の人に 教えないでください。メモやスクリーンショットで 保存しておきましょう。</p>`;
+      out.innerHTML = `<p>連携コード：</p><p style="font-size:1.8em;font-weight:800;letter-spacing:.1em;color:var(--acc);user-select:text;-webkit-user-select:text">${esc(code)}</p><button class="btn sm copy">コピー</button><p class="muted">このコードを知っている人は あなたのデータで 遊べてしまいます。<b>他の人には 教えないでください。</b></p>`;
+      out.querySelector('.copy').onclick = () => navigator.clipboard?.writeText(code).then(() => toast('コピーしました'));
     } catch (e) { out.innerHTML = notReady() + `<p class="muted">${esc(e.message)}</p>`; }
   };
   s.body.querySelector('.redeem').onclick = async () => {
     if (!inp.value.trim()) return;
-    if (!await confirmBox('この端末の データは 上書きされます。よろしいですか？')) return;
+    if (G.save && !await confirmBox('この端末の 今のデータは 置き換わります。よろしいですか？')) return;
     try {
       const data = await ON.redeemTransferCode(inp.value);
       writeGame(data);
-      await say([`|${data.name} さんの データを 引き継ぎました！`, '|タイトル画面に 戻ります。']);
+      await say([`|${data.name} さんの データと 連携しました！`, '|これからは この端末と 同じデータで 遊べます（自動で 同期されます）。']);
+      try { sessionStorage.setItem('animon_autocont', '1'); } catch (e) { /* */ }
       location.reload();
     } catch (e) { toast(e.message || 'エラー'); }
   };

@@ -18,7 +18,7 @@
 /* スマホを横にしたときに文字が勝手に大きくなって画面からはみ出すのを防ぐ */
 html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 html, body { margin: 0; height: 100%; overflow: hidden; background: #000; color: var(--txt); font-family: var(--font); font-size: var(--fs); font-feature-settings: 'palt'; letter-spacing: .02em; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; touch-action: none; overscroll-behavior: none; }
-canvas#game { position: fixed; left: 0; top: 0; width: 100%; height: var(--app-h, 100%); display: block; }
+canvas#game { position: fixed; left: 0; top: var(--app-top, 0px); width: 100%; height: var(--app-h, 100%); display: block; }
 #ui { position: fixed; left: 0; right: 0; top: var(--app-top, 0px); height: var(--app-h, 100%); pointer-events: none; overflow: hidden; }
 #ui > * { pointer-events: auto; }
 #labels, #letterbox, #fade, #flash, #toast, #narr { pointer-events: none !important; }
@@ -414,3 +414,9 @@ b, strong { font-weight: 800; }
 .pcard .ivbar i { position: absolute; left: 0; top: 0; bottom: 0; background: linear-gradient(90deg, #4aa8ff, #b56bff); }
 .pcard .ivbar span { position: relative; font-size: .72em; font-weight: 800; line-height: 1.75; text-shadow: var(--outline-s); }
 @media (max-height: 520px) { .profstats .v { font-size: 1.3em; } .pcard img { width: 4.2em; height: 4.2em; } .rankrow img.lead { width: 2.2em; height: 2.2em; } }
+
+/* コンパス（視点を北向きに戻す） */
+#btnCam { position: relative; }
+#btnCam .needle { position: absolute; inset: 18%; display: block; transition: transform .05s linear; }
+#btnCam .needle i { position: absolute; left: 50%; top: 0; bottom: 0; width: 26%; transform: translateX(-50%); background: linear-gradient(#ff5a5a 0 50%, #fff 50% 100%); clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%); filter: drop-shadow(0 1px 1px rgba(0, 0, 0, .4)); }
+#btnCam::after { content: 'N'; position: absolute; top: -.15em; left: 50%; transform: translateX(-50%); font-size: .45em; font-weight: 900; color: #fff; text-shadow: var(--outline-s); }

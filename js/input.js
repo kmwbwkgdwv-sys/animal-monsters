@@ -4,10 +4,11 @@ import { $ } from './ui/ui.js';
 export const Input = {
   mx: 0, mz: 0, run: false, runToggle: false, keys: new Set(), pressed: new Set(), touch: false,
   wheel: 0,
+  camDX: 0, camDY: 0, // 視点を回す量（ドラッグした距離）
   edge(k) { if (this.pressed.has(k)) { this.pressed.delete(k); return true; } return false; },
   clearEdges() { this.pressed.clear(); },
 };
-const MAP = { KeyW: 'up', ArrowUp: 'up', KeyS: 'down', ArrowDown: 'down', KeyA: 'left', ArrowLeft: 'left', KeyD: 'right', ArrowRight: 'right', ShiftLeft: 'run', ShiftRight: 'run', Space: 'a', Enter: 'a', KeyZ: 'a', KeyE: 'a', KeyX: 'b', Backspace: 'b', Escape: 'menu', KeyM: 'map', Tab: 'menu', KeyR: 'ride', KeyQ: 'menu' };
+const MAP = { KeyW: 'up', ArrowUp: 'up', KeyS: 'down', ArrowDown: 'down', KeyA: 'left', ArrowLeft: 'left', KeyD: 'right', ArrowRight: 'right', ShiftLeft: 'run', ShiftRight: 'run', Space: 'a', Enter: 'a', KeyZ: 'a', KeyX: 'b', Backspace: 'b', Escape: 'menu', KeyM: 'map', Tab: 'menu', KeyR: 'ride', KeyQ: 'camL', KeyE: 'camR', KeyC: 'camReset', PageUp: 'camUp', PageDown: 'camDown' };
 
 export function initInput() {
   window.addEventListener('keydown', (e) => {
@@ -20,6 +21,17 @@ export function initInput() {
   window.addEventListener('keyup', (e) => { const k = MAP[e.code]; if (k) Input.keys.delete(k); });
   window.addEventListener('blur', () => { Input.keys.clear(); Input.mx = Input.mz = 0; });
   window.addEventListener('wheel', (e) => { Input.wheel += Math.sign(e.deltaY); }, { passive: true });
+  // マウスで画面をドラッグ → 視点を回す（左・右どちらのボタンでも）
+  const game = $('#game');
+  let mDrag = null;
+  game.addEventListener('pointerdown', (e) => { if (e.pointerType === 'mouse') mDrag = { x: e.clientX, y: e.clientY }; });
+  window.addEventListener('pointermove', (e) => {
+    if (!mDrag || e.pointerType !== 'mouse') return;
+    if (!e.buttons) { mDrag = null; return; }
+    Input.camDX += e.clientX - mDrag.x; Input.camDY += e.clientY - mDrag.y; mDrag.x = e.clientX; mDrag.y = e.clientY;
+  });
+  window.addEventListener('pointerup', (e) => { if (e.pointerType === 'mouse') mDrag = null; });
+  game.addEventListener('contextmenu', (e) => e.preventDefault());
 
   // タッチのジョイスティック
   const stick = $('#stick'), knob = $('#knob');
@@ -59,7 +71,12 @@ export function initInput() {
     pinch = onCanvas.size === 2 ? { d: pinchDist(), t0: performance.now(), moved: 0 } : null;
   }, { passive: true });
   window.addEventListener('touchmove', (e) => {
-    for (const t of e.changedTouches) { const p = onCanvas.get(t.identifier); if (p) { p.x = t.clientX; p.y = t.clientY; } }
+    for (const t of e.changedTouches) {
+      const p = onCanvas.get(t.identifier); if (!p) continue;
+      // 1本の指で画面をなぞる → 視点を回す
+      if (onCanvas.size === 1) { Input.camDX += t.clientX - p.x; Input.camDY += t.clientY - p.y; }
+      p.x = t.clientX; p.y = t.clientY;
+    }
     if (!pinch || onCanvas.size !== 2) return;
     const d = pinchDist();
     // 指を置いてすぐ（連打）は無視。0.15秒以上かけて 40px 以上広げた・縮めたときだけ

@@ -386,6 +386,36 @@ export async function runFlow(fn) {
 }
 
 // ---------- メインの更新 ----------
+// ---------- 視点の操作（ドラッグ・Q/Eキー・コンパスボタン） ----------
+const PITCH0 = Math.atan2(9.6, 19.5);   // フィールドの基本の見下ろし角
+const PITCH_D0 = Math.atan2(17.5, 10.5); // ダンジョン
+function camPitch(dungeon) {
+  return dungeon ? clamp(PITCH_D0 + (OW.camPitchAdj || 0), 0.8, 1.38) : clamp(PITCH0 + (OW.camPitchAdj || 0), 0.16, 1.3);
+}
+export function resetCamera() { OW.camYaw = 0; OW.camPitchAdj = 0; }
+function updateCamControl(dt) {
+  if (OW.camYaw === undefined) { OW.camYaw = 0; OW.camYawS = 0; OW.camPitchAdj = 0; }
+  const canTurn = !OW.camOverride && G.state === 'world' && !document.querySelector('#screens .screen');
+  const dx = Input.camDX, dy = Input.camDY; Input.camDX = 0; Input.camDY = 0;
+  if (canTurn) {
+    const sens = Input.touch ? 0.0052 : 0.006;
+    OW.camYaw -= dx * sens;
+    OW.camPitchAdj = clamp((OW.camPitchAdj || 0) + dy * sens * 0.5, -0.35, 0.6);
+    if (Input.keys.has('camL')) OW.camYaw += dt * 2.2;
+    if (Input.keys.has('camR')) OW.camYaw -= dt * 2.2;
+    if (Input.keys.has('camUp')) OW.camPitchAdj = clamp(OW.camPitchAdj + dt * 0.8, -0.35, 0.6);
+    if (Input.keys.has('camDown')) OW.camPitchAdj = clamp(OW.camPitchAdj - dt * 0.8, -0.35, 0.6);
+    if (Input.edge('camReset')) resetCamera();
+  }
+  // なめらかに追いつく（角度は近い方向で）
+  const diff = angleDiff(OW.camYawS, OW.camYaw);
+  OW.camTurning = Math.abs(diff) > 0.01 || Math.abs(dx) + Math.abs(dy) > 0;
+  OW.camYawS += diff * Math.min(1, dt * 14);
+  // コンパス（北を指す）
+  const cb = document.getElementById('btnCam');
+  if (cb) { const n = cb.querySelector('.needle'); if (n) n.style.transform = `rotate(${(OW.camYawS * 180 / Math.PI).toFixed(1)}deg)`; }
+}
+
 export function updateOverworld(dt) {
   const P = OW.player; if (!P) return;
   OW.t += dt;
@@ -396,6 +426,8 @@ export function updateOverworld(dt) {
   let moved = 0;
   if (!G.busy && G.state === 'world') {
     const mv = readMove();
+    // 画面の上下左右 → 視点の向きに合わせた地面の方向
+    { const cy = Math.cos(OW.camYawS || 0), sy = Math.sin(OW.camYawS || 0); const x = mv.x * cy + mv.z * sy, z = -mv.x * sy + mv.z * cy; mv.x = x; mv.z = z; }
     if (mv.mag > 0) {
       const run = Input.run && OW.mode === 'walk';
       const spd = (OW.mode === 'walk' ? (run ? SPEED.run : SPEED.walk) : SPEED[OW.mode]) * Math.max(0.35, mv.mag);
@@ -416,6 +448,7 @@ export function updateOverworld(dt) {
     Input.edge('b');
     if (Input.wheel) { OW.zoom = clamp(OW.zoom + Input.wheel * 0.1, 0.55, 1.7); Input.wheel = 0; }
   } else P.state = P.state === 'walk' || P.state === 'run' ? 'idle' : P.state;
+  updateCamControl(dt);
 
   // 高さ
   let gy;
@@ -489,8 +522,9 @@ export function updateOverworld(dt) {
     const far = (G.settings.light ? 130 : 160) * Math.max(0.9, OW.zoom) * (OW.mode === 'fly' ? 1.3 : 1);
     OW.scene.fogNear = far * 0.4; OW.scene.fogFar = far;
     // 見えている範囲（カメラは南から北を見下ろす）に合わせて、描画範囲の中心を少し北へ
-    OW.scene.cullCenter = [P.x, 0, P.z - 26 * OW.zoom]; OW.scene.cullRadius = (OW.mode === 'fly' ? 160 : (G.settings.light ? 105 : 125)) * Math.max(0.9, OW.zoom);
-    if (OW.scene.shadow) { const sh = OW.scene.shadow; sh.center = [P.x, W.heightAt(P.x, P.z), P.z - 6]; sh.radius = 44 * Math.max(1, OW.zoom); sh.strength = OW.mode === 'fly' ? 0.5 : 0.85; }
+    const fx = -Math.sin(OW.camYawS || 0), fz = -Math.cos(OW.camYawS || 0); // 見ている方向（地面）
+    OW.scene.cullCenter = [P.x + fx * 26 * OW.zoom, 0, P.z + fz * 26 * OW.zoom]; OW.scene.cullRadius = (OW.mode === 'fly' ? 160 : (G.settings.light ? 105 : 125)) * Math.max(0.9, OW.zoom);
+    if (OW.scene.shadow) { const sh = OW.scene.shadow; sh.center = [P.x + fx * 6, W.heightAt(P.x, P.z), P.z + fz * 6]; sh.radius = 44 * Math.max(1, OW.zoom); sh.strength = OW.mode === 'fly' ? 0.5 : 0.85; }
     // 草むら・水上エンカウント
     if (moved > 0 && !G.busy && OW.encCool <= 0 && OW.mode !== 'fly' && !OW.noEnc) {
       const info = W.cellInfo(P.x, P.z);
@@ -526,10 +560,17 @@ export function updateOverworld(dt) {
     for (let i = 0; i < 3; i++) { OW.cam.pos[i] = lerp(co.fromPos[i], co.pos[i], k); OW.cam.target[i] = lerp(co.fromLook[i], co.look[i], k); }
   } else {
     const z = OW.zoom * (OW.mode === 'fly' ? 1.35 : 1);
-    // 少し低めの見下ろし＋少し先を見る（遠くの丘や山まで見えて奥行きが出る）
-    const tx = P.x, ty = P.y + 1.2 + (D ? 0 : 0.6 * z), tz = P.z - (D ? 0 : 4.5 * z);
-    const want = D ? [tx, ty + 17.5 * z, tz + 10.5 * z] : [tx, ty + 9.6 * z, tz + 19.5 * z];
-    for (let i = 0; i < 3; i++) OW.cam.pos[i] = lerp(OW.cam.pos[i], want[i], Math.min(1, dt * 6));
+    // 主人公のまわりを回るカメラ（向き＝camYaw、高さの角度＝pitch）。少し先を見ると遠くの丘まで見える
+    const yaw = OW.camYawS || 0, pitch = camPitch(!!D);
+    const ox = Math.sin(yaw), oz = Math.cos(yaw);
+    const d = (D ? 20.4 : 21.7) * z;
+    const ahead = D ? 0 : 4.5 * z * Math.cos(pitch) / Math.cos(PITCH0);
+    const tx = P.x - ox * ahead, ty = P.y + 1.2 + (D ? 0 : 0.6 * z), tz = P.z - oz * ahead;
+    const want = [tx + ox * Math.cos(pitch) * d, ty + Math.sin(pitch) * d, tz + oz * Math.cos(pitch) * d];
+    // 地面にもぐらないように
+    if (!D) want[1] = Math.max(want[1], W.heightAt(want[0], want[2]) + 2.2, 1.5);
+    const kp = Math.min(1, dt * (OW.camTurning ? 14 : 6));
+    for (let i = 0; i < 3; i++) OW.cam.pos[i] = lerp(OW.cam.pos[i], want[i], kp);
     OW.cam.target = [lerp(OW.cam.target[0], tx, Math.min(1, dt * 8)), lerp(OW.cam.target[1], ty, Math.min(1, dt * 8)), lerp(OW.cam.target[2], tz, Math.min(1, dt * 8))];
     if (Math.hypot(OW.cam.pos[0] - want[0], OW.cam.pos[2] - want[2]) > 60) { OW.cam.pos = want; OW.cam.target = [tx, ty, tz]; }
   }
@@ -537,7 +578,7 @@ export function updateOverworld(dt) {
   if (!D && OW.sky) {
     OW.sky.update(dt, OW.cam);
     if (OW.skyTheme) OW.sky.setTheme(OW.skyTheme, Math.min(1, dt * 1.5));
-    if (OW.amb) OW.amb.update(dt, [P.x, (P.y || 0) + 0.5, P.z - 4], OW.scene.wind);
+    if (OW.amb) OW.amb.update(dt, [P.x - Math.sin(OW.camYawS || 0) * 4, (P.y || 0) + 0.5, P.z - Math.cos(OW.camYawS || 0) * 4], OW.scene.wind);
   }
   updatePrompt();
   updateLabels();

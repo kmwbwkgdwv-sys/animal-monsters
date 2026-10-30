@@ -13,11 +13,15 @@
 //   invites/{pid}/{roomId}   届いた対戦・トレードの招待
 //   codes/{フレンドコード}     → { pid }
 //   rooms/{roomId}           対戦・トレードのルーム
-//   transfers/{引き継ぎコード}  引き継ぎ用セーブ
+//   saves/{pid}              セーブデータ（連携したすべての端末で共有・自動同期）
+//   transfers/{連携コード}     → { pid }（ほかの端末をこのデータに連携するためのコード）
 //   rankings/{pid}           ランキング用の公開成績
+//
+//  1つのデータ（pid）に 複数の端末（匿名ログインの uid）を登録できる：players/{pid}/devices/{uid} = true
 // =============================================================
 import { firebaseConfig, FIREBASE_SDK_VERSION, firebaseReady } from './firebase-config.js';
 import { G, save } from './game/state.js';
+import { writeGame } from './game/save.js';
 
 let A = null, R = null, app = null, auth = null, db = null;
 const unsubs = [];
@@ -59,62 +63,152 @@ const list = (obj, key = 'pid') => Object.entries(obj || {}).map(([k, v]) => ({ 
 // 配列は Realtime Database だと {0:…,1:…} で返ることがあるので配列に戻す
 const arr = (v) => Array.isArray(v) ? v.filter(Boolean) : Object.values(v || {});
 
+const isMember = (p) => !!p && (p.owner === Online.uid || !!(p.devices && p.devices[Online.uid]));
 // プレイヤー登録（この端末のセーブに pid とフレンドコードを持たせる）
-export async function ensurePlayer() {
+//  fork: この端末がそのデータに連携されていないとき、新しいデータとして登録しなおす
+export async function ensurePlayer(opts = {}) {
   if (!await initOnline()) throw new Error(Online.error);
   const S = G.save;
   if (S.pid) {
     const data = await val('players', S.pid);
-    if (data) {
-      if (data.owner !== Online.uid) throw new Error('このデータは 別の端末に 引き継がれています。');
-      if (data.name !== S.name) await R.update(ref('players', S.pid), { name: String(S.name).slice(0, 20), updatedAt: now() });
+    if (data && isMember(data)) {
+      const up = {};
+      if (data.name !== S.name) { up.name = String(S.name).slice(0, 20); up.updatedAt = now(); }
+      if (!data.devices || !data.devices[Online.uid]) up['devices/' + Online.uid] = true;
+      if (Object.keys(up).length) await R.update(ref('players', S.pid), up);
       Online.pid = S.pid; S.friendCode = data.code; return data;
     }
+    if (data && !opts.fork) { const e = new Error('この端末は このデータに 連携されていません。ほかの端末で「データ連携コード」を発行して 入力してください。'); e.unlinked = true; throw e; }
   }
   // 新規作成
   const pid = rnd(16);
   let code;
   for (let i = 0; i < 5; i++) { code = friendCode(); if (!await val('codes', code)) break; }
-  await R.set(ref('players', pid), { owner: Online.uid, name: String(S.name).slice(0, 20), code, createdAt: now(), updatedAt: now() });
+  await R.set(ref('players', pid), { owner: Online.uid, name: String(S.name).slice(0, 20), code, devices: { [Online.uid]: true }, createdAt: now(), updatedAt: now() });
   await R.set(ref('codes', code), { pid });
-  S.pid = pid; S.friendCode = code; save();
+  S.pid = pid; S.friendCode = code; S.cloudRev = 0; S.cloudDirty = true; save();
   Online.pid = pid;
   return { name: S.name, code };
 }
 
-// ---------------- 引き継ぎ ----------------
-export async function issueTransferCode() {
-  await ensurePlayer();
+// ---------------- データ連携（スマホ・パソコンで同じデータ）と クラウドセーブ ----------------
+//  ・連携コードを発行した端末と、コードを入力した端末は、同じセーブデータを共有する
+//  ・セーブするたびにクラウド（saves/{pid}）へ送り、起動時・アプリに戻ったときに新しい方を読み込む
+//  ・rev（版の番号）で「どちらが新しいか」を判断。両方で別々に進めたときは どちらを使うか選んでもらう
+const dexOf = (S) => Object.keys(S?.dex?.caught || {}).length;
+// 「進み具合」の指紋：歩いた位置やプレイ時間だけの違いは 変更とみなさない
+const VOLATILE = new Set(['saved', 'playTime', 'pos', 'ry', 'cloudRev', 'cloudDirty', 'cloudHash', 'transferCode', 'friendCode']);
+export function progressHash(S) {
+  const str = JSON.stringify(S, (k, v) => (VOLATILE.has(k) ? undefined : v));
+  let h = 2166136261; for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return (h >>> 0).toString(36) + ':' + str.length;
+}
+const changedSinceSync = (S) => !!S.cloudDirty && progressHash(S) !== S.cloudHash;
+export function cloudSummary(S) { return { playTime: S.playTime || 0, dex: dexOf(S), crests: S.story?.crests || 0, name: S.name, saved: S.saved || 0 }; }
+let pushing = false, pushAgain = false, pushTimer = null, lastPush = 0, saveSeq = 0;
+// セーブのたびに呼ばれる：少しまとめてから送る
+export function scheduleCloudSave() {
+  saveSeq++;
+  if (!Online.ready || !G.save?.pid || Online.pid !== G.save.pid) return;
+  clearTimeout(pushTimer);
+  pushTimer = setTimeout(() => pushSave(), Math.max(1500, 12000 - (Date.now() - lastPush)));
+}
+export async function pushSave(force = false) {
   const S = G.save;
+  if (!S || !S.pid) return false;
+  if (!Online.ready) { if (!force || !isConfigured()) return false; try { await ensurePlayer(); } catch (e) { return false; } }
+  if (Online.pid !== S.pid) return false;
+  if (pushing) { pushAgain = true; return false; }
+  pushing = true; clearTimeout(pushTimer);
+  const prevRev = S.cloudRev || 0, prevDirty = S.cloudDirty, prevHash = S.cloudHash, seq = saveSeq;
+  try {
+    const cur = (await val('saves', S.pid, 'rev')) || 0;
+    if (cur > prevRev) {
+      // ほかの端末が先に新しいデータを送っている → 上書きせずに知らせる
+      Online.conflict = true;
+      if (Online.onConflict) Online.onConflict();
+      return false;
+    }
+    const rev = cur + 1;
+    S.cloudRev = rev; S.cloudDirty = false; S.cloudHash = progressHash(S);
+    const sum = cloudSummary(S);
+    await R.set(ref('saves', S.pid), { data: JSON.stringify(S), rev, at: now(), by: Online.uid, ...sum });
+    lastPush = Date.now();
+    if (seq !== saveSeq) S.cloudDirty = true;
+    writeGame(S);
+    Online.lastSync = Date.now();
+    return true;
+  } catch (e) {
+    console.warn(e); S.cloudRev = prevRev; S.cloudDirty = prevDirty || true; S.cloudHash = prevHash; return false;
+  } finally {
+    pushing = false;
+    if (pushAgain) { pushAgain = false; scheduleCloudSave(); }
+  }
+}
+// クラウドの状態を調べる
+//  返り値 status: 'off'（未設定・未連携） / 'same' / 'pushed'（こちらが新しかったので送った） / 'newer'（クラウドが新しい→data） / 'conflict'（両方で進めた→data） / 'unlinked' / 'error'
+export async function checkCloud(local) {
+  const S = local || G.save;
+  if (!S || !S.pid || !isConfigured()) return { status: 'off' };
+  const keep = G.save; G.save = S;
+  try {
+    await ensurePlayer();
+    const rev = (await val('saves', S.pid, 'rev')) || 0;
+    const mine = S.cloudRev || 0;
+    if (rev <= mine) {
+      if (S.cloudDirty || rev < mine || !rev) { S.cloudRev = rev; await pushSave(true); return { status: 'pushed' }; }
+      return { status: 'same' };
+    }
+    const rec = await val('saves', S.pid);
+    const data = JSON.parse(rec.data);
+    data.cloudRev = rec.rev; data.cloudDirty = false; data.pid = S.pid; data.cloudHash = progressHash(data);
+    return { status: changedSinceSync(S) ? 'conflict' : 'newer', data, rec };
+  } catch (e) {
+    console.warn(e);
+    return { status: e.unlinked ? 'unlinked' : 'error', error: e.message };
+  } finally { G.save = keep || G.save; }
+}
+// 衝突したとき「この端末のデータを使う」：クラウドを上書きする
+export async function forceUseLocal(S) {
+  const rev = (await val('saves', S.pid, 'rev')) || 0;
+  S.cloudRev = rev; S.cloudDirty = true;
+  const keep = G.save; G.save = S;
+  try { return await pushSave(true); } finally { G.save = keep || S; }
+}
+
+// 連携コードの発行（何回でも使える。発行しなおすと前のコードは無効）
+export async function issueTransferCode() {
+  await ensurePlayer({ fork: true });
+  const S = G.save;
+  // いちばん新しいデータをクラウドに置いてから
+  const st = await checkCloud(S);
+  if (st.status === 'newer' || st.status === 'conflict') await forceUseLocal(S);
+  else await pushSave(true);
   if (S.transferCode) { try { await R.remove(ref('transfers', S.transferCode)); } catch (e) { /* 既に無い */ } }
   const code = rnd(4) + '-' + rnd(4) + '-' + rnd(4);
   S.transferCode = code;
-  save();
-  await R.set(ref('transfers', code), { pid: S.pid, save: JSON.stringify(S), at: now() });
+  writeGame(S);
+  await R.set(ref('transfers', code), { pid: S.pid, at: now() });
   return code;
 }
-// セーブ時に引き継ぎデータも最新にする（コード発行済みのときだけ）
-let lastUp = 0;
-export async function syncTransferSave(force = false) {
-  const S = G.save;
-  if (!Online.ready || !S || !S.transferCode || !S.pid) return;
-  if (!force && Date.now() - lastUp < 60000) return;
-  lastUp = Date.now();
-  try { await R.set(ref('transfers', S.transferCode), { pid: S.pid, save: JSON.stringify(S), at: now() }); } catch (e) { console.warn(e); }
-}
+// 昔の版との互換（セーブ時の呼び出し）
+export async function syncTransferSave(force = false) { if (force) return pushSave(true); scheduleCloudSave(); }
+// コードを入力して連携：この端末をそのデータの端末として登録し、クラウドのセーブを読み込む
 export async function redeemTransferCode(code) {
   if (!await initOnline()) throw new Error(Online.error);
   code = code.trim().toUpperCase().replace(/[^0-9A-Z]/g, '');
   if (code.length !== 12) throw new Error('コードは 12文字（4文字×3）です。');
   code = code.slice(0, 4) + '-' + code.slice(4, 8) + '-' + code.slice(8);
   const t = await val('transfers', code);
-  if (!t) throw new Error('引き継ぎコードが 見つかりません。');
-  const data = JSON.parse(t.save);
-  // アカウントの持ち主をこの端末に変更（ルールで「有効な引き継ぎコードを持つ人だけ」許可）
-  await R.update(ref('players', t.pid), { owner: Online.uid, claimCode: code, updatedAt: now() });
-  await R.remove(ref('transfers', code));
-  try { const rk = await val('rankings', t.pid); if (rk) await R.update(ref('rankings', t.pid), { owner: Online.uid }); } catch (e) { /* */ }
-  data.transferCode = null; data.pid = t.pid;
+  if (!t) throw new Error('連携コードが 見つかりません。（発行しなおした場合は 新しいコードを 入力してください）');
+  await R.update(ref('players', t.pid), { ['devices/' + Online.uid]: true, claimCode: code, updatedAt: now() });
+  const rec = await val('saves', t.pid);
+  let data;
+  if (rec && rec.data) { data = JSON.parse(rec.data); data.cloudRev = rec.rev; }
+  else if (t.save) { data = JSON.parse(t.save); data.cloudRev = 0; }   // 古い版で発行したコード
+  else throw new Error('クラウドに セーブデータが ありません。発行した端末で 一度セーブしてください。');
+  data.pid = t.pid; data.cloudDirty = false; data.transferCode = null; data.cloudHash = progressHash(data);
+  Online.pid = t.pid;
   return data;
 }
 

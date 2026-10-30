@@ -132,7 +132,9 @@ export function chapterTitle(text) {
     setTimeout(() => { t.remove(); res(); }, UI.skipping ? 10 : 2000);
   });
 }
-export function loadingProgress(p, msg) { const l = $('#loading'); if (!l) return; l.querySelector('.bar i').style.width = Math.round(p * 100) + '%'; if (msg) l.querySelector('.msg').textContent = msg; }
-export function hideLoading() { const l = $('#loading'); if (l) { l.classList.add('off'); setTimeout(() => l.remove(), 600); } }
+// 読み込み画面（消えかけのものは除いて探す：続けて次の読み込み画面を出しても取り違えないように）
+const curLoading = () => document.querySelector('#loading:not([data-closing])');
+export function loadingProgress(p, msg) { const l = curLoading(); if (!l) return; l.querySelector('.bar i').style.width = Math.round(p * 100) + '%'; if (msg) l.querySelector('.msg').textContent = msg; }
+export function hideLoading() { const l = curLoading(); if (l) { l.dataset.closing = '1'; l.classList.add('off'); setTimeout(() => l.remove(), 600); } }
 
 export function hpClass(r) { return r > 0.5 ? '' : r > 0.2 ? 'mid' : 'low'; }
