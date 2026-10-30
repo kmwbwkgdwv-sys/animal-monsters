@@ -605,3 +605,13 @@ b, strong { font-weight: 800; }
 .crownrow { display: flex; flex-wrap: wrap; gap: .3em .8em; margin-top: .5em; font-size: .78em; color: var(--sub, #aab4e0); }
 .crownrow span:first-child::first-letter { filter: grayscale(1); }
 .crownrow .got { color: #7dffb0; font-weight: 800; }
+/* ランキング：ストーリーの 進み具合 */
+.rankrow .chtag { display: inline-block; margin-left: .5em; padding: 0 .5em; border-radius: 99px; font-size: .7em; font-weight: 800; vertical-align: .12em; background: rgba(90, 209, 255, .2); border: 1px solid rgba(90, 209, 255, .6); color: #cdf2ff; }
+.rankrow .chtag.done { background: rgba(255, 210, 63, .22); border-color: rgba(255, 210, 63, .8); color: #ffe9a0; }
+.profstory { margin: .5em 0 .2em; padding: .5em .8em; border-radius: 12px; background: rgba(8, 14, 44, .45); border: 1.5px solid rgba(160, 185, 255, .3); display: flex; flex-wrap: wrap; align-items: center; gap: .3em .8em; }
+.profstory .t { font-weight: 800; color: var(--acc); }
+.chbar { display: flex; gap: 3px; flex: 1 1 100%; }
+.chbar i { flex: 1; height: 1.35em; border-radius: 6px; background: rgba(255, 255, 255, .08); font-style: normal; font-size: .62em; display: grid; place-items: center; color: #8a94c0; }
+.chbar i.done { background: linear-gradient(#7dffb0, #2fbf71); color: #053; font-weight: 800; }
+.chbar i.now { background: linear-gradient(#fff3a0, #ffc83a); color: #4a2400; font-weight: 900; box-shadow: 0 0 6px rgba(255, 210, 63, .8); }
+.qrow.done2 { border-color: rgba(125, 255, 176, .5); }

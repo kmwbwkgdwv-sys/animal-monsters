@@ -101,6 +101,8 @@ export async function openJournal() {
       </div>
       <h4 style="margin:.8em 0 .3em">サイドストーリー <span class="muted" style="font-size:.8em;font-weight:400">クリア ${qs.filter(x => x.i.state === 'done').length}/${qs.length}</span></h4>
       ${qs.map(qrow).join('')}
+      <h4 style="margin:.8em 0 .3em">ダンジョン <span class="muted" style="font-size:.8em;font-weight:400">何度でも 周回できる（入るたびに 形が 変わり、主と 宝箱が 復活）</span></h4>
+      ${Object.entries(DUNGEONS).map(([id, d]) => { const open = isUnlocked(d.region) && (!d.post || G.save.postGame); const n = (G.save.runs || {})[id] || (G.save.cleared[id] ? 1 : 0); return `<div class="qrow ${open ? (n ? 'done2' : '') : 'locked'}"><div class="grow"><div class="nm">${open ? esc(d.name) : '？？？'} <span class="muted" style="font-size:.8em">推奨Lv${d.rec + Math.min(10, ((G.save.runs || {})[id] || 0) * 2)}</span></div><div class="ds">${open ? (n ? `クリア ${n}回${(G.save.bossCaught || {})[id] ? '・主を なつかせた' : ''}` : 'まだ クリアしていない') : 'ストーリーを 進めると 行けるようになる'}</div></div>${open ? `<button class="btn sm dmap" data-id="${id}">🗺️ 地図</button>` : ''}</div>`; }).join('')}
       <h4 style="margin:.8em 0 .3em">おつかい <span class="muted" style="font-size:.8em;font-weight:400">${act.length}件 引き受け中・完了 ${G.save.errandsDone || 0}回</span></h4>
       ${act.map(e => { const pr = ERM.reqProgress(e.g, e.s, e.req); return `<div class="qrow"><div class="grow"><div class="nm">${esc(ERM.reqSummary(e.req))}</div><div class="ds">${esc(ERM.TOWN_NAME[e.g.town])}の ${esc(e.g.name)}　${pr.ok ? '✅ 報告できる' : esc(pr.txt)}</div></div></div>`; }).join('') || '<p class="muted">町の 人の 頭の上に 🧺 が 出ていたら 話しかけてみよう。</p>'}
       <div class="row" style="margin-top:.4em"><button class="btn sm errs">🧺 おつかいの 画面を 開く</button></div>`;
@@ -108,6 +110,7 @@ export async function openJournal() {
     if (sm) sm.onclick = () => openMap({ x: si.pos[0], z: si.pos[1], label: si.dest, obj: si.obj, title: 'ストーリーの 目的地' });
     s.body.querySelectorAll('.qmap').forEach(b => b.onclick = () => { const { q, i } = qs[+b.dataset.k]; openMap({ x: i.pos[0], z: i.pos[1], label: q.name, obj: `${q.name}：${i.obj}`, title: 'サイドストーリー' }); });
     s.body.querySelector('.errs').onclick = async () => { await openErrands(); if (!s.closed) render(); };
+    s.body.querySelectorAll('.dmap').forEach(b => b.onclick = () => { const d = DUNGEONS[b.dataset.id]; openMap({ x: d.pos[0], z: d.pos[1], label: d.name, obj: `${d.name}（推奨Lv${d.rec}）`, title: 'ダンジョン' }); });
   };
   render();
   await waitClose(s);

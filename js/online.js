@@ -23,6 +23,7 @@
 import { firebaseConfig, FIREBASE_SDK_VERSION, firebaseReady } from './firebase-config.js';
 import { G, save } from './game/state.js';
 import { writeGame } from './game/save.js';
+import { STEPS } from './data/story.js';
 
 let A = null, R = null, app = null, auth = null, db = null;
 const unsubs = [];
@@ -228,6 +229,8 @@ export function profileSummary() {
     owned: all.length,
     crests: S.story?.crests || 0,
     clear: !!S.postGame,
+    // ストーリーの 進み具合（第何章か。12 = クリア）
+    ch: S.postGame ? 12 : (STEPS[Math.min(S.story?.step || 0, STEPS.length - 1)]?.ch || 1),
     hours: Math.floor((S.playTime || 0) / 3600),
     party: (S.party || []).slice(0, 6).map(m => ({ sp: m.sp, lv: m.lv, shiny: !!m.shiny, nick: String(m.nick || '').slice(0, 12), iv: IVK.reduce((a, k) => a + (m.iv?.[k] || 0), 0) })),
   };

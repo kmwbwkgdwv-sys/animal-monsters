@@ -2,6 +2,7 @@
 import * as ON from '../online.js';
 import { G, save, giveMon, registerDex } from '../game/state.js';
 import { SPECIES } from '../data/species.js';
+import { CHAPTERS } from '../data/story.js';
 import { typeBadge } from '../data/types.js';
 import { calcStats, monName, ivTotal, ivRank, ivMul, cloneMon, healMon, maxHp } from '../game/mon.js';
 import { MOVES } from '../data/moves.js';
@@ -278,7 +279,7 @@ export async function openRanking() {
     s.body.innerHTML = `
       <div class="rankme card"><div class="rk">${R.myRank ? R.myRank + '<small>位</small>' : '―'}</div>
         <div class="grow"><div class="nm">${esc(me.name)}<span class="muted">（あなた）</span></div>
-        <div class="muted">図鑑登録 <b>${me.dex}</b>匹　✨色違い ${me.shiny}　💎個体値MAX ${me.ivMax}${R.total ? `　／ 参加 ${R.total}人` : ''}</div></div></div>
+        <div class="muted">図鑑登録 <b>${me.dex}</b>匹　📜 ${chText(me)}　✨色違い ${me.shiny}　💎個体値MAX ${me.ivMax}${R.total ? `　／ 参加 ${R.total}人` : ''}</div></div></div>
       <p class="muted" style="margin:.4em 0">図鑑に登録した（なつかせた）アニモンの数で 順位が決まります。名前を押すと、その人のパーティーや記録が 見られます。</p>
       <div class="ranklist"></div>`;
     const list = s.body.querySelector('.ranklist');
@@ -289,7 +290,7 @@ export async function openRanking() {
       const row = el('button', 'rankrow' + (mine ? ' mine' : '') + (r.rank <= 3 ? ' top' + r.rank : ''), `
         <div class="rk">${r.rank <= 3 ? MEDAL[r.rank - 1] : r.rank}</div>
         <img class="lead" src="">
-        <div class="grow"><div class="nm">${esc(r.name || '???')}${r.clear ? ' <span class="clr">★</span>' : ''}</div>
+        <div class="grow"><div class="nm">${esc(r.name || '???')}${r.clear ? ' <span class="clr">★</span>' : ''}<span class="chtag${r.clear || r.ch >= 12 ? ' done' : ''}">📜 ${chText(r)}</span></div>
           <div class="bar"><i style="width:${Math.round(r.dex / top * 100)}%"></i></div></div>
         <div class="num"><b>${r.dex}</b><small>匹</small></div>`);
       const lead = r.party && r.party[0];
@@ -303,6 +304,12 @@ export async function openRanking() {
   await load();
   await waitClose(s);
 }
+// ストーリーの 進み具合（ランキング・記録の画面用）
+const chText = (r, long = false) => {
+  if (r.clear || r.ch >= 12) return long ? 'ストーリー クリア！' : 'クリア';
+  if (!r.ch) return '―';
+  return long ? `第${r.ch}章「${CHAPTERS[r.ch] || ''}」` : `第${r.ch}章`;
+};
 function portraitAsyncSafe(sp, shiny, img) {
   import('../render/portrait.js').then(m => m.portraitAsync(sp, shiny, false, (url) => { img.src = url; }));
 }
@@ -319,6 +326,8 @@ async function openProfile(r) {
       <div class="st"><div class="v">${r.seen ?? '―'}</div><div class="k">👀 見つけた数</div></div>
       <div class="st"><div class="v">${r.crests ?? 0}<small>/8</small></div><div class="k">🏅 紋章</div></div>
     </div>
+    <div class="profstory"><b>📜 ストーリー</b><span class="t">${chText(r, true)}</span>
+      <div class="chbar">${Array.from({ length: 11 }, (_, i) => { const n = i + 1, c = r.clear || r.ch >= 12 ? 'done' : !r.ch ? '' : n < r.ch ? 'done' : n === r.ch ? 'now' : ''; return `<i class="${c}" title="第${n}章">${n}</i>`; }).join('')}</div></div>
     <p class="muted" style="margin:.3em 0 .5em">${r.clear ? '★ ストーリークリア済み　' : ''}${r.owned != null ? `持っているアニモン ${r.owned}匹　` : ''}${r.hours != null ? `プレイ時間 ${r.hours}時間以上` : ''}</p>
     <h3 style="margin:.2em 0 .4em">パーティー編成</h3>
     <div class="profparty">${party.length ? '' : '<p class="muted">パーティーの情報が ありません</p>'}</div>`;

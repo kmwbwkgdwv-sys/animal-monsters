@@ -14,7 +14,7 @@ import { DESIGN } from '../data/designs.js';
 import { NPCS, LOOKS, QUESTS, STEPS } from '../data/story.js';
 import { ITEMS } from '../data/items.js';
 import { createMon, bossIv } from './mon.js';
-import { G, isUnlocked, addItem, save, itemName } from './state.js';
+import { G, isUnlocked, addItem, addMoney, save, itemName } from './state.js';
 import { Input, readMove } from '../input.js';
 import { audio } from '../audio.js';
 import { $, el, esc, toast, say, confirmBox, fade, UI, glintAt } from '../ui/ui.js';
@@ -123,7 +123,7 @@ export async function buildOverworld(progress) {
     g.box(3.8, 4.6, 0.3, [0.03, 0.03, 0.05], 0, 2.3, 1.8);
     const n = new Node(g.build(), { mat: MAT.building }); n.setPos(x, h, z); S.add(n);
     W.boxes.push({ x0: x - 6, x1: x + 6, z0: z - 10, z1: z + 1 });
-    OW.trig.push({ kind: 'dungeon', id, x, z: z + 3.5, r: 3, label: d.name + `（推奨Lv${d.rec}）`, ly: 8 });
+    OW.trig.push({ kind: 'dungeon', id, x, z: z + 3.5, r: 3, label: d.name + `（推奨Lv${d.rec}）`, baseLabel: d.name, rec: d.rec, ly: 8 });
   }
   // いにしえの祭壇（聖域の中央）と星の祭壇（奥地）
   for (const [ax, az, big] of [[ALTAR[0], ALTAR[1], 1], [0, 30, 0]]) {
@@ -358,8 +358,11 @@ export function stopRide(silent = false) {
 function curScene() { return OW.dungeon ? OW.dscene : OW.scene; }
 
 // ---------- 地域レベル ----------
+// ダンジョンの 周回：クリアするたびに 少しずつ 強くなる（最大 +10）
+export const dungeonRuns = (id) => (G.save.runs || {})[id] || 0;
+const runBonus = (id) => Math.min(10, dungeonRuns(id) * 2);
 export function levelRangeAt(x, z) {
-  if (OW.dungeon) return DUNGEONS[OW.dungeon.id].lv;
+  if (OW.dungeon) { const [a, b] = DUNGEONS[OW.dungeon.id].lv, k = runBonus(OW.dungeon.id); return [Math.min(99, a + k), Math.min(99, b + k)]; }
   let r = G.world.regionAt(x, z);
   if (r === 'sea') r = Math.hypot(x, z) < SANCT_R + 40 ? 'sanctuary' : ringAt(x, z).id;
   if (r === 'start') return REGIONS.start.lv;
@@ -856,11 +859,14 @@ export async function warpTo(stoneId) {
 async function dungeonEnter(id) {
   const d = DUNGEONS[id];
   if (d.post && !G.save.postGame) { await say(['|強い力で 封印されている……。（ストーリークリア後に 入れる）']); return; }
-  if (!await confirmBox(`${d.name}（推奨Lv${d.rec}）に 入りますか？`)) return;
+  const runs = dungeonRuns(id);
+  if (!await confirmBox(runs ? `${d.name}（推奨Lv${d.rec + runBonus(id)}）に 入りますか？\n周回 ${runs + 1}回目：入るたびに 中の形が 変わり、主と 宝箱が 復活します（クリアするほど 少し強く、ごほうびも 良くなる）` : `${d.name}（推奨Lv${d.rec}）に 入りますか？`)) return;
   stopRide(true);
   await fade(true, 400);
   OW.saveOut = [OW.player.x, OW.player.z];
-  const Dg = new Dungeon(id, d, hashStr(id) + 7);
+  // 周回するたびに 迷路の形が 変わる（1回目は いつもの形）
+  const Dg = new Dungeon(id, d, hashStr(id) + 7 + runs * 7919 + (runs ? Math.floor(Math.random() * 1000) : 0));
+  Dg.runs = runs;
   Dg.opened = new Set();
   const S = new Scene();
   S.bg = Dg.theme.bg.slice(); S.fogColor = Dg.theme.bg.slice(); S.fogNear = 18; S.fogFar = 55;
@@ -875,8 +881,8 @@ async function dungeonEnter(id) {
     const n = new Node(chestGeo(), { emis: [0.08, 0.05, 0] }); n.setPos(c[0], 0, c[1]); n.rot[1] = (i % 4) * Math.PI / 2; S.add(n);
     OW.dtrig.push({ kind: 'chest', x: c[0], z: c[1], r: 2.4, i, node: n });
   });
-  // 主は なつかせる（仲間にする）まで 何度でも 現れる
-  if (!G.save.cleared[id] || !(G.save.bossCaught || {})[id]) {
+  // 主は 入るたびに 現れる（周回するほど 強い）。何度でも なつかせられる
+  {
     const B = DUNGEON_BOSS[id];
     const M = buildAnimon(BY_NAME[B[0]].id, false); M.root.setPos(Dg.boss[0], 0, Dg.boss[1]); M.root.rot[1] = Math.PI; S.add(M.root);
     OW.dtrig.push({ kind: 'boss', x: Dg.boss[0], z: Dg.boss[1], r: 3.5, M });
@@ -892,14 +898,22 @@ async function dungeonEnter(id) {
   audio.playBgm('dungeon');
   G.scene = S;
   await fade(false, 400);
-  await say([`|${d.name} に 入った。いちばん奥に 何かが いるようだ……`]);
+  await say([runs ? `|${d.name} に 入った。（周回 ${runs + 1}回目）道の形が 前と ちがう……！ いちばん奥で 主が 待っている。` : `|${d.name} に 入った。いちばん奥に 何かが いるようだ……`]);
+}
+// 周回の ごほうび（周回するほど 良い 道具が 出やすい）
+function runReward(runs) {
+  const tiers = [['superherb', 'revive', 'ppdrop', 'food3'], ['fullmed', 'food4', 'candy', 'h_berry', 'h_clear'], ['candy', 'candy', 'h_claw', 'h_belt', 'h_glass', 'h_spike', 'h_bread'], ['scroll', 'candy', 'h_orb', 'h_band', 'h_shoes', 'h_vest', 'h_charm']];
+  const t = Math.min(tiers.length - 1, Math.floor(Math.random() * Math.min(tiers.length, 1 + Math.floor(runs / 2))));
+  const pool = tiers[t];
+  return pool[Math.floor(Math.random() * pool.length)];
 }
 export const DUNGEON_BOSS = { ruins: ['イニシエ', 22], pyramid: ['ホウタイオウ', 38], icecave: ['ヒョウショウ', 55], skytower: ['ドラコンロード', 68], lavacave: ['マグマジン', 79], abyss: ['ヤミノオウ', 98] };
 async function dungeonBoss() {
   const id = OW.dungeon.id;
-  const [nm, lv] = DUNGEON_BOSS[id];
+  const [nm, lv0] = DUNGEON_BOSS[id];
+  const runs = dungeonRuns(id), lv = Math.min(99, lv0 + runBonus(id));
   const again = G.save.cleared[id];
-  await say([`|${DUNGEONS[id].name}の 主 ${nm} が 立ちはだかった！`, '|（主は「つかまえる」で なつかせることが できる。個体値は すべて 6以上！）']);
+  await say([`|${DUNGEONS[id].name}の 主 ${nm}${runs ? `（Lv${lv}・周回 ${runs + 1}回目）` : ''} が 立ちはだかった！`, '|（主は「つかまえる」で なつかせることが できる。個体値は すべて 6以上！）']);
   const mon = createMon(BY_NAME[nm].id, lv, { iv: bossIv(), shiny: false });
   mon.boss = true;
   const res = await startWildBattle(mon, { biome: DUNGEONS[id].theme, boss: true });
@@ -910,10 +924,18 @@ async function dungeonBoss() {
     if (OW.dbossM) { OW.dscene.root.remove(OW.dbossM.root); OW.dbossM = null; }
     OW.dtrig = OW.dtrig.filter(t => t.kind !== 'boss');
     const lines = [];
-    if (first) { const money = lv * 100; G.save.money += money; lines.push(`|${DUNGEONS[id].name} を 攻略した！`, `|${money}円 を 手に入れた！`); }
-    if (res === 'win') lines.push(`|${nm}は 去っていった……。（次に ダンジョンに 入ったとき、また 挑めます）`);
+    G.save.runs = G.save.runs || {}; G.save.runs[id] = runs + 1;
+    if (first) { const money = lv * 100; addMoney(money); lines.push(`|${DUNGEONS[id].name} を 攻略した！`, `|${money}円 を 手に入れた！`); }
+    else {
+      // 周回の ごほうび：少しの お金と、周回するほど 良くなる 道具
+      const money = lv * 25; addMoney(money);
+      const it = runReward(runs);
+      addItem(it, 1);
+      lines.push(`|${DUNGEONS[id].name} を また 攻略した！（クリア ${runs + 1}回目）`, `|${money}円 と ${itemName(it)} を 手に入れた！`);
+    }
+    if (res === 'win') lines.push(`|${nm}は 去っていった……。（次に 入ったとき、もっと 強くなって また 現れる）`);
     if (lines.length) await say(lines);
-    if (first) SE.onDungeonClear(id);
+    SE.onDungeonClear(id);
     save();
     if (await confirmBox('入り口まで 戻りますか？')) await exitDungeon();
   }
@@ -958,7 +980,7 @@ function updateLabels() {
         if (!t.label) continue;
         const d = Math.hypot(t.x - P.x, t.z - P.z);
         if (d > 32) continue;
-        show(t.lx ?? t.x, gr(t.x, t.z) + (t.ly || 3), t.lz ?? t.z, t.label);
+        show(t.lx ?? t.x, gr(t.x, t.z) + (t.ly || 3), t.lz ?? t.z, t.kind === 'dungeon' && dungeonRuns(t.id) ? `${t.baseLabel}（推奨Lv${t.rec + Math.min(10, dungeonRuns(t.id) * 2)}・クリア${dungeonRuns(t.id)}回）` : t.label);
       }
       for (const n of OW.npcs) {
         const d = Math.hypot(n.x - P.x, n.z - P.z); if (d > 26) continue;
