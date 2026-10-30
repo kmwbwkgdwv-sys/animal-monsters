@@ -129,6 +129,10 @@ export class World {
     this.flora = getFlora(this.light);
     this.small = getSmallFlora(this.light);
     for (const l of this.flora.crystal.concat(this.flora.goldcrystal, this.flora.purplecrystal)) l.mat = MAT.glossy;
+    // 障害物の種類（木・岩など）。おつかいの素材集めに使う
+    const F = this.flora;
+    this._kindOf = new Map([[F.round, 'tree'], [F.pine, 'tree'], [F.autumn, 'tree'], [F.blossom, 'tree'], [F.snowpine, 'tree'], [F.dead, 'dead'],
+      [F.bush, 'bush'], [F.rock, 'rock'], [F.mush, 'mush'], [F.glowmush, 'mush'], [F.cactus, 'cactus'], [F.crystal, 'crystal'], [F.goldcrystal, 'crystal'], [F.purplecrystal, 'crystal']]);
     for (let j = 0; j <= N; j++) for (let i = 0; i <= N; i++) {
       const x = i * CELL - HALF, z = j * CELL - HALF;
       let h = rawHeight(x, z);
@@ -347,10 +351,24 @@ export class World {
     this.node.add(node);
     return { node };
   }
-  _addObst(x, z, rad) {
+  _addObst(x, z, rad, k = null) {
     const key = this.toCell(x) + ',' + this.toCell(z);
     if (!this.obst.has(key)) this.obst.set(key, []);
-    this.obst.get(key).push({ x, z, r: rad });
+    this.obst.get(key).push({ x, z, r: rad, k });
+  }
+  // いちばん近い（ふちまでの距離が maxD 以内の）種類つき障害物
+  nearestObst(x, z, maxD = 1.2, ok = null) {
+    const ci = this.toCell(x), cj = this.toCell(z);
+    let best = null, bd = 1e9;
+    for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
+      const l = this.obst.get((ci + di) + ',' + (cj + dj));
+      if (l) for (const o of l) {
+        if (!o.k || (ok && !ok(o))) continue;
+        const d = Math.hypot(x - o.x, z - o.z) - o.r;
+        if (d < maxD && d < bd) { bd = d; best = o; }
+      }
+    }
+    return best;
   }
   // 原型を置く（少し埋めて、向き・大きさ・色味をばらつかせる）
   //  インスタンス描画が使えるときは位置だけ記録し、使えないときは頂点を複製する
@@ -373,7 +391,7 @@ export class World {
     const v = 0.92 + r() * 0.16;
     const t = tint ? [tint[0] * v, tint[1] * v, tint[2] * v] : [v, v, v];
     this._put(p, x, h - 0.15, z, r() * Math.PI * 2, s, t);
-    if (obstR) this._addObst(x, z, p.r * s * obstR / 0.8);
+    if (obstR) this._addObst(x, z, p.r * s * obstR / 0.8, this._kindOf.get(list) || null);
   }
   _stampTree(gb, list, x, h, z, s, r) { this._stampProto(gb, list, x, h, z, s, r, 0.8, null, [0.95 + r() * 0.1, 0.95 + r() * 0.1, 0.92 + r() * 0.1]); }
   _stampBush(gb, x, h, z, s, r) { this._stampProto(gb, this.flora.bush, x, h, z, s * 0.9, r, 0.7); }
@@ -386,7 +404,7 @@ export class World {
     gb.sway(0.5);
     for (let k = 0; k < 6; k++) { const a = k / 6 * Math.PI * 2; gb.setMatrix(M4.fromTRS([x + 0.55 * s, h + 4.5 * s, z], [0.45, a, 0], [2.4 * s, 1, 0.9 * s])).quad([0, 0, -0.5], [1, -0.35, -0.1], [1, -0.35, 0.1], [0, 0, 0.5], [0.3, 0.72, 0.25]).quad([0, 0, 0.5], [1, -0.35, 0.1], [1, -0.35, -0.1], [0, 0, -0.5], [0.24, 0.6, 0.2]).setMatrix(null); }
     gb.sway(0);
-    this._addObst(x, z, 0.6 * s);
+    this._addObst(x, z, 0.6 * s, 'tree');
   }
   _pillar(gb, x, h, z, s, c, r) { const hh = (4 + r() * 6) * s; gb.box(2.2 * s, hh, 2.2 * s, c, x, h + hh / 2 - 0.3, z); gb.box(2.6 * s, 0.6 * s, 2.6 * s, mixRgb(c, [1, 1, 1], 0.15), x, h + hh, z); for (let k = 1; k < 3; k++) gb.box(2.3 * s, 0.18 * s, 2.3 * s, mixRgb(c, [0, 0, 0], 0.15), x, h + hh * k / 3, z); this._addObst(x, z, 1.5 * s); }
   _deadbush(gb, x, h, z, r) { for (let k = 0; k < 4; k++) gb.setMatrix(M4.fromTRS([x, h, z], [0.6, k * 1.6 + r(), 0], [1, 1, 1])).cylinder(0.03, 0.06, 0.9, [0.66, 0.52, 0.32], 0, 0, 0, 3, false).setMatrix(null); }

@@ -6,14 +6,27 @@ import { uid } from '../engine/util.js';
 export const MAX_LV = 99;
 export const expForLevel = (L) => L <= 1 ? 0 : L * L * L;
 
+// ---- 能力値 ----
+//  種族ごとに 基本の HP・攻撃・防御・素早さ（種族値）が決まっていて、
+//  個体値（1〜15）は 7.5 を基準に ±で 種族値を 少しだけ 上げ下げする。
+//   個体値15 → 種族値 +9%、個体値1 → 種族値 −7.8%（1あたり 1.2%）
+//  インフレしないよう、平均的な個体（7.5）は 今までと ほぼ同じ強さ。
+export const IV_MIN = 1, IV_MAX = 15, IV_MID = 7.5, IV_STEP = 0.012;
+export const ivMul = (iv) => 1 + (iv - IV_MID) * IV_STEP;
+// 個体値で調整したあとの種族値（表示用は小数1けた）
+export function adjBase(mon) {
+  const s = SPECIES[mon.sp], o = {};
+  for (const k of ['hp', 'atk', 'def', 'spe']) o[k] = s.base[k] * ivMul(mon.iv[k]);
+  return o;
+}
 export function calcStats(mon, lvOverride = null) {
-  const s = SPECIES[mon.sp], L = lvOverride || mon.lv, iv = mon.iv;
-  const f = (b, i) => Math.floor((2 * b + 1.5 * i) * L / 100);
+  const L = lvOverride || mon.lv, b = adjBase(mon);
+  const f = (x) => Math.floor((2 * x + 11) * L / 100);
   return {
-    hp: f(s.base.hp, iv.hp) + L + 10,
-    atk: f(s.base.atk, iv.atk) + 5,
-    def: f(s.base.def, iv.def) + 5,
-    spe: f(s.base.spe, iv.spe) + 5,
+    hp: f(b.hp) + L + 10,
+    atk: f(b.atk) + 5,
+    def: f(b.def) + 5,
+    spe: f(b.spe) + 5,
   };
 }
 export function maxHp(mon, lvo) { return calcStats(mon, lvo).hp; }
@@ -33,10 +46,14 @@ export function legendIv(r = Math.random) {
   const v = () => LEGEND_IV_MIN + Math.floor(r() * (16 - LEGEND_IV_MIN));
   return { atk: v(), def: v(), hp: v(), spe: v() };
 }
+// ダンジョンの主の個体値：4つとも 6〜15
+export function bossIv(r = Math.random) { const v = () => 6 + Math.floor(r() * 10); return { atk: v(), def: v(), hp: v(), spe: v() }; }
 export function createMon(spId, lv, o = {}) {
   const r = o.rng || Math.random;
   const s = SPECIES[spId];
-  const iv = o.iv || (s.legend ? legendIv(r) : { atk: Math.floor(r() * 16), def: Math.floor(r() * 16), hp: Math.floor(r() * 16), spe: Math.floor(r() * 16) });
+  // 個体値は 1〜15 の抽選（7.5 が まんなか）
+  const v = () => IV_MIN + Math.floor(r() * (IV_MAX - IV_MIN + 1));
+  const iv = o.iv || (s.legend ? legendIv(r) : { atk: v(), def: v(), hp: v(), spe: v() });
   const shiny = s.legend ? false : (o.shiny ?? (r() < 0.001));
   const mon = {
     uid: o.uid || uid('m'), sp: spId, nick: o.nick || '', lv, exp: expForLevel(lv), iv,

@@ -308,11 +308,17 @@ export class BattleView {
     const c = col || mixRgb(this.pal.pad, [1, 1, 1], 0.6);
     for (let i = 0; i < count; i++) { const a = i / count * Math.PI * 2; const n = this.particle(x + Math.cos(a) * 0.9, y + 0.15, z + Math.sin(a) * 0.9, Math.cos(a) * 2.4, 0.5 + Math.random() * 0.6, Math.sin(a) * 2.4, c, 0.45, 0.2, PRIM.sphereHi, -1.2, { grow: 2.2, drag: 3 }); n.maxA = 0.55; }
   }
+  // 色違いの登場：キラーン！（光の輪・星のはじけ・大きな光の十字）
   sparkle(side, slot) {
     const e = this.mons[this.key(side, slot)]; if (!e) return Promise.resolve();
     const [x, y0, z] = e.base; const h = e.M.height;
-    for (let i = 0; i < 22; i++) setTimeout(() => this.particle(x + (Math.random() - 0.5) * 2.6, y0 + h * (0.2 + Math.random()), z + (Math.random() - 0.5) * 2.6, 0, 1.2, 0, [1, 0.95, 0.5], 0.9, 0.38, PRIM.star, 0), i * 40);
-    return this.wait(900);
+    const top = [x, y0 + h * 0.75, z];
+    if (this.onGlint) this.onGlint(top);
+    this.ring(x, y0 + 0.15, z, [1, 0.92, 0.45], 0.4, 3.4, 0.55);
+    this.ring(top[0], top[1], top[2], [1, 1, 1], 0.2, 2.2, 0.4, [Math.PI / 2, 0, 0]);
+    this.burst(top[0], top[1], top[2], [[1, 0.95, 0.5], [1, 1, 1], [0.7, 0.9, 1]], 26, 5, PRIM.star, 0.32, { grav: -2, spin: 6 });
+    for (let i = 0; i < 26; i++) setTimeout(() => this.particle(x + (Math.random() - 0.5) * 2.6, y0 + h * (0.2 + Math.random()), z + (Math.random() - 0.5) * 2.6, 0, 1.2, 0, i % 3 ? [1, 0.95, 0.5] : [1, 1, 1], 0.9, 0.38, PRIM.star, 0), 120 + i * 40);
+    return this.wait(1150);
   }
   center(side, slot) { const e = this.mons[this.key(side, slot)]; const p = e ? e.base : this.slotPos(side, slot); return [p[0], (p[1] || 0) + (e ? e.M.height * 0.5 : 1), p[2]]; }
 

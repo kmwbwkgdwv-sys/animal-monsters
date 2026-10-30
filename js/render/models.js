@@ -431,13 +431,29 @@ function addHorns(K, head, n, style) {
       P.add(cap(t1, [t1[0] - s * R * 0.1, t1[1] + R * 0.4, t1[2] + R * 0.1], R * 0.05, R * 0.02, br, { k: 0.01 }));
     }
   } else if (style === 'curl') {
+    const hs = K.hornScale || 1;
     for (const s of [-1, 1]) {
       const sf = head.part.surface(head.c, [s * 0.7, 0.55, -0.1]);
       const b = sf.p; let prev = b;
-      for (let i = 1; i <= 7; i++) {
-        const a = i / 7 * Math.PI * 1.5, rr = R * (0.42 - i * 0.03);
-        const p = [b[0] + s * (R * 0.12 + Math.sin(a) * rr * 0.4), b[1] + Math.sin(a) * rr * 0.9, b[2] - (1 - Math.cos(a)) * rr * 0.9];
-        P.add(cap(prev, p, R * (0.17 - i * 0.015), R * (0.155 - i * 0.015), hc, { k: 0.02 }));
+      const n = hs > 1.3 ? 10 : 7;
+      for (let i = 1; i <= n; i++) {
+        const a = i / 7 * Math.PI * 1.5, rr = R * (0.42 - i * 0.025) * hs;
+        const p = [b[0] + s * (R * 0.12 + Math.sin(a) * rr * 0.4 + (hs > 1.3 ? i * R * 0.04 : 0)), b[1] + Math.sin(a) * rr * 0.9, b[2] - (1 - Math.cos(a)) * rr * 0.9];
+        P.add(cap(prev, p, R * (0.17 - i * 0.012) * Math.sqrt(hs), R * (0.155 - i * 0.012) * Math.sqrt(hs), hc, { k: 0.02 }));
+        prev = p;
+      }
+    }
+  } else if (style === 'sweep') {
+    // 後ろへ大きく反る角（アイベックス）。ふしのある長い角
+    const hs = K.hornScale || 1;
+    for (const s of [-1, 1]) {
+      const sf = head.part.surface(head.c, [s * 0.35, 0.85, 0.1]);
+      let prev = sf.p;
+      for (let i = 1; i <= 8; i++) {
+        const t = i / 8, a = t * 1.9;
+        const p = [sf.p[0] + s * R * 0.35 * t * hs, sf.p[1] + Math.sin(a) * R * 0.9 * hs, sf.p[2] - (1 - Math.cos(a)) * R * 0.85 * hs];
+        P.add(cap(prev, p, R * (0.16 - t * 0.11), R * (0.15 - t * 0.12), hc, { k: 0.01 }));
+        if (i % 2 === 0) P.add(tor(p, R * (0.13 - t * 0.08), R * 0.025, hc, { k: 0.01, rot: [0.6, 0, 0] }));
         prev = p;
       }
     }
@@ -589,6 +605,12 @@ function addTail(K, M, parent, base, type, scale = 1) {
     P.add(sph([0, S(1.0), S(0.05)], S(0.14), c1, { k: S(0.1) }));
     P.paint(sph([0, S(1.0), S(0.08)], S(0.14)), mix(c1, WHITE, 0.4), S(0.05));
     K.add(j, K.mesh(P, 'limb')); M.tails.push(j); return;
+  }
+  if (type === 'club') {
+    const tip = tailChain(K, M, parent, base, 4, S(0.2), S(0.11), c1, 1.45, 0.04, 0, null, 0.55);
+    const P = new Part([sph([0, -S(0.08), 0], S(0.2), mix(c1, K.dark, 0.3), { k: 0 })]);
+    for (const [x, y, z] of [[1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1], [0, -1, 0]]) P.add(cap([0, -S(0.08), 0], [x * S(0.3), -S(0.08) + y * S(0.3), z * S(0.3)], S(0.08), S(0.01), K.hornCol, { k: S(0.02) }));
+    K.add(tip, K.mesh(P, 'small')); return;
   }
   if (type === 'puff') { const j = K.joint(parent, base, [0, 0, 0]); K.add(j, K.mesh(new Part([sph([0, S(0.02), -S(0.05)], S(0.12), mix(c1, WHITE, 0.55))]), 'small')); M.tails.push(j); return; }
   if (type === 'thick') { const r0 = M.tailR || S(0.11); tailChain(K, M, parent, base, 5, r0 * 1.4, r0, c1, 1.32, 0.05, 0, K.ex.has('tip') ? c2 : null, 0.85); return; }
@@ -844,6 +866,13 @@ const QA = {
   armadillo: { L: .58, legH: .23, chest: [.3, .3, .32], hip: [.32, .32, .34], neck: .06, neckA: 1.25, head: .25, snout: 1.35, legR: .066, claws: 1, ears: 'small', tail: 'thin', bands: 1 },
   beaver: { L: .6, legH: .19, chest: [.3, .3, .31], hip: [.36, .35, .36], neck: .06, neckA: .8, head: .31, snout: .5, legR: .078, ears: 'small', tail: 'paddle', buck: 1 },
   otter: { L: .85, legH: .23, chest: [.22, .22, .28], hip: [.23, .23, .28], lift: .04, neck: .24, neckA: .7, head: .29, snout: .55, legR: .062, ears: 'small', tail: 'thick' },
+  // ---- 進化後専用の姿 ----
+  ram: { L: .78, legH: .5, chest: [.36, .38, .38], hip: [.32, .34, .34], lift: .06, neck: .14, neckA: .9, head: .27, snout: .75, legR: .075, hoof: 1, ears: 'side', tail: 'puff', wool: 1, bigHorns: 1.8, brow: 1 },
+  ibex: { L: .9, legH: .78, chest: [.32, .36, .38], hip: [.28, .31, .33], lift: .1, neck: .34, neckA: .45, head: .26, snout: 1.1, legR: .072, hoof: 1, ears: 'side', tail: 'puff', bigHorns: 2.4, sweep: 1, brow: 1 },
+  ankylo: { L: 1.15, legH: .26, chest: [.46, .38, .48], hip: [.48, .4, .5], lift: 0, neck: .08, neckA: 1.4, head: .28, snout: .8, flat: .8, legR: .13, claws: 1, ears: 'none', tail: 'club', plates: 1, spikesSide: 1, brow: 1 },
+  mammothking: { L: 1.05, legH: .9, chest: [.52, .55, .52], hip: [.46, .48, .47], hump: .36, neck: .1, neckA: 1.0, head: .44, snout: .3, legR: .2, ears: 'elephant', tail: 'thin', trunk: 1, tusks: 1.6, back: 'crystal', forceBack: 1, plates: 1, brow: 1 },
+  crocking: { L: 1.5, legH: .3, chest: [.42, .32, .5], hip: [.38, .3, .46], lift: .04, neck: .14, neckA: 1.4, head: .33, snout: 2.0, flat: .62, legR: .13, splay: .6, claws: 1, ears: 'none', tail: 'thick', scutes: 1, brow: 1 },
+  drake: { L: .9, legH: .55, chest: [.34, .36, .38], hip: [.3, .31, .33], lift: .1, neck: .36, neckA: .8, head: .3, snout: 1.15, legR: .11, claws: 1, ears: 'none', tail: 'thick', horn: 2, back: 'spikes', brow: 1 },
 };
 const TAIL_SPECIAL = new Set(['flame', 'bolt', 'leaf', 'twin', 'ghost', 'spike', 'stinger', 'paddle', 'fin', 'fluffy']);
 
@@ -881,6 +910,8 @@ function planQuad(K, M, pv, Q) {
     for (let i = 0; i <= 5; i++) { const t = i / 5; const b = [0, lerp(n0[1], n1[1], t) + neckR * 0.7, lerp(n0[2], n1[2], t) - neckR * 0.35]; const Lm = neckR * (1.3 - t * 0.5); P.add(cap(b, [0, b[1] + Lm * 0.6, b[2] - Lm * 0.9], neckR * 0.42, neckR * 0.08, mc, { k: neckR * 0.25 })); }
   }
   if (Q.plates) for (const z of [cz * 0.4, hz * 0.3]) P.add(ell([0, cy + cR[1] * 0.2, z], [cR[0] * 1.06, cR[1] * 0.75, cR[2] * 0.32], mix(c1, K.dark, 0.2), { k: 0.04 }));
+  if (Q.back && (!K.f.back || Q.forceBack)) K.f.back = Q.back;
+  if (Q.spikesSide) for (let i = 0; i < 5; i++) for (const sx of [-1, 1]) { const z = lerp(cz, hz, i / 4), y = lerp(cy, by, i / 4); P.add(cap([sx * cR[0] * 0.85, y + cR[1] * 0.1, z], [sx * cR[0] * 1.35, y + cR[1] * 0.3, z - 0.05], cR[0] * 0.16, cR[0] * 0.02, K.hornCol, { k: 0.04 })); }
   if (Q.bands) for (let i = 0; i < 5; i++) P.paint(box([0, by + hR[1] * 0.6, lerp(cz, hz, i / 4)], [1, 0.4, 0.025], 0), mix(K.c2, K.dark, 0.35), 0.012);
   if (Q.scutes) for (let i = 0; i < 8; i++) for (const x of [-1, 1]) { const z = lerp(cz + cR[2] * 0.3, hz - hR[2] * 0.4, i / 7); P.add(sph([x * cR[0] * 0.35, lerp(cy, by, i / 7) + cR[1] * 0.92, z], cR[0] * 0.15, mix(c1, K.dark, 0.25), { k: 0.03 })); }
   const A = { y: by, z0: cz + 0.02, z1: hz - 0.02, w: cR[0], top: topFn(P), neck: [0, n1[1], n1[2] - neckR * 0.4], wingZ: cz - 0.05 };
@@ -910,10 +941,11 @@ function planQuad(K, M, pv, Q) {
     const tl = tailChain(K, M, hj, [p[0], p[1], p[2] - headR * 0.1], 4, headR * 0.32, headR * 0.2, c1, -0.35, -0.32, 0, null, 0.55);
     void tl; M.chains[M.chains.length - 1].trunk = true;
   }
-  if (Q.tusks && (s > 0.4 || K.f.face === 'tusks')) for (const sx of [-1, 1]) { const p = head.part.surface([0, -headR * 0.3, 0], [sx * 0.45, -0.45, 0.8]).p; const TP = new Part(); let prev = p; for (let i = 1; i <= 4; i++) { const a = i / 4; const q = [p[0] + sx * headR * 0.25 * a, p[1] - headR * 0.75 * Math.sin(a * 1.4) + headR * 0.55 * a * a, p[2] + headR * 0.9 * a]; TP.add(cap(prev, q, headR * (0.15 - a * 0.025), headR * (0.13 - a * 0.025), [1, 0.96, 0.86], { k: headR * 0.03 })); prev = q; } K.add(hj, K.mesh(TP, 'small'), { mat: MAT.glossy }); }
+  if (Q.tusks && (s > 0.4 || K.f.face === 'tusks')) for (const sx of [-1, 1]) { const p = head.part.surface([0, -headR * 0.3, 0], [sx * 0.45, -0.45, 0.8]).p; const TP = new Part(); let prev = p; const tk = +Q.tusks || 1; for (let i = 1; i <= 4; i++) { const a = i / 4; const q = [p[0] + sx * headR * 0.25 * a * tk, p[1] - headR * 0.75 * Math.sin(a * 1.4) * tk + headR * 0.55 * a * a * tk, p[2] + headR * 0.9 * a * tk]; TP.add(cap(prev, q, headR * (0.15 - a * 0.025), headR * (0.13 - a * 0.025), [1, 0.96, 0.86], { k: headR * 0.03 })); prev = q; } K.add(hj, K.mesh(TP, 'small'), { mat: MAT.glossy }); }
   const ears = K.f.ears === 'none' ? 'none' : (Q.ears ?? K.f.ears);
   M.earStyle = ears;
   if (Q.horn && !K.f.horn) K.f.horn = s > 0.5 ? Q.horn : 1;
+  if (Q.bigHorns) { K.f.horn = 2; K.f.hornStyle = Q.sweep ? 'sweep' : 'curl'; K.hornScale = Q.bigHorns; if (lum(K.c1) > 0.7) K.hornCol = [0.62, 0.48, 0.34]; }
   backNodes(K, M, pv, A);
   if (Q.wings && K.f.back !== 'wings') addWings(K, M, pv, A);
   if (K.d.wings && K.f.back !== 'wings') addWings(K, M, pv, A);
@@ -950,6 +982,23 @@ const BA = {
   frogfighter: { hipY: .36, tH: .55, tw: .36, sh: 1.35, waist: 1.0, head: .36, snout: 0, aL: .5, ar: .1, fist: 1.7, lr: .1, foot: 1.8, frog: 1 },
   toadboss: { hipY: .22, tH: .64, tw: .46, sh: 1.05, waist: 1.3, head: .4, snout: 0, aL: .46, ar: .1, fist: 1.4, lr: .12, foot: 1.7, frog: 1, belly: 1 },
   penguin: { hipY: .08, tH: .7, tw: .32, sh: .9, waist: 1.2, head: .3, snout: 0, aL: .38, ar: .055, fist: 0, lr: .06, foot: 1.7, penguin: 1 },
+  // ---- 進化後専用の姿 ----
+  lionknight: { hipY: .58, tH: .66, tw: .32, sh: 1.5, waist: .78, head: .3, snout: .6, aL: .58, ar: .09, fist: 1.5, lr: .1, foot: 1.4, claws: 1, armor: 1, mane: 1, tail: 'lion', digi: 1, brow: 1, ears: 'round' },
+  swimmer: { hipY: .44, tH: .52, tw: .25, sh: 1.1, waist: .85, head: .33, snout: .55, aL: .4, ar: .06, fist: 1.0, lr: .08, foot: 1.9, tail: 'thick', ears: 'small' },
+  digger: { hipY: .34, tH: .62, tw: .38, sh: 1.45, waist: 1.0, head: .27, snout: 1.15, aL: .5, ar: .1, fist: 2.0, claws: 1, hunch: .32, lr: .1, foot: 1.3, eyeK: .65, ears: 'none' },
+  catfolk: { hipY: .5, tH: .5, tw: .22, sh: 1.05, waist: .72, head: .34, snout: .4, aL: .44, ar: .05, fist: 1.0, robe: 1.45, float: 1, ears: 'pointy' },
+  critter: { hipY: .3, tH: .44, tw: .27, sh: 1.0, waist: 1.0, head: .37, snout: .45, aL: .3, ar: .06, fist: 1.25, lr: .085, foot: 1.5, digi: 1, tail: 'squirrel', ears: 'tuft' },
+  beetleknight: { hipY: .6, tH: .62, tw: .28, sh: 1.5, waist: .6, head: .25, snout: 0, aL: .58, ar: .075, fist: 1.3, lr: .08, foot: 1.1, digi: 1, carapace: 1, shell: 1 },
+  crabman: { hipY: .44, tH: .58, tw: .38, sh: 1.45, waist: .9, head: .27, snout: 0, aL: .55, ar: .1, fist: 0, pincer: 1, carapace: 1, lr: .09, foot: 1.2, stalks: 1 },
+  builder: { hipY: .3, tH: .5, tw: .36, sh: 1.25, waist: 1.1, head: .34, snout: .5, aL: .38, ar: .1, fist: 1.5, lr: .11, foot: 1.4, buck: 1, tail: 'paddle', apron: 1, ears: 'small' },
+  crocman: { hipY: .55, tH: .64, tw: .33, sh: 1.4, waist: .85, head: .28, snout: 2.0, flat: .62, aL: .52, ar: .09, fist: 1.4, claws: 1, hunch: .18, lr: .11, foot: 1.5, tail: 'thick', brow: 1, ears: 'none' },
+  lizardman: { hipY: .55, tH: .52, tw: .25, sh: 1.15, waist: .8, head: .28, snout: 1.15, flat: .72, aL: .44, ar: .065, fist: 1.1, claws: 1, lr: .08, foot: 1.4, digi: 1, tail: 'thick', hunch: .15, ears: 'none' },
+  vampire: { hipY: .58, tH: .56, tw: .24, sh: 1.35, waist: .68, head: .31, snout: .3, aL: .5, ar: .06, fist: 1.0, robe: 1.6, float: 1, wings: 'bat', ears: 'bat' },
+  rhinobrute: { hipY: .52, tH: .8, tw: .44, sh: 1.45, waist: .95, head: .32, snout: 1.25, aL: .68, ar: .14, fist: 1.6, lr: .15, foot: 1.5, hunch: .35, noseHorn: 1, armor: 1, brow: 1, belly: 1, ears: 'small' },
+  emperor: { hipY: .1, tH: 1.05, tw: .3, sh: .9, waist: 1.1, head: .27, snout: 0, aL: .5, ar: .055, fist: 0, lr: .06, foot: 1.8, penguin: 1, emperor: 1 },
+  shogun: { hipY: .62, tH: .66, tw: .32, sh: 1.6, waist: .8, head: .27, snout: 0, aL: .6, ar: .09, fist: 1.4, robe: 1.5, float: 1, armor: 1, visor: 1, kabuto: 1 },
+  sunbearer: { hipY: .5, tH: .55, tw: .26, sh: 1.3, waist: .6, head: .25, snout: 0, aL: .52, ar: .07, fist: 1.2, lr: .075, foot: 1.1, digi: 1, carapace: 1, raise: 1, shell: 1 },
+  flyknight: { hipY: .55, tH: .55, tw: .22, sh: 1.25, waist: .55, head: .24, snout: 0, aL: .5, ar: .06, fist: 1.0, lr: .065, foot: 1.0, digi: 1, carapace: 1, bugWings: 'dragonfly', float: 1, blades: 1 },
 };
 
 function planBiped(K, M, pv, B) {
@@ -973,6 +1022,8 @@ function planBiped(K, M, pv, B) {
   if (B.pads) for (const sx of [-1, 1]) P.add(ell([sx * tw * sh * 0.95, yC + tH * 0.2, fz], [tw * 0.55, tH * 0.16, tw * 0.6], mix(c1, K.dark, 0.35), { k: 0.06, rot: [0, 0, sx * 0.3] }));
   if (B.armor) { P.paint(ell([0, yC, fz + tw * 0.5], [tw * sh * 0.85, tH * 0.38, tw * 0.5]), K.metal, 0.02); for (const sx of [-1, 1]) P.add(ell([sx * tw * sh * 0.92, yC + tH * 0.22, fz], [tw * 0.5, tH * 0.15, tw * 0.55], K.metal, { k: 0.04, rot: [0, 0, sx * 0.35] })); }
   if (B.carapace) P.add(ell([0, yC + tH * 0.05, fz - tw * 0.25], [tw * sh * 0.9, tH * 0.42, tw * 0.75], mix(c1, K.dark, 0.25), { k: 0.05 }));
+  if (B.shell) { for (const sx of [-1, 1]) P.add(ell([sx * tw * 0.42, yC - tH * 0.05, -tw * 0.62], [tw * 0.55, tH * 0.62, tw * 0.38], c2, { k: 0.03, rot: [0.15, 0, sx * 0.08] })); P.paint(box([0, yC, -tw * 1.0], [tw * 0.025, tH, tw * 0.4], 0), mix(c2, K.dark, 0.5), 0.006); }
+  if (B.emperor) for (const sx of [-1, 1]) P.paint(ell([sx * tw * 0.75, hipY + tH * 0.92, tw * 0.2], [tw * 0.3, tH * 0.12, tw * 0.3]), [1, 0.78, 0.22], 0.03);
   if (B.apron) P.paint(box([0, yW, tw * 0.6], [tw * 0.7, tH * 0.42, tw * 0.5], 0.02), [0.45, 0.3, 0.2], 0.015);
   if (B.zombie || K.ex.has('wraps')) for (let i = 0; i < 6; i++) P.paint(tor([0, hipY + tH * (0.05 + i * 0.17), 0], tw * 1.05, tw * 0.07, WHITE, { rot: [0.25 * (i % 2 ? 1 : -1), 0, 0.12] }), [0.95, 0.92, 0.82], tw * 0.03);
   let floor = 0;
@@ -990,6 +1041,7 @@ function planBiped(K, M, pv, B) {
   if (!B.penguin && !B.frog) P.add(cap([0, yC + tH * 0.2, fz], [0, hy - headR * 0.55, hz], tw * 0.42, tw * 0.36, c1, { k: 0.08 }));
   const A = { y: yC, z0: tw * 0.2, z1: -tw * 0.5, w: tw, neck: [0, hipY + tH * 0.95, fz], belt: hipY + 0.05, wingZ: -tw * 0.35 };
   A.top = (() => { const base = new Part(P.shapes.slice()); return () => base.surface([0, yC, 0], [0, 0.35, -1], 3).p[1]; })();
+  if (B.mane) K.ex.add('mane');
   if (K.f.back === 'spikes' || K.ex.has('spikes')) for (let i = 0; i < 4; i++) P.add(cap([0, hipY + tH * (0.95 - i * 0.2), -tw * 0.7], [0, hipY + tH * (1.1 - i * 0.2), -tw * 1.35], tw * 0.2, tw * 0.02, c2, { k: tw * 0.1 }));
   else if (['mane', 'wool', 'cloud', 'shell', 'fins', 'fin', 'sail', 'humps'].includes(K.f.back) || K.ex.has('mane')) backShapes(K, P, { ...A, z0: -tw * 0.4, z1: -tw * 0.6, top: () => hipY + tH * 0.95, neck: [0, hipY + tH * 0.95, -0.02] });
   bodyPaints(K, P, { ...A, z0: tw * 0.4, z1: -tw * 0.4, top: () => hipY + tH * 0.6 });
@@ -1013,12 +1065,18 @@ function planBiped(K, M, pv, B) {
       AP.add(sph([0, 0, 0], ar * 1.35, c1, { k: 0 }));
       AP.add(cap([0, 0, 0], [0, -aL * 0.5, 0.03], ar * 1.15, ar * 0.95, c1, { k: ar * 0.5 }));
       AP.add(cap([0, -aL * 0.5, 0.03], [0, -aL, 0.07], ar * 0.95, ar * (B.fist > 1.5 ? 1.1 : 0.85), c1, { k: ar * 0.4 }));
-      if (B.blades) AP.add(cap([0, -aL * 0.55, 0.05], [0, -aL * 1.05, ar * 3.5], ar * 0.6, ar * 0.05, K.hornCol, { k: ar * 0.2, sc: [0.35, 1, 1], pv: [0, -aL * 0.55, 0.05] }));
+      if (B.pincer) {
+        // カニのハサミ（大きな爪）
+        const cs = lerp(1.2, 1.7, s), pc = c2;
+        AP.add(ell([0, -aL - ar * 1.2 * cs, ar * 0.6], [ar * 1.6 * cs, ar * 1.9 * cs, ar * 1.4 * cs], pc, { k: ar * 0.5 }));
+        AP.add(cap([ar * 0.6, -aL - ar * 2.4 * cs, ar * 1.2], [ar * 0.9, -aL - ar * 4.6 * cs, ar * 1.6], ar * 0.9 * cs, ar * 0.12, pc, { k: ar * 0.3 }));
+        AP.add(cap([-ar * 0.7, -aL - ar * 2.3 * cs, ar * 1.0], [-ar * 0.9, -aL - ar * 3.9 * cs, ar * 1.4], ar * 0.7 * cs, ar * 0.1, pc, { k: ar * 0.3 }));
+      } else if (B.blades) AP.add(cap([0, -aL * 0.55, 0.05], [0, -aL * 1.05, ar * 3.5], ar * 0.6, ar * 0.05, K.hornCol, { k: ar * 0.2, sc: [0.35, 1, 1], pv: [0, -aL * 0.55, 0.05] }));
       else if (B.fist) AP.add(sph([0, -aL - ar * 0.3 * B.fist, 0.08], ar * 0.85 * B.fist, K.T.includes('fighting') || B.fist > 1.7 ? c2 : c1, { k: ar * 0.5 }));
       if (B.armor) AP.paint(cap([0, -aL * 0.5, 0.03], [0, -aL, 0.07], ar * 1.2, ar * 1.1), K.metal, ar * 0.1);
       if (B.claws || K.ex.has('claws')) for (const x of [-1, 0, 1]) AP.add(cap([x * ar * 0.6, -aL - ar * 0.7 * B.fist, ar * 0.9], [x * ar * 0.7, -aL - ar * 1.6 * B.fist, ar * 1.5], ar * 0.28, ar * 0.04, [0.98, 0.96, 0.9], { k: ar * 0.15 }));
     }
-    const j = K.joint(pv, [sx * tw * sh * (B.penguin ? 1.0 : 0.98), yC + tH * (B.penguin ? 0.05 : 0.16), fz], [B.zombie ? -1.35 : -0.2, 0, sx * (B.penguin ? 0.35 : 0.28)]);
+    const j = K.joint(pv, [sx * tw * sh * (B.penguin ? 1.0 : 0.98), yC + tH * (B.penguin ? 0.05 : 0.16), fz], B.raise ? [-0.25, 0, sx * 2.55] : [B.zombie ? -1.35 : -0.2, 0, sx * (B.penguin ? 0.35 : 0.28)]);
     K.add(j, K.mesh(AP, 'limb'));
     j.r0 = j.rot.slice(); j.len = aL; M.arms.push(j);
   }
@@ -1044,22 +1102,35 @@ function planBiped(K, M, pv, B) {
     HP.add(ell([0, -R * 0.1, R * 0.35], [R * 0.85, R * 0.8, R * 0.75], K.metal, { k: R * 0.1 }));
     HP.add(cap([0, R * 0.7, -R * 0.2], [0, R * 1.5, -R * 0.9], R * 0.18, R * 0.04, mix(c2, [0.9, 0.2, 0.2], 0.4), { k: R * 0.1, sc: [0.4, 1, 1], pv: [0, R * 0.7, -R * 0.2] }));
     HP.paint(box([0, R * 0.12, R * 0.9], [R * 0.75, R * 0.12, R * 0.4], 0), [0.08, 0.06, 0.12], R * 0.02);
+    if (B.kabuto) {
+      // かぶと（大きな前立てと しころ）
+      HP.add(ell([0, -R * 0.15, -R * 0.35], [R * 1.35, R * 0.55, R * 1.05], mix(K.metal, K.dark, 0.35), { k: R * 0.1 }));
+      for (const sx of [-1, 1]) HP.add(cap([sx * R * 0.3, R * 0.6, R * 0.6], [sx * R * 1.15, R * 1.75, R * 0.45], R * 0.2, R * 0.03, [1, 0.82, 0.25], { k: R * 0.05, sc: [1, 1, 0.35], pv: [sx * R * 0.3, R * 0.6, R * 0.6] }));
+    }
     head = { part: HP, R, c: [0, 0, 0] };
     M.eyeCfg = { dir: [0.32, 0.15, 0.94], size: 0.45 };
     M.faceCfg = { nose: false, mouth: false, blush: false };
     M.noEars = true;
   } else {
-    head = mammalHead(K, headR, { snout: (B.snout ?? 0.3) * lerp(0.7, 1, s), brow: B.brow && s > 0.4 });
+    head = mammalHead(K, headR, { snout: (B.snout ?? 0.3) * lerp(0.7, 1, s), brow: B.brow && s > 0.4, flat: B.flat, cheeks: B.flat ? false : undefined });
     if (K.ex.has('wraps') || B.zombie) for (let i = 0; i < 3; i++) head.part.paint(tor([0, headR * (0.45 - i * 0.4), 0], headR * 1.0, headR * 0.09, WHITE, { rot: [0.2 * (i % 2 ? 1 : -1), 0, 0.1] }), [0.95, 0.92, 0.82], headR * 0.03);
-    M.eyeCfg = { dir: [0.45, 0.16, 0.88], size: 0.6 };
+    const sn = Math.min(1.5, B.snout || 0);
+    M.eyeCfg = { dir: [0.45 + sn * 0.08, 0.16 + (B.flat ? 0.25 : 0), 0.88 - sn * 0.05], size: 0.6 * (B.eyeK || 1) * (B.flat ? 0.85 : 1) };
   }
   const hj = K.joint(pv, [0, hy, hz]);
   K.add(hj, K.mesh(head.part, 'head'));
   head.node = hj; M.head = hj; M.headInfo = head;
   if (B.frog) M.noEars = true;
+  if (B.ears) M.earStyle = B.ears;
+  if (B.buck) M.buck = true;
+  if (B.stalks) { const SPk = new Part(); for (const sx of [-1, 1]) { SPk.add(cap([sx * headR * 0.35, headR * 0.6, headR * 0.3], [sx * headR * 0.6, headR * 1.45, headR * 0.35], headR * 0.12, headR * 0.1, c1, { k: headR * 0.05 })); SPk.add(sph([sx * headR * 0.62, headR * 1.55, headR * 0.38], headR * 0.22, [0.1, 0.08, 0.15], { k: headR * 0.04 })); SPk.paint(sph([sx * headR * 0.62 - headR * 0.06, headR * 1.62, headR * 0.55], headR * 0.07), WHITE, headR * 0.01); } K.add(hj, K.mesh(SPk, 'tiny')); M.eyeCfg.size *= 0.6; }
+  if (B.noseHorn) { const t = head.part.surface([0, 0, headR * 0.5], [0, 0.7, 0.75]).p; const HP2 = new Part([cap([t[0], t[1] - headR * 0.1, t[2] - headR * 0.05], [t[0], t[1] + headR * 1.25, t[2] + headR * 0.2], headR * 0.26, headR * 0.03, K.hornCol, { k: 0 }), cap([t[0], t[1] - headR * 0.05, t[2] - headR * 0.45], [t[0], t[1] + headR * 0.5, t[2] - headR * 0.42], headR * 0.17, headR * 0.03, K.hornCol, { k: headR * 0.04 })]); K.add(hj, K.mesh(HP2, 'small'), { mat: MAT.glossy }); }
+  if (B.raise) M.sunTop = [0, hy + headR * 2.6, hz + 0.05];
   backNodes(K, M, pv, { ...A, z0: -tw * 0.3, z1: -tw * 0.55, wingZ: -tw * 0.45, top: () => hipY + tH * 0.95, w: tw * 0.9 });
+  if (B.wings === 'bat' && K.f.back !== 'batwings') addWings(K, M, pv, { ...A, z0: -tw * 0.3, z1: -tw * 0.55, wingZ: -tw * 0.45, top: () => hipY + tH * 0.95, w: tw * 1.2 }, true);
+  if (B.bugWings) addBugWings(K, M, pv, B.bugWings, yC + tH * 0.1, s, [0, 0, -tw * 0.7], 1.3);
   M.tailBase = [0, hipY + 0.14, -tw * 0.62];
-  M.tailType = K.f.tail;
+  M.tailType = TAIL_SPECIAL.has(K.f.tail) ? K.f.tail : (B.tail ?? K.f.tail);
   M.anchor = A;
   return head;
 }
@@ -1076,6 +1147,8 @@ const BRD = {
   vulture: { body: [.32, .34, .4], by: .58, head: .2, neck: .3, legL: .26, wing: 1.45, beak: 1.1, hook: 1, bald: 1, ruff: 1, tilt: .5, talon: 1 },
   phoenix: { body: [.28, .33, .42], by: .68, head: .25, neck: .2, legL: .3, wing: 1.75, beak: .9, hook: 1, crest: 2, plumes: 1, tilt: .55, talon: 1 },
   bat: { body: [.3, .31, .28], by: .55, head: 0, legL: .08, bat: 1 },
+  greatowl: { body: [.36, .52, .34], by: .66, head: .37, legL: .16, wing: 1.2, beak: .5, hook: 1, disc: 1, tilt: -.05, tufts: 1, bigTufts: 1, cape: 1, talon: 1 },
+  condor: { body: [.36, .42, .52], by: .78, head: .22, neck: .36, legL: .3, wing: 2.1, beak: 1.25, hook: 1, bald: 1, ruff: 1, crest: 1, tilt: .5, talon: 1, spread: 1 },
 };
 function planBird(K, M, pv, Bd) {
   M.plan = 'bird';
@@ -1099,6 +1172,7 @@ function planBird(K, M, pv, Bd) {
     hy = by + R[1] * 0.85 + headR * 0.55 + (Bd.neck || 0); hz = R[2] * 0.45 + Math.sin(tilt) * 0.08;
     P.add(cap([0, by + R[1] * 0.4, R[2] * 0.3], [0, hy - headR * 0.5, hz - headR * 0.2], R[0] * 0.5, R[0] * 0.42, Bd.bald ? mix(c1, [1, 0.7, 0.6], 0.5) : c1, { k: 0.1 }));
   }
+  if (Bd.cape) { P.add(cap([0, by + R[1] * 0.75, -R[2] * 0.4], [0, by - R[1] * 0.9, -R[2] * 0.95], R[0] * 1.0, R[0] * 1.3, mix(K.c2, K.dark, 0.25), { k: 0.08, sc: [1, 1, 0.35], pv: [0, by, -R[2] * 0.6] })); }
   if (Bd.ruff) P.add(tor([0, by + R[1] * 0.75, R[2] * 0.3], R[0] * 0.55, R[0] * 0.22, mix(K.c2, WHITE, 0.6), { k: 0.08, rot: [0.6, 0, 0] }));
   const A = { y: by, z0: R[2] * 0.3, z1: -R[2] * 0.6, w: R[0], top: topFn(P), neck: [0, hy - headR, hz - 0.1], wingZ: R[2] * 0.05 };
   bodyPaints(K, P, A);
@@ -1130,6 +1204,8 @@ function planBird(K, M, pv, Bd) {
   M.beak = { len: Bd.beak || 0.8, hook: Bd.hook, bill: Bd.bill };
   M.faceCfg = { nose: false, mouth: false };
   if (Bd.tufts && !K.f.ears) K.f.ears = 'tuft';
+  if (Bd.bigTufts) { K.f.ears = 'tuft'; K.ex.add('crest'); }
+  if (Bd.spread) M.spread = true;
   addWings(K, M, pv, { ...A, top: () => by + R[1] * 0.45, w: R[0] * Bd.wing * lerp(0.85, 1.05, s) });
   M.tailBase = [0, by + Math.sin(tilt) * R[2] * 0.7, -R[2] * 1.1];
   M.tailType = Bd.plumes ? 'plumes' : (K.f.tail || 'feather');
@@ -1170,6 +1246,8 @@ const FSH = {
   catfish: { R: [.42, .28, .78], tail: 'fan', whisk: 1, flatHead: 1 },
   seal: { R: [.33, .32, .5], ground: 1, flipper: 1 },
   walrus: { R: [.46, .42, .62], ground: 1, flipper: 1, tusks: 1, stache: 1 },
+  narwhal: { R: [.3, .32, .7], tail: 'fluke', dorsal: .5, horn: 1, spots: 1 },
+  hammer: { R: [.3, .33, .78], tail: 'shark', dorsal: 1.8, jaw: 1, gills: 1, hammer: 1 },
 };
 function planFish(K, M, pv, F) {
   M.plan = 'fish';
@@ -1182,6 +1260,8 @@ function planFish(K, M, pv, F) {
   if (F.cloud) for (let i = 0; i < 9; i++) { const a = i * 2.4; P.add(sph([Math.cos(a) * R[0] * 0.7, by + R[1] * (0.3 + (i % 3) * 0.15), Math.sin(a) * R[2] * 0.6], R[0] * (0.45 + (i % 2) * 0.12), mix(WHITE, c1, 0.15), { k: R[0] * 0.25 })); }
   P.add(cap([0, by, -R[2] * 0.5], [0, by + 0.02, -R[2] * 1.15], R[1] * 0.45, R[1] * 0.16, c1, { k: 0.14 }));
   if (F.beak) P.add(cap([0, by - R[1] * 0.1, R[2] * 0.8], [0, by - R[1] * 0.18, R[2] * 1.25], R[1] * 0.3, R[1] * 0.2, c1, { k: R[1] * 0.25 }));
+  if (F.horn) { const hb = [0, by + R[1] * 0.05, R[2] * 0.95]; let prev = hb; for (let i = 1; i <= 6; i++) { const q = [0, hb[1] + i * R[1] * 0.06, hb[2] + i * R[2] * 0.22]; P.add(cap(prev, q, R[1] * (0.13 - i * 0.017), R[1] * (0.12 - i * 0.018), [0.97, 0.94, 0.85], { k: 0.01 })); prev = q; } }
+  if (F.hammer) { P.add(ell([0, by + R[1] * 0.1, R[2] * 0.85], [R[0] * 2.2, R[1] * 0.42, R[2] * 0.2], c1, { k: R[1] * 0.25 })); }
   if (F.flatHead) P.add(ell([0, by - R[1] * 0.1, R[2] * 0.55], [R[0] * 1.25, R[1] * 0.75, R[2] * 0.45], c1, { k: R[1] * 0.3 }));
   if (F.jaw) P.add(ell([0, by - R[1] * 0.35, R[2] * 0.6], [R[0] * 0.75, R[1] * 0.45, R[2] * 0.4], c1, { k: R[1] * 0.25 }));
   P.paint(ell([0, by - R[1] * 0.6, 0], [R[0] * 1.1, R[1] * 0.62, R[2] * 1.1]), K.belly, 0.04);
@@ -1214,7 +1294,8 @@ function planFish(K, M, pv, F) {
   if (F.whisk) for (const sx of [-1, 1]) for (const k of [0, 1]) tailChain(K, M, pv, [sx * R[0] * 0.75, by - R[1] * 0.25, R[2] * 0.85], 3, R[1] * 0.35, R[1] * 0.06, K.dark, -1.2 - k * 0.5, -0.25, sx * 0.9, null, 0.5);
   M.tailBase = null;
   M.anchor = A;
-  M.eyeCfg = { dir: F.flatHead ? [0.62, 0.45, 0.65] : [0.72, 0.22, 0.66], size: 0.5 * (F.eyeK || 1) };
+  M.eyeCfg = { dir: F.hammer ? [0.97, 0.12, 0.2] : F.flatHead ? [0.62, 0.45, 0.65] : [0.72, 0.22, 0.66], size: 0.5 * (F.eyeK || 1) * (F.hammer ? 0.7 : 1) };
+  if (F.hammer) head.c = [0, by + R[1] * 0.1, R[2] * 0.85];
   M.faceCfg = { nose: false, blush: !F.jaw, mouthY: -R[1] * 0.25 };
   return head;
 }
@@ -1286,6 +1367,7 @@ function planSnake(K, M, pv, Sd) {
   const hj = K.joint(pv, [p0[0], p0[1] + rad[0] * 0.6 + R * 0.15, p0[2] + R * 0.75], [-0.1, 0, 0]);
   K.add(hj, K.mesh(HP, 'head'));
   head.node = hj; M.head = hj; M.headInfo = head;
+  if (Sd.horns && !K.f.horn) { K.f.horn = 2; }
   if (Sd.legs4) {
     for (const [ii, sx] of [[2, -1], [2, 1], [Math.floor(n * 0.6), -1], [Math.floor(n * 0.6), 1]]) {
       const pp = pts[ii], rr = rad[ii];
@@ -1313,6 +1395,7 @@ const SRP = {
   eel: { n: 9, r: .2, gap: 1.3, smooth: 1, fins: 1, rise: .25, coil: .6 },
   tsuchinoko: { n: 3, r: .36, dr: .07, gap: 1.0, fat: 1, rise: 0 },
   eastdragon: { n: 12, r: .24, gap: 1.3, smooth: 1, legs4: 1, mane: 1, float: 1 },
+  seaserpent: { n: 13, r: .27, gap: 1.3, smooth: 1, fins: 1, mane: 1, float: 1, horns: 1 },
 };
 function planSerpent(K, M, pv, Sd) {
   M.plan = 'serpent';
@@ -1376,7 +1459,7 @@ const BUG = {
   butterfly: { body: 'slim', wings: 'butterfly', legs: 6, antenna: 1, float: 1 },
   moth: { body: 'fluffy', wings: 'moth', legs: 6, antenna: 2, float: 1 },
   bee: { body: 'round', wings: 'small', legs: 6, antenna: 1, stinger: 1, float: 1, stripes: 1 },
-  queenbee: { body: 'round', wings: 'small', legs: 6, antenna: 1, stinger: 1, float: 1, stripes: 1, big: 1.25 },
+  queenbee: { body: 'queen', wings: 'queen', legs: 6, antenna: 1, stinger: 1, float: 1, big: 1.0 },
   dragonfly: { body: 'long', wings: 'dragonfly', legs: 6, float: 1 },
   beetle: { body: 'dome', legs: 6, horn: 1 },
   dungbeetle: { body: 'dome', legs: 6, ball: 1 },
@@ -1384,6 +1467,8 @@ const BUG = {
   spider: { body: 'spider', legs: 8 },
   crab: { body: 'crab', legs: 6, claws: 1, stalks: 1 },
   scorpion: { body: 'flat', legs: 8, claws: 1, stingTail: 1 },
+  widow: { body: 'spider', legs: 8, legScale: 1.75, widow: 1 },
+  scorpionking: { body: 'flat', legs: 8, claws: 1.5, stingTail: 2, armor: 1, legScale: 1.25 },
 };
 function planBug(K, M, pv, Bg) {
   M.plan = 'bug';
@@ -1416,9 +1501,15 @@ function planBug(K, M, pv, Bg) {
     M.glossy = true;
     headZ = 0.46; legW = 0.24;
   } else if (kind === 'spider') {
-    P.add(ell([0, by + 0.12, -0.32], [0.36, 0.33, 0.4], c1, { k: 0 }));
+    const wb = Bg.widow ? 1.4 : 1;
+    P.add(ell([0, by + 0.12 * wb, -0.32 * wb], [0.36 * wb, 0.33 * wb, 0.4 * wb], c1, { k: 0 }));
     P.add(ell([0, by, 0.1], [0.22, 0.18, 0.22], mix(c1, K.dark, 0.3), { k: 0.06 }));
-    P.paint(ell([0, by + 0.38, -0.32], [0.18, 0.12, 0.22]), c2, 0.03);
+    if (Bg.widow) {
+      // 背中の砂時計もようと とげ
+      P.paint(cap([0, by + 0.58, -0.32], [0, by + 0.38, -0.7], 0.12, 0.02), [0.95, 0.15, 0.2], 0.02);
+      P.paint(cap([0, by + 0.58, -0.32], [0, by + 0.5, 0.0], 0.12, 0.02), [0.95, 0.15, 0.2], 0.02);
+      for (let i = 0; i < 5; i++) { const a = -0.6 + i * 0.3; P.add(cap([Math.sin(a) * 0.3, by + 0.55, -0.42 + Math.cos(a) * 0.1], [Math.sin(a) * 0.45, by + 0.85, -0.55], 0.05, 0.008, mix(c1, K.dark, 0.5), { k: 0.03 })); }
+    } else P.paint(ell([0, by + 0.38, -0.32], [0.18, 0.12, 0.22]), c2, 0.03);
     headZ = 0.34;
   } else if (kind === 'crab') {
     P.add(ell([0, by + 0.05, 0], [0.48, 0.24, 0.36], c1, { k: 0 }));
@@ -1428,21 +1519,30 @@ function planBug(K, M, pv, Bg) {
   } else if (kind === 'flat') {
     P.add(ell([0, by - 0.04, 0], [0.26, 0.15, 0.38], c1, { k: 0 }));
     for (let i = 0; i < 3; i++) P.paint(box([0, by + 0.1, 0.15 - i * 0.15], [0.3, 0.06, 0.012], 0), mix(c1, K.dark, 0.4), 0.01);
+    if (Bg.armor) for (let i = 0; i < 4; i++) P.add(ell([0, by + 0.08, 0.22 - i * 0.16], [0.3, 0.07, 0.09], mix(c1, K.metal, 0.5), { k: 0.03 }));
     headZ = 0.38; headY = by;
+  } else if (kind === 'queen') {
+    // 女王バチ：起き上がった胸、長い腹（しま）、白いえり
+    P.add(ell([0, by + 0.22, 0.02], [0.24, 0.26, 0.22], mix(c1, K.dark, 0.15), { k: 0 }));
+    P.add(cap([0, by + 0.05, -0.12], [0, by - 0.22, -0.72], 0.3, 0.1, c1, { k: 0.1 }));
+    for (let i = 0; i < 4; i++) P.paint(tor([0, by - 0.02 - i * 0.07, -0.25 - i * 0.12], 0.27 - i * 0.04, 0.045, K.dark, { rot: [1.2, 0, 0] }), [0.16, 0.12, 0.1], 0.015);
+    P.add(tor([0, by + 0.4, 0.04], 0.2, 0.08, [1, 0.97, 0.88], { k: 0.04 }));
+    headZ = 0.12; headY = by + 0.62; R *= 1.1;
   }
   if (Bg.stripes) for (let i = 0; i < 3; i++) P.paint(box([0, by, -0.1 - i * 0.18 * big], [0.6, 0.6, 0.05 * big], 0), [0.16, 0.12, 0.1], 0.015);
   const A = { y: by, z0: 0.05, z1: -0.5, w: 0.28, top: topFn(P), neck: [0, by + 0.1, 0.2], wingZ: -0.02 };
   bodyPaints(K, P, A);
   M.body = K.add(pv, K.mesh(P, 'body'), M.glossy ? { mat: MAT.glossy } : {});
   // 脚
-  const nL = Bg.legs, legLen = Bg.float ? 0.3 : by + 0.05;
+  const nL = Bg.legs, legLen = (Bg.float ? 0.3 : by + 0.05) * (Bg.legScale || 1);
   const LP = new Part([cap([0, 0, 0], [0, -legLen * 0.5, 0.06], 0.04, 0.032, K.dark, { k: 0 }), cap([0, -legLen * 0.5, 0.06], [0, -legLen, 0.12], 0.032, 0.02, K.dark, { k: 0.02 })]);
   const lg = K.mesh(LP, 'tiny');
   const zs = nL === 8 ? [0.18, 0.06, -0.06, -0.18] : [0.16, 0.02, -0.12];
-  for (const sx of [-1, 1]) for (const z of zs) { const j = K.joint(pv, [sx * legW, legY, z + (kind === 'spider' ? 0.05 : 0)], [0, 0, sx * (kind === 'spider' || kind === 'crab' ? 1.15 : 0.9)]); K.add(j, lg); j.side = sx; M.legs.push(j); }
+  for (const sx of [-1, 1]) for (const z of zs) { const j = K.joint(pv, [sx * legW, legY, z + (kind === 'spider' ? 0.05 : 0)], [0, 0, sx * (kind === 'spider' || kind === 'crab' ? (Bg.legScale ? 0.85 : 1.15) : 0.9)]); K.add(j, lg); j.side = sx; M.legs.push(j); }
+  if (Bg.widow) { const FP = new Part(); for (const sx of [-1, 1]) FP.add(cap([sx * 0.06, by - 0.05, 0.42], [sx * 0.04, by - 0.22, 0.48], 0.035, 0.006, [0.95, 0.92, 0.85], { k: 0.01 })); K.add(pv, K.mesh(FP, 'tiny'), { mat: MAT.glossy }); }
   // ハサミ（カニ・サソリ）
   if (Bg.claws) for (const sx of [-1, 1]) {
-    const cs = lerp(1, 1.5, s);
+    const cs = lerp(1, 1.5, s) * (+Bg.claws || 1);
     const CP = new Part([cap([0, 0, 0], [sx * 0.12, 0.02, 0.22], 0.06, 0.05, c1, { k: 0 }), ell([sx * 0.16, 0.04, 0.36], [0.11 * cs, 0.09 * cs, 0.14 * cs], c1, { k: 0.05 })]);
     CP.add(cap([sx * 0.16, 0.08, 0.44], [sx * 0.12, 0.1, 0.6 * cs], 0.06 * cs, 0.015, c2, { k: 0.02 }));
     CP.add(cap([sx * 0.2, 0.0, 0.44], [sx * 0.2, -0.02, 0.56 * cs], 0.045 * cs, 0.012, c2, { k: 0.02 }));
@@ -1451,7 +1551,7 @@ function planBug(K, M, pv, Bg) {
     (M.pincers = M.pincers || []).push(j);
   }
   // サソリの尾（背中にそり返る）
-  if (Bg.stingTail) { const tip = tailChain(K, M, pv, [0, by + 0.05, -0.35], 5, 0.13, 0.07, c1, 2.6, -0.5, 0, null, 0.4); const SP = new Part([cap([0, 0, 0], [0, -0.05, 0.18], 0.07, 0.008, [0.3, 0.18, 0.32], { k: 0 })]); K.add(tip, K.mesh(SP, 'tiny'), { mat: MAT.glossy }); }
+  if (Bg.stingTail) for (const yaw of Bg.stingTail > 1 ? [-0.35, 0.35] : [0]) { const tip = tailChain(K, M, pv, [yaw * 0.25, by + 0.05, -0.35], 5, 0.13 * (Bg.stingTail > 1 ? 1.15 : 1), 0.07, c1, 2.6, -0.5, yaw, null, 0.4); const SP = new Part([cap([0, 0, 0], [0, -0.05, 0.18], 0.07, 0.008, Bg.stingTail > 1 ? [0.85, 0.15, 0.25] : [0.3, 0.18, 0.32], { k: 0 })]); K.add(tip, K.mesh(SP, 'tiny'), { mat: MAT.glossy }); }
   // 頭
   const head = mammalHead(K, R, { snout: 0, cheeks: false, muzzle: false, col: kind === 'dome' ? mix(c1, K.dark, 0.3) : c1 });
   const hj = K.joint(pv, [0, headY, headZ]);
@@ -1463,8 +1563,9 @@ function planBug(K, M, pv, Bg) {
   if (Bg.antenna) K.ex.add(Bg.antenna === 2 ? 'feelers' : 'antenna');
   if (Bg.ball) { const bc = K.ex.has('sunball') ? null : [0.55, 0.4, 0.28]; if (bc) K.prim(pv, PRIM.sphereHi, bc, [0, 0.32, 0.95], [0.3], null, { outline: 0.8 }); }
   // 翼
-  if (Bg.wings) addBugWings(K, M, pv, Bg.wings, by, s);
-  M.tailBase = Bg.stinger ? [0, by - 0.05, -0.55 * big] : null;
+  if (Bg.wings) addBugWings(K, M, pv, Bg.wings, kind === 'queen' ? by + 0.2 : by, s);
+  M.tailBase = Bg.stinger ? (kind === 'queen' ? [0, by - 0.22, -0.78] : [0, by - 0.05, -0.55 * big]) : null;
+  if (kind === 'queen') K.ex.add('crown');
   M.tailType = Bg.stinger ? 'stinger' : null;
   M.anchor = A;
   M.eyeCfg = { dir: [0.52, 0.2, 0.83], size: 0.66 };
@@ -1473,9 +1574,10 @@ function planBug(K, M, pv, Bg) {
   return head;
 }
 // 虫の羽（チョウ・ガ・トンボ・ハチ）
-function addBugWings(K, M, pv, kind, by, s) {
+function addBugWings(K, M, pv, kind, by, s, at = [0, 0, -0.02], scl = 1) {
   for (const sx of [-1, 1]) {
-    const j = K.joint(pv, [sx * 0.1, by + 0.12, -0.02]);
+    const j = K.joint(pv, [sx * 0.1 + at[0], by + 0.12 + at[1], at[2]]);
+    if (scl !== 1) j.setScale(scl);
     const g = new GeoBuilder();
     const tri = (a, b, c, col) => { g.quad(a, b, c, c, col); g.quad(a, c, b, b, col); };
     const fan = (pts, colA, colB) => { for (let i = 0; i < pts.length - 1; i++) tri([0, 0, 0], pts[i], pts[i + 1], i % 2 ? colA : colB); };
@@ -1499,6 +1601,9 @@ function addBugWings(K, M, pv, kind, by, s) {
         for (let i = 1; i < pts.length - 1; i++) tri2(pts[0], pts[i], pts[i + 1], [0.85, 0.95, 1]);
         const n = K.add(j, g2.build(), { alpha: 0.6, outline: 0.6 }); n.transparent = true; n.doubleSide = true;
       }
+    } else if (kind === 'queen') {
+      const P = new Part([ell([sx * 0.38, 0.32, -0.22], [0.42, 0.035, 0.18], [0.9, 0.97, 1], { k: 0, rot: [0, sx * 0.5, 0.7 * sx] }), ell([sx * 0.3, 0.12, -0.32], [0.3, 0.03, 0.13], [0.9, 0.97, 1], { k: 0.01, rot: [0, sx * 0.9, 0.4 * sx] })]);
+      const n = K.add(j, K.mesh(P, 'small'), { alpha: 0.7, outline: 0.4 }); n.transparent = true;
     } else {
       const P = new Part([ell([sx * 0.22, 0.12, -0.08], [0.24, 0.03, 0.12], [0.9, 0.97, 1], { k: 0, rot: [0, sx * 0.3, 0.5 * sx] })]);
       const n = K.add(j, K.mesh(P, 'small'), { alpha: 0.7, outline: 0 }); n.transparent = true;
@@ -1523,6 +1628,11 @@ const BLB = {
   cocoon: { shape: 'cocoon', float: 1 },
   mushroom: { shape: 'mushroom', ground: 1 },
   moss: { shape: 'moss', ground: 1 },
+  queenjelly: { shape: 'queenjelly', float: 1 },
+  sludge: { shape: 'sludge', ground: 1, glossy: 1 },
+  chandelier: { shape: 'chandelier', float: 1 },
+  oniwisp: { shape: 'oniwisp', float: 1 },
+  conch: { shape: 'conch', ground: 1 },
 };
 function planBlob(K, M, pv, Bl) {
   M.plan = 'blob';
@@ -1616,6 +1726,61 @@ function planBlob(K, M, pv, Bl) {
     hc = [0, R * 0.55, 0]; eyeDir = [0.35, 0.05, 0.93];
     K.f.back = 'mushroom';
     M.floating = false;
+  } else if (sh === 'queenjelly') {
+    // 大きなかさ＋ひらひらのふち＋長い触手（女王）
+    R *= 1.15;
+    P.add(ell([0, by + R * 0.35, 0], [R * 1.0, R * 0.85, R * 1.0], c1, { k: 0 }));
+    P.add({ ...ell([0, by - R * 0.3, 0], [R * 1.15, R * 0.42, R * 1.15]), op: 'sub', k: R * 0.15 });
+    for (let i = 0; i < 10; i++) { const a = i / 10 * Math.PI * 2; P.add(ell([Math.cos(a) * R * 0.95, by + R * 0.02, Math.sin(a) * R * 0.95], [R * 0.24, R * 0.12, R * 0.24], mix(c1, WHITE, 0.4), { k: R * 0.1 })); }
+    P.paint(sph([0, by + R * 1.0, 0], R * 0.5), mix(c1, K.c2, 0.5), R * 0.15);
+    for (let i = 0; i < 5; i++) { const a = i / 5 * Math.PI * 2; P.paint(sph([Math.cos(a) * R * 0.6, by + R * 0.75, Math.sin(a) * R * 0.6], R * 0.12), mix(K.c2, WHITE, 0.4), R * 0.03); }
+    hc = [0, by + R * 0.3, 0]; eyeDir = [0.35, 0.0, 0.94]; eyeSize = 0.4;
+    K.ex.add('tentacles'); M.longTentacles = true;
+    arms = false;
+  } else if (sh === 'sludge') {
+    // ヘドロの大きなかたまり：たれる体・太い腕・あわ
+    R *= 1.1;
+    P.add(ell([0, R * 0.75, 0], [R * 1.1, R * 0.85, R * 0.95], c1, { k: 0 }));
+    P.add(ell([0, R * 0.12, 0], [R * 1.45, R * 0.2, R * 1.3], c1, { k: R * 0.25 }));
+    for (let i = 0; i < 7; i++) { const a = i / 7 * Math.PI * 2 + 0.3; P.add(cap([Math.cos(a) * R * 0.85, R * 0.6, Math.sin(a) * R * 0.75], [Math.cos(a) * R * 1.0, R * 0.08, Math.sin(a) * R * 0.95], R * 0.22, R * 0.15, c1, { k: R * 0.15 })); }
+    P.add(cap([R * 0.2, R * 1.45, -R * 0.1], [R * 0.3, R * 1.75, -R * 0.15], R * 0.16, R * 0.07, c1, { k: R * 0.15 }));
+    for (let i = 0; i < 6; i++) P.paint(sph([Math.cos(i * 2.2) * R * 0.8, R * (0.5 + (i % 3) * 0.3), Math.sin(i * 2.2) * R * 0.6], R * 0.12), mix(c1, K.c2, 0.6), R * 0.03);
+    hc = [0, R * 0.95, R * 0.05]; eyeDir = [0.35, 0.15, 0.92];
+    M.floating = false;
+    for (const sx of [-1, 1]) { const AP = new Part([cap([0, 0, 0], [sx * R * 0.35, -R * 0.55, R * 0.25], R * 0.26, R * 0.32, c1, { k: 0 }), sph([sx * R * 0.38, -R * 0.65, R * 0.3], R * 0.34, c1, { k: R * 0.12 })]); const j = K.joint(pv, [sx * R * 1.05, R * 0.95, R * 0.1], [0, 0, sx * 0.25]); K.add(j, K.mesh(AP, 'limb'), { mat: MAT.glossy }); j.r0 = j.rot.slice(); M.arms.push(j); }
+    arms = false;
+  } else if (sh === 'chandelier') {
+    // シャンデリアのおばけ：輪の上に炎がならぶ
+    const gold = [0.95, 0.78, 0.3];
+    P.add(ell([0, by + R * 0.1, 0], [R * 0.55, R * 0.6, R * 0.55], mix(c1, [1, 0.62, 0.25], 0.5), { k: 0 }));
+    P.add(tor([0, by - R * 0.25, 0], R * 1.0, R * 0.08, gold, { k: R * 0.05 }));
+    for (let i = 0; i < 6; i++) { const a = i / 6 * Math.PI * 2; P.add(cap([Math.cos(a) * R * 0.3, by, Math.sin(a) * R * 0.3], [Math.cos(a) * R * 1.0, by - R * 0.25, Math.sin(a) * R * 1.0], R * 0.05, R * 0.05, gold, { k: R * 0.04 })); P.add(cap([Math.cos(a) * R * 1.0, by - R * 0.25, Math.sin(a) * R * 1.0], [Math.cos(a) * R * 1.0, by - R * 0.02, Math.sin(a) * R * 1.0], R * 0.09, R * 0.08, [1, 0.97, 0.88], { k: R * 0.03 })); }
+    P.add(cap([0, by + R * 0.6, 0], [0, by + R * 1.25, 0], R * 0.06, R * 0.06, gold, { k: R * 0.04 }));
+    P.add(cap([0, by - R * 0.45, 0], [0, by - R * 0.9, 0], R * 0.18, R * 0.02, gold, { k: R * 0.08 }));
+    M.chandelier = { by, R };
+    M.body_emis = [0.3, 0.16, 0.05];
+    hc = [0, by + R * 0.1, 0]; eyeDir = [0.35, 0.1, 0.93]; eyeSize = 0.4;
+    arms = false; K.ex.delete('lantern');
+  } else if (sh === 'oniwisp') {
+    // 鬼火：角のある火の玉＋まわりを回る小さな火
+    P.add(sph([0, by, 0], R * 0.72, c1, { k: 0 }));
+    P.add(cap([0, by + R * 0.1, -R * 0.2], [0, by + R * 1.1, -R * 1.4], R * 0.6, R * 0.06, c1, { k: R * 0.25 }));
+    for (const sx of [-1, 1]) P.add(cap([sx * R * 0.35, by + R * 0.5, R * 0.1], [sx * R * 0.6, by + R * 1.15, R * 0.05], R * 0.14, R * 0.02, [0.98, 0.92, 0.8], { k: R * 0.05 }));
+    P.paint(sph([0, by - R * 0.1, R * 0.3], R * 0.5), mix(c1, WHITE, 0.4), R * 0.2);
+    M.body_emis = K.glow.map(v => v * 0.45);
+    M.orbitFlames = true;
+    arms = false;
+  } else if (sh === 'conch') {
+    // 大きな巻き貝にすむ：らせんの貝がら＋顔と腕が出ている
+    R *= 0.95;
+    const shell = mix(K.c2, WHITE, 0.25);
+    for (let i = 0; i < 6; i++) { const t = i / 5; P.add(tor([0, R * (0.55 + t * 1.1), -R * 0.25], R * (0.95 - t * 0.7), R * (0.32 - t * 0.2), i % 2 ? shell : mix(shell, K.c2, 0.4), { k: R * 0.12 })); }
+    P.add(cap([0, R * 1.6, -R * 0.25], [0, R * 2.15, -R * 0.3], R * 0.18, R * 0.02, shell, { k: R * 0.1 }));
+    P.add(sph([0, R * 0.62, R * 0.45], R * 0.5, c1, { k: R * 0.1 }));
+    for (let i = 0; i < 4; i++) P.add(cap([Math.cos(i * 1.6) * R * 0.7, R * (0.7 + i * 0.25), -R * 0.25 + Math.sin(i * 1.6) * R * 0.6], [Math.cos(i * 1.6) * R * 1.05, R * (0.8 + i * 0.25), -R * 0.25 + Math.sin(i * 1.6) * R * 0.9], R * 0.08, R * 0.01, shell, { k: R * 0.05 }));
+    hc = [0, R * 0.62, R * 0.45]; eyeDir = [0.4, 0.15, 0.9]; eyeSize = 0.55;
+    M.floating = false;
+    K.prim(pv, PRIM.sphereHi, [1, 0.97, 1], [0, R * 2.3, -R * 0.3], [R * 0.14], null, { mat: MAT.glossy, emis: [0.15, 0.15, 0.18], outline: 0.5 });
   } else if (sh === 'moss') {
     P.add(sph([0, R * 0.7, 0], R * 0.72, c1, { k: 0 }));
     for (let i = 0; i < 14; i++) { const a = i * 2.4, e = ((i * 37) % 10) / 10; P.add(sph([Math.cos(a) * R * 0.62 * Math.sqrt(1 - e * e), R * 0.7 + e * R * 0.62, Math.sin(a) * R * 0.62 * Math.sqrt(1 - e * e)], R * 0.2, i % 2 ? c1 : mix(c1, K.c2, 0.3), { k: R * 0.08 })); }
@@ -1623,13 +1788,13 @@ function planBlob(K, M, pv, Bl) {
     for (let i = 0; i < 3; i++) K.prim(pv, PRIM.leaf, [0.45, 0.82, 0.32], [Math.cos(i * 2.1) * R * 0.25, R * 1.42, Math.sin(i * 2.1) * R * 0.25], [R * 0.25], [0.3, i * 2.1, 0.4], { outline: 0.6 });
   }
   const A = { y: hc[1], z0: R * 0.3, z1: -R * 0.4, w: R * 0.8, top: topFn(P), neck: [0, hc[1] + R * 0.6, 0], wingZ: -R * 0.2 };
-  if (sh !== 'clam' && sh !== 'mushroom') backShapes(K, P, A);
+  if (!['clam', 'mushroom', 'conch', 'chandelier'].includes(sh)) backShapes(K, P, A);
   bodyPaints(K, P, A);
   const bj = K.joint(pv, [0, 0, 0]);
   M.body = K.add(bj, K.mesh(P, 'body'), { mat: M.glossy || Bl.glossy ? MAT.glossy : MAT.char, alpha: sh === 'jelly' || sh === 'slime' ? 0.88 : 1 });
   if (M.body_emis) M.body.emis = M.body_emis;
   if (sh === 'jelly' || sh === 'slime') M.body.transparent = true;
-  const head = { part: P, R: R * (sh === 'drop' ? 0.75 : 0.7), c: hc, node: bj };
+  const head = { part: P, R: R * (sh === 'drop' ? 0.75 : sh === 'conch' ? 0.5 : sh === 'chandelier' ? 0.55 : 0.7), c: hc, node: bj };
   M.head = null; M.headInfo = head;
   if (arms) for (const sx of [-1, 1]) {
     const AP = new Part([ell([0, -0.08, 0], [R * 0.2, R * 0.32, R * 0.2], c1, { k: 0 })]);
@@ -1637,7 +1802,9 @@ function planBlob(K, M, pv, Bl) {
     j.r0 = j.rot.slice(); M.arms.push(j);
   }
   if (sh !== 'clam' && sh !== 'mushroom') backNodes(K, M, pv, A); else backNodes(K, M, pv, { ...A, top: () => sh === 'mushroom' ? R * 0.9 : R * 0.2, w: R * 0.75 });
-  M.tailBase = sh === 'ghost' ? null : [0, hc[1] - R * 0.4, -R * 0.75];
+  M.tailBase = ['ghost', 'conch', 'chandelier', 'sludge', 'queenjelly'].includes(sh) ? null : [0, hc[1] - R * 0.4, -R * 0.75];
+  if (M.chandelier) { const C = M.chandelier; for (let i = 0; i < 6; i++) { const a = i / 6 * Math.PI * 2; addFlame(K, M, pv, [Math.cos(a) * C.R, C.by - C.R * 0.0, Math.sin(a) * C.R], 0.42, [0, 0, 0], K.T.includes('ghost')); } addFlame(K, M, pv, [0, C.by + C.R * 1.25, 0], 0.5, [0, 0, 0], true); }
+  if (M.orbitFlames) { M.orbit = K.joint(pv, [0, by, 0]); for (let i = 0; i < 4; i++) { const a = i / 4 * Math.PI * 2; addFlame(K, M, M.orbit, [Math.cos(a) * R * 1.3, 0, Math.sin(a) * R * 1.3], 0.38, [0, 0, 0], true); } }
   M.tailType = sh === 'ghost' ? null : K.f.tail;
   M.anchor = A;
   M.eyeCfg = { dir: eyeDir, size: eyeSize };
@@ -1649,6 +1816,7 @@ function planBlob(K, M, pv, Bl) {
 // ---------------- 植物 ----------------
 const PLT = {
   dandelion: { kind: 'dandelion' }, cactus: { kind: 'cactus' }, bud: { kind: 'bud' }, flower: { kind: 'flower' }, lily: { kind: 'lily' },
+  parasol: { kind: 'parasol' }, cactusgiant: { kind: 'cactus', giant: 1 },
 };
 function planPlant(K, M, pv, Pl) {
   M.plan = 'plant';
@@ -1656,9 +1824,10 @@ function planPlant(K, M, pv, Pl) {
   const leaf = [0.42, 0.8, 0.32], stem = mix(leaf, [0.2, 0.4, 0.15], 0.3);
   const P = new Part();
   let headR = 0.32 * lerp(1.15, 1, s), hy, hz = 0.02, armsKind = 'leaf';
+  if (kind === 'parasol') return planParasol(K, M, pv);
   if (kind === 'cactus') {
-    // サボテン：縦長の柱＋腕（トゲつき）
-    const h = lerp(0.75, 1.25, s), r = lerp(0.3, 0.34, s);
+    // サボテン：縦長の柱＋腕（トゲつき）。大サボテンは 腕が2対で背が高い
+    const h = lerp(0.75, 1.25, s) * (Pl.giant ? 1.6 : 1), r = lerp(0.3, 0.34, s) * (Pl.giant ? 1.05 : 1);
     P.add(cap([0, r * 0.8, 0], [0, h, 0], r * 1.05, r * 0.95, c1, { k: 0 }));
     P.add(ell([0, r * 0.35, 0], [r * 1.1, r * 0.4, r * 1.1], mix(c1, K.dark, 0.1), { k: 0.08 }));
     for (let i = 0; i < 8; i++) { const a = i / 8 * Math.PI * 2; P.paint(box([Math.cos(a) * r, h * 0.55, Math.sin(a) * r], [r * 0.05, h * 0.5, r * 0.05], 0, null, { rot: [0, -a, 0] }), mix(c1, K.dark, 0.25), r * 0.04); }
@@ -1673,6 +1842,7 @@ function planPlant(K, M, pv, Pl) {
       const AP = new Part([cap([0, 0, 0], [sx * r * 0.85, 0, 0], r * 0.42, r * 0.4, c1, { k: 0 }), cap([sx * r * 0.85, 0, 0], [sx * r * 0.9, r * (sx > 0 ? 0.9 : 0.6), 0], r * 0.4, r * 0.36, c1, { k: r * 0.15 })]);
       const j = K.joint(pv, [sx * r * 0.85, h * (sx > 0 ? 0.55 : 0.45), 0], [0, 0, 0]); K.add(j, K.mesh(AP, 'limb'));
       j.r0 = j.rot.slice(); M.arms.push(j);
+      if (Pl.giant) { const j2 = K.joint(pv, [sx * r * 0.85, h * (sx > 0 ? 0.32 : 0.75), 0], [0, 0, 0]); j2.setScale(0.75); K.add(j2, K.mesh(AP, 'limb')); }
     }
     // トゲ
     const SP = new Part(); const rr = mulberry32(K.sp.id);
@@ -1733,6 +1903,33 @@ function planPlant(K, M, pv, Pl) {
   M.anchor = A;
   M.eyeCfg = { dir: [0.38, 0.1, 0.92], size: kind === 'dandelion' ? 0.5 : 0.56 };
   M.faceCfg = { nose: false, mouthY: -headR * 0.32 };
+  return head;
+}
+
+// わた毛のパラシュート：大きなわた毛の傘に ぶらさがって 空を飛ぶ
+function planParasol(K, M, pv) {
+  M.plan = 'plant'; M.floating = true;
+  const s = K.st, leaf = [0.42, 0.8, 0.32];
+  const R = 0.62;
+  const UP = new Part([ell([0, 1.45, 0], [R * 0.55, R * 0.3, R * 0.55], [1, 0.98, 0.92], { k: 0 })]);
+  for (let i = 0; i < 40; i++) { const y = 1 - (i + 0.5) / 40, rr = Math.sqrt(1 - y * y), a = i * 2.39996; UP.add(sph([Math.cos(a) * rr * R, 1.45 + y * R * 0.65, Math.sin(a) * rr * R], R * 0.24, WHITE, { k: R * 0.1 })); }
+  UP.add(cap([0, 1.42, 0], [0, 0.85, 0], 0.035, 0.03, mix(leaf, [0.3, 0.25, 0.1], 0.3), { k: 0.02 }));
+  const uj = K.joint(pv, [0, 0, 0]); K.add(uj, K.mesh(UP, 'body')); M.parasol = uj;
+  // ぶらさがる小さな体（顔つき）
+  const bR = 0.3;
+  const P = new Part([sph([0, 0.62, 0], bR, K.c1, { k: 0 })]);
+  for (let i = 0; i < 5; i++) { const a = i / 5 * Math.PI * 2; P.add(ell([Math.cos(a) * bR * 0.6, 0.62 + bR * 0.75, Math.sin(a) * bR * 0.6], [bR * 0.35, bR * 0.18, bR * 0.35], mix(leaf, K.c1, 0.3), { k: bR * 0.1, rot: [0, -a, 0.5] })); }
+  P.paint(ell([0, 0.55, bR * 0.6], [bR * 0.7, bR * 0.6, bR * 0.5]), mix(K.c1, WHITE, 0.45), 0.03);
+  const bj = K.joint(pv, [0, 0, 0]);
+  M.body = K.add(bj, K.mesh(P, 'body'));
+  const head = { part: P, R: bR, c: [0, 0.62, 0], node: bj };
+  M.head = null; M.headInfo = head;
+  for (const sx of [-1, 1]) { const AP = new Part([cap([0, 0, 0], [sx * 0.08, 0.28, 0], 0.035, 0.03, leaf, { k: 0 }), ell([sx * 0.1, 0.32, 0], [0.07, 0.04, 0.05], leaf, { k: 0.02 })]); const j = K.joint(pv, [sx * bR * 0.9, 0.65, 0.02], [0, 0, sx * 0.1]); K.add(j, K.mesh(AP, 'small')); j.r0 = j.rot.slice(); M.arms.push(j); }
+  M.tailBase = null; M.noEars = true;
+  M.anchor = { y: 0.62, z0: 0.1, z1: -0.1, w: bR, top: () => 0.62 + bR, neck: [0, 0.9, 0] };
+  M.eyeCfg = { dir: [0.36, 0.12, 0.92], size: 0.5 };
+  M.faceCfg = { nose: false, mouthY: -bR * 0.32 };
+  void s;
   return head;
 }
 
@@ -1841,13 +2038,13 @@ function planGolem(K, M, pv, Gl) {
 }
 
 // ---------------- 亀 ----------------
-const TRT = { turtle: { k: 1 }, bigturtle: { k: 1.25, flat: 1 }, spiketurtle: { k: 1.15, spikes: 1 } };
+const TRT = { turtle: { k: 1 }, bigturtle: { k: 1.25, flat: 1 }, spiketurtle: { k: 1.15, spikes: 1 }, tortoise: { k: 1.05, dome: 1.45, tall: 1.5, neck: 1 } };
 function planTurtle(K, M, pv, Tt) {
   M.plan = 'turtle';
   const s = K.st, k = Tt.k;
   const shellCol = ['leaf', 'bush', 'tree'].includes(K.f.back) ? [0.6, 0.45, 0.28] : K.c2;
-  const sw = lerp(0.44, 0.52, s) * k, sl = lerp(0.5, 0.62, s) * k, shY = lerp(0.4, 0.5, s) * (Tt.flat ? 1.1 : 1);
-  const P = new Part([ell([0, shY, -0.04], [sw, lerp(0.28, 0.34, s) * (Tt.flat ? 0.85 : 1), sl], shellCol, { k: 0 })]);
+  const sw = lerp(0.44, 0.52, s) * k, sl = lerp(0.5, 0.62, s) * k, shY = lerp(0.4, 0.5, s) * (Tt.flat ? 1.1 : 1) * (Tt.tall || 1);
+  const P = new Part([ell([0, shY + (Tt.dome ? 0.1 : 0), -0.04], [sw, lerp(0.28, 0.34, s) * (Tt.flat ? 0.85 : 1) * (Tt.dome || 1), sl], shellCol, { k: 0 })]);
   P.add(tor([0, shY - 0.08, -0.04], sw * 0.92, 0.07, mix(shellCol, [0, 0, 0], 0.18), { k: 0.06, sc: [1, 1, sl / sw], pv: [0, shY - 0.08, -0.04] }));
   P.add(ell([0, shY - 0.14, 0.0], [sw * 0.86, 0.17, sl * 0.9], K.c1, { k: 0.06 }));
   for (let i = 0; i < 6; i++) { const a = i / 6 * Math.PI * 2; P.paint(ell([Math.cos(a) * sw * 0.55, shY + 0.22 * k, -0.04 + Math.sin(a) * sl * 0.5], [0.13 * k, 0.08, 0.15 * k]), mix(shellCol, [0, 0, 0], 0.22), 0.02); }
@@ -1863,7 +2060,8 @@ function planTurtle(K, M, pv, Tt) {
   for (const [sx, sz] of [[-1, 1], [1, 1], [-1, -1], [1, -1]]) { const j = K.joint(pv, [sx * sw * 0.68, shY - 0.17, sz * sl * 0.55], [0, 0, sx * 0.15]); K.add(j, lg); j.len = shY - 0.17; M.legs.push(j); }
   const R = lerp(0.3, 0.24, s) * (Tt.flat ? 1.1 : 1);
   const head = mammalHead(K, R, { col: K.c1, snout: 0.35 + s * 0.3, brow: s > 0.7 });
-  const hj = K.joint(pv, [0, shY + 0.02, sl * 0.95 + R * 0.1]);
+  if (Tt.neck) K.add(pv, K.mesh(new Part([cap([0, shY - 0.08, sl * 0.55], [0, shY + 0.32, sl * 1.0], 0.14, 0.12, K.c1, { k: 0 })]), 'limb'));
+  const hj = K.joint(pv, [0, shY + 0.02 + (Tt.neck ? 0.38 : 0), sl * 0.95 + R * 0.1 + (Tt.neck ? 0.18 : 0)]);
   K.add(hj, K.mesh(head.part, 'head'));
   head.node = hj; M.head = hj; M.headInfo = head;
   backNodes(K, M, pv, { ...A, top: (z) => A.top(z) - 0.03, w: sw * 0.5 });
@@ -2111,10 +2309,10 @@ function addExtras(K, M, head) {
   }
   if (ex.has('star')) { const z = A.z0 + A.w * 0.5; K.prim(pv, PRIM.star, [1, 0.95, 0.4], [0, A.y, z + A.w * 0.55], [A.w * 0.35], null, { emis: [0.5, 0.45, 0.1], unlit: true, outline: 0 }).doubleSide = true; }
   if (ex.has('lantern')) { const t = A.top((A.z0 + A.z1) / 2); const j = K.joint(pv, [0, t + A.w * 0.1, (A.z0 + A.z1) / 2]); K.prim(j, PRIM.box, [0.3, 0.22, 0.18], [0, A.w * 0.6, 0], [A.w * 0.6, A.w * 0.12, A.w * 0.6]); K.prim(j, PRIM.sphereHi, [1, 0.78, 0.3], [0, A.w * 0.3, 0], [A.w * 0.32], null, { emis: [0.9, 0.5, 0.1], outline: 0.5 }); }
-  if (ex.has('sunball')) K.prim(pv, PRIM.sphereHi, [1, 0.65, 0.18], [0, A.y - A.w * 0.2, A.z0 + A.w * 1.2], [A.w * 0.6], null, { emis: [0.85, 0.4, 0.05], outline: 0.6 });
+  if (ex.has('sunball')) { if (M.sunTop) { const sb = K.prim(pv, PRIM.sphereHi, [1, 0.65, 0.18], M.sunTop, [0.36], null, { emis: [0.95, 0.5, 0.08], outline: 0.6 }); for (let i = 0; i < 6; i++) addFlame(K, M, pv, [M.sunTop[0] + Math.cos(i) * 0.3, M.sunTop[1] + Math.sin(i) * 0.3, M.sunTop[2]], 0.55, [0, 0, -i + Math.PI / 2]); void sb; } else K.prim(pv, PRIM.sphereHi, [1, 0.65, 0.18], [0, A.y - A.w * 0.2, A.z0 + A.w * 1.2], [A.w * 0.6], null, { emis: [0.85, 0.4, 0.05], outline: 0.6 }); }
   if (ex.has('bubbles')) for (let i = 0; i < 5; i++) K.prim(pv, PRIM.sphereHi, [0.8, 0.95, 1], [Math.sin(i * 2) * A.w * 2, A.y + A.w * (0.5 + i * 0.4), Math.cos(i * 2) * A.w * 1.6], [A.w * (0.18 + (i % 3) * 0.06)], null, { alpha: 0.45, mat: MAT.glossy, outline: 0 }).noDepthWrite = true;
   if (ex.has('glow')) M.body && (M.body.emis = K.glow.map(v => v * 0.14));
-  if (ex.has('tentacles')) for (let i = 0; i < 6; i++) { const a = i / 6 * Math.PI * 2; tailChain(K, M, pv, [Math.cos(a) * A.w * 0.85, A.y - A.w * 0.75, (A.z0 + A.z1) / 2 + Math.sin(a) * A.w * 0.85], 3, A.w * 0.5, A.w * 0.13, K.c2, 0.25 * Math.cos(a), 0.18, 0, null, 0.6); }
+  if (ex.has('tentacles')) { const nT = M.longTentacles ? 8 : 6; for (let i = 0; i < nT; i++) { const a = i / nT * Math.PI * 2; tailChain(K, M, pv, [Math.cos(a) * A.w * 0.85, A.y - A.w * 0.75, (A.z0 + A.z1) / 2 + Math.sin(a) * A.w * 0.85], M.longTentacles ? 5 : 3, A.w * 0.5, A.w * 0.13, K.c2, 0.25 * Math.cos(a), 0.18, 0, null, 0.6); } }
   const hand = M.arms[1];
   if (hand && ex.has('sword')) { const P = new Part([box([0, 0, R * 1.3], [R * 0.06, R * 0.14, R * 1.1], R * 0.03, [0.88, 0.92, 1], { k: 0 }), box([0, 0, R * 0.12], [R * 0.32, R * 0.08, R * 0.08], R * 0.03, [0.7, 0.5, 0.2], { k: 0.01 })]); K.add(K.joint(hand, [0, -hand.len - 0.04, 0.1]), K.mesh(P, 'tiny'), { mat: MAT.glossy, emis: [0.08, 0.1, 0.18] }); }
   if (hand && ex.has('hammer')) { const P = new Part([cap([0, 0, -R * 0.2], [0, 0, R * 1.2], R * 0.07, R * 0.07, [0.55, 0.38, 0.22], { k: 0 }), box([0, 0, R * 1.35], [R * 0.45, R * 0.38, R * 0.32], R * 0.1, [0.62, 0.62, 0.68], { k: 0.01 })]); K.add(K.joint(hand, [0, -hand.len - 0.04, 0.08]), K.mesh(P, 'small'), { mat: MAT.glossy }); }
@@ -2222,7 +2420,7 @@ export function animateAnimon(M, dt, state = 'idle', speed = 1) {
   // 翼
   const flapSp = state === 'fly' ? 8.5 : battle ? 6 : (plan === 'bird' || plan === 'bug' ? 3.5 : 2.2);
   const flapAmp = state === 'fly' ? 0.8 : battle ? 0.5 : (plan === 'bug' ? 0.45 : 0.22);
-  const fold = plan === 'bird' && !M.floating && state !== 'fly' && !battle && state !== 'happy' && state !== 'roar';
+  const fold = plan === 'bird' && !M.floating && !M.spread && state !== 'fly' && !battle && state !== 'happy' && state !== 'roar';
   M.wings.forEach(wg => {
     if (fold) { wg.rot[2] = wg.side * (-1.05 + Math.sin(t * 2.2) * 0.05); wg.rot[1] = wg.side * 0.6; return; }
     wg.rot[2] = wg.side * (Math.sin(t * flapSp) * flapAmp + (plan === 'bird' ? -0.15 : 0.12)); wg.rot[1] = wg.side * Math.cos(t * flapSp) * 0.1;
@@ -2259,6 +2457,7 @@ export function animateAnimon(M, dt, state = 'idle', speed = 1) {
   if (M.trunk) M.trunk.rot[0] = 2.5 + Math.sin(t * 2) * 0.2;
   if (M.clam) M.clam.rot[0] = 0.5 + Math.max(0, Math.sin(t * 1.2)) * 0.25;
   if (M.orb) M.orb.rot[1] += dt * 2;
+  if (M.orbit) M.orbit.rot[1] += dt * 2.4;
   if (M.pincers) M.pincers.forEach((pc, i) => { pc.rot[0] = Math.sin(t * (battle ? 6 : 2) + i) * 0.15; });
 }
 

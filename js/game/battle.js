@@ -81,7 +81,7 @@ export class Battle {
   _sendIn(s, slot, b, initial = false) {
     s.active[slot] = b; b.slot = slot; b.reset(); b.slot = slot;
     if (s.ai === 'player') this.msg(`ゆけっ！ ${monName(b.m)}！`);
-    else if (s.ai === 'wild') { if (initial) this.msg(`野生の ${monName(b.m)} が あらわれた！`); }
+    else if (s.ai === 'wild') { if (initial) { this.msg(`野生の ${monName(b.m)} が あらわれた！`); if (SPECIES[b.m.sp].rarity >= 4 && !this.cfg?.boss) this.msg('めずらしい アニモンだ！ 逃がさないように しよう！'); } }
     else this.msg(`${s.name} は ${monName(b.m)} を くりだした！`);
     this.emit({ t: 'send', side: s.i, slot, idx: b.idx, hp: b.m.hp, max: b.maxhp });
   }
@@ -575,7 +575,9 @@ export class Battle {
     if (it.mult >= 999) return 1;
     const hpF = 1 - 0.66 * foe.m.hp / foe.maxhp;
     const stF = ['slp', 'frz'].includes(foe.m.status) ? 2 : foe.m.status ? 1.5 : 1;
-    let p = Math.min(1, (foe.sp.catchRate / 255) * it.mult * hpF * stF * 1.1);
+    // ダンジョンの主は なつきにくい種でも 一定の確率は残す
+    const rate = foe.m.boss ? Math.max(foe.sp.catchRate, 45) : foe.sp.catchRate;
+    let p = Math.min(1, (rate / 255) * it.mult * hpF * stF * 1.1);
     const gap = foe.lv - me.lv;
     if (gap > 15) p *= 0.003; else if (gap > 10) p *= 0.05; else if (gap > 5) p *= 0.4;
     return Math.max(0, Math.min(1, p));

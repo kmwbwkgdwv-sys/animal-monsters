@@ -335,6 +335,20 @@ const LEGENDS = [
 ];
 
 // ---------- 種族テーブル生成 ----------
+// ---- レア度（出現しやすさ） ----
+//  1 よく見る / 2 ふつう / 3 少ない / 4 めずらしい / 5 まぼろし（伝説）
+//  強い（種族値の合計が高い）ほど 出にくい。もともと珍しい種族は 1段階 上がる
+export function rarityOf(bst, rare = false) {
+  let r = bst < 240 ? 1 : bst < 290 ? 2 : bst < 345 ? 3 : 4;
+  if (rare) r = Math.min(4, r + 1);
+  return r;
+}
+export const RARITY_JA = ['', 'よく見る', 'ふつう', '少ない', 'めずらしい', 'まぼろし'];
+export const RARITY_COL = ['', '#9fd18b', '#8fc8ff', '#c79bff', '#ffcc33', '#ff6fa8'];
+// 出現の重み（強いほど 小さい）
+export const RARITY_W = [0, 1.5, 1, 0.5, 0.22, 0];
+export const rarityStars = (r) => '★'.repeat(r) + '☆'.repeat(Math.max(0, 4 - r));
+
 export const SPECIES = [null]; // 1始まり
 export const BY_NAME = {};
 const STAGE_BST = { 3: [205, 282, 352], 2: [232, 345], 1: [338] };
@@ -376,6 +390,9 @@ function addLine(L, isLegend = false) {
     else if (len === 1) { sp.catchRate = sp.rare ? 35 : 75; sp.baseExp = 175; }
     else if (len === 2) { sp.catchRate = i === 0 ? 170 : 55; sp.baseExp = i === 0 ? 70 : 190; }
     else { sp.catchRate = [190, 90, 40][i]; sp.baseExp = [60, 140, 235][i]; }
+    // 出現しやすさ（レア度）：種族値の合計が高い＝強いほど 出にくい
+    sp.bst = stats[0] + stats[1] + stats[2] + stats[3];
+    sp.rarity = sp.legend ? 5 : rarityOf(sp.bst, sp.rare);
     sp.moves = buildLearnset(sp, lineId);
     SPECIES.push(sp);
     BY_NAME[sp.name] = sp;

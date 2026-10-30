@@ -36,7 +36,7 @@ export function useItem(id) { if (!itemCount(id)) return false; addItem(id, -1);
 export function addMoney(n) { G.save.money = Math.max(0, Math.min(9999999, G.save.money + n)); }
 export function healParty() { for (const m of G.save.party) healMon(m); }
 export function crests() { return G.save.story.crests || 0; }
-export function save() { if (G.save) { if (G.save.pid) G.save.cloudDirty = true; writeGame(G.save); if (G.onSaved) G.onSaved(); } }
+export function save() { if (G.save) { try { if (G.capturePos) G.capturePos(); } catch (e) { /* */ } if (G.save.pid) G.save.cloudDirty = true; writeGame(G.save); if (G.onSaved) G.onSaved(); } }
 export function itemName(id) { return ITEMS[id]?.name || id; }
 export function speciesName(id) { return SPECIES[id]?.name || '？'; }
 export function isUnlocked(region) { if (region === 'sea') return true; return G.save.unlocked.includes(region); }

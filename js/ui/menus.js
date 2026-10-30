@@ -1,15 +1,15 @@
 // =============================================================
 //  メニュー画面いろいろ
 // =============================================================
-import { SPECIES, DEX_COUNT, REGION_JA } from '../data/species.js';
-import { MOVES } from '../data/moves.js';
+import { SPECIES, DEX_COUNT, REGION_JA, RARITY_JA, RARITY_COL, rarityStars } from '../data/species.js';
+import { MOVES, moveEffects, moveEffectText } from '../data/moves.js';
 import { ITEMS, CAT_JA, SHOP_FOODS, FOOD_STARS } from '../data/items.js';
 import { ABILITIES } from '../data/abilities.js';
 import { TYPES, TYPE_JA, TYPE_COLOR, typeBadge } from '../data/types.js';
 import { TOWNS, STONES, DUNGEONS, REGIONS, RING, howToGet, hiddenInDex, WORLD, START_POS } from '../data/world.js';
 import { CREST_JA } from '../data/story.js';
 import { G, PARTY_MAX, partyHasSpecies, itemCount, addItem, useItem, addMoney, save, healParty, crests, isUnlocked, dexCounts, findMon } from '../game/state.js';
-import { calcStats, monName, ivTotal, ivRank, expProgress, expToNext, healMon, maxHp, addExp, expForLevel } from '../game/mon.js';
+import { calcStats, adjBase, ivMul, monName, ivTotal, ivRank, expProgress, expToNext, healMon, maxHp, addExp, expForLevel } from '../game/mon.js';
 import { $, el, esc, openScreen, toast, ask, confirmBox, inputText, say, fade, hpClass, closeAllScreens } from './ui.js';
 import { portrait, portraitAsync, BLANK } from '../render/portrait.js';
 import { audio } from '../audio.js';
@@ -23,25 +23,127 @@ const STAT_JA = { hp: 'HP（体力）', atk: '攻撃', def: '防御', spe: '素�
 // ---------- メインメニュー ----------
 export async function openMainMenu() {
   const s = openScreen('メニュー');
-  const ov = await import('../game/overworld.js');
-  const c = dexCounts();
-  const mins = Math.floor(G.save.playTime / 60);
-  s.body.innerHTML = `
-  <div class="card" style="margin-bottom:.8em"><div class="row"><div class="grow"><b style="font-size:1.15em">${esc(G.save.name)}</b>　<span class="muted">プレイ時間 ${Math.floor(mins / 60)}時間${mins % 60}分</span></div><b style="color:var(--acc)">¥${G.save.money.toLocaleString()}</b></div>
-  <div class="row muted" style="margin-top:.3em">図鑑 ${c.caught}/${DEX_COUNT}（見つけた ${c.seen}）　紋章 ${crests()}/8 ${G.save.postGame ? '　<span style="color:var(--acc)">★クリア済み（経験値2倍）</span>' : ''}</div>
-  <div class="row" style="margin-top:.3em;gap:.3em">${CREST_JA.map((n, i) => `<span title="${n}" style="font-size:1.2em;opacity:${i < crests() ? 1 : .2}">${['🌳', '💧', '🏜️', '⛰️', '❄️', '🌫️', '☁️', '🌋'][i]}</span>`).join('')}</div></div>
-  <div class="boxgrid" style="grid-template-columns:repeat(auto-fill,minmax(8.5em,1fr))"></div>`;
-  const grid = s.body.querySelector('.boxgrid');
-  const items = [['🐾', 'パーティー', () => openParty()], ['📦', 'ボックス', () => openBox()], ['📖', '図鑑', () => openDex()], ['🎒', 'バッグ', () => openBag()],
-    ['🗺️', 'マップ', () => openMap()], ['🐎', 'ライド', () => openRide()], ['🤝', 'フレンド', async () => (await import('./onlineUI.js')).openFriends()], ['🏆', 'ランキング', async () => (await import('./onlineUI.js')).openRanking()],
-    ['💾', 'セーブ', async () => { save(); toast('セーブしました！'); try { const ON = await import('../online.js'); if (G.save.pid && ON.isConfigured() && await ON.pushSave(true)) toast('☁️ クラウドにも 保存しました（連携した端末と 共有）'); } catch (e) { /* */ } }], ['⚙️', '設定', () => openSettings(false)], ['🏠', 'タイトルへ', async () => { if (await confirmBox('セーブして タイトル画面に 戻りますか？')) { save(); location.reload(); } }]];
-  for (const [ic, nm, fn] of items) {
-    const b = el('button', 'bcell', `<div style="font-size:1.8em">${ic}</div><div style="font-weight:800;font-size:.9em">${nm}</div>`);
-    b.style.aspectRatio = '1.3';
-    b.onclick = async () => { audio.sfx('select'); await fn(); };
-    grid.appendChild(b);
-  }
-  void ov;
+  const SE = await import('../game/storyEngine.js');
+  const draw = () => {
+    const c = dexCounts();
+    const mins = Math.floor(G.save.playTime / 60);
+    let goal = '';
+    try { goal = UI_fmt(SE.objective().txt || ''); } catch (e) { /* */ }
+    const bagN = Object.values(G.save.bag).reduce((a, b) => a + b, 0);
+    const party = G.save.party.map(m => {
+      const r = Math.max(0, m.hp / maxHp(m));
+      return `<div class="mpm${m.hp <= 0 ? ' down' : ''}"><img src="${portrait(m.sp, m.shiny)}"><span class="lv">Lv${m.lv}</span><div class="hpbar"><i class="${hpClass(r)}" style="width:${r * 100}%"></i></div></div>`;
+    }).join('') + Array.from({ length: Math.max(0, PARTY_MAX - G.save.party.length) }, () => '<div class="mpm empty"></div>').join('');
+    s.body.innerHTML = `
+    <div class="mhead">
+      <div class="mprof">
+        <div class="row"><b class="pname">${esc(G.save.name)}</b><span class="muted">⏱ ${Math.floor(mins / 60)}時間${mins % 60}分</span><span class="grow"></span><b class="money">¥${G.save.money.toLocaleString()}</b></div>
+        <div class="mstats"><span>📖 図鑑 <b>${c.caught}</b>/${DEX_COUNT}</span><span>👀 見つけた <b>${c.seen}</b></span><span>🏅 紋章 <b>${crests()}</b>/8</span>${G.save.postGame ? '<span class="clear">★クリア済み（経験値2倍）</span>' : ''}</div>
+        <div class="mcrests">${CREST_JA.map((n, i) => `<span title="${n}" class="${i < crests() ? 'on' : ''}">${['🌳', '💧', '🏜️', '⛰️', '❄️', '🌫️', '☁️', '🌋'][i]}</span>`).join('')}</div>
+        ${goal ? `<div class="mgoal"><b>⭐ 次の目的</b><span>${esc(goal)}</span></div>` : ''}
+      </div>
+      <div class="mparty">${party}</div>
+    </div>
+    <div class="mtiles"></div>`;
+    const grid = s.body.querySelector('.mtiles');
+    const items = [
+      ['🐾', 'パーティー', `${G.save.party.length}/${PARTY_MAX}匹`, '#ff8a5c', () => openParty()],
+      ['📦', 'ボックス', `${G.save.box.length}匹`, '#c08a4a', () => openBox()],
+      ['📖', '図鑑', `${c.caught}/${DEX_COUNT}`, '#e05a7a', () => openDex()],
+      ['🎒', 'バッグ', `${bagN}こ`, '#f0a830', () => openBag()],
+      ['📜', 'ストーリー', SE.currentStep().ch <= 11 ? `第${SE.currentStep().ch}章・サイド` : 'クリア後・サイド', '#d98c3a', () => openJournal()],
+      ['🗺️', 'マップ', '行き先を見る', '#3cb371', () => openMap()],
+      ['🐎', 'ライド', '乗って移動', '#8a6adf', () => openRide()],
+      ['🧺', 'おつかい', `${ER_active()}/${5}件 引き受け中`, '#ff7aa8', () => openErrands()],
+      ['🤝', 'フレンド', '交換・対戦', '#36a9e1', async () => (await import('./onlineUI.js')).openFriends()],
+      ['🏆', 'ランキング', '図鑑の数で勝負', '#e6b422', async () => (await import('./onlineUI.js')).openRanking()],
+      ['💾', 'セーブ', '記録する', '#4c8df0', async () => { save(); toast('セーブしました！'); try { const ON = await import('../online.js'); if (G.save.pid && ON.isConfigured() && await ON.pushSave(true)) toast('☁️ クラウドにも 保存しました（連携した端末と 共有）'); } catch (e) { /* */ } }],
+      ['⚙️', '設定', '音・操作など', '#7b8aa8', () => openSettings(false)],
+      ['🏠', 'タイトルへ', 'セーブして戻る', '#9a7bb5', async () => { if (await confirmBox('セーブして タイトル画面に 戻りますか？')) { save(); location.reload(); } }]];
+    for (const [ic, nm, sub, col, fn] of items) {
+      const b = el('button', 'mtile', `<span class="ic">${ic}</span><span class="nm">${nm}</span><span class="sub">${sub}</span>`);
+      b.style.setProperty('--c', col);
+      b.onclick = async () => { audio.sfx('select'); await fn(); if (!s.closed) draw(); };
+      grid.appendChild(b);
+    }
+  };
+  draw();
+  await waitClose(s);
+}
+
+// ---------- ストーリー一覧（左上の「目的」を押すと開く） ----------
+export async function openJournal() {
+  const SE = await import('../game/storyEngine.js');
+  ERM = await import('../game/errands.js');
+  const s = openScreen('ストーリー');
+  const fm = (t) => esc(UI_fmt(t || ''));
+  const render = () => {
+    const si = SE.storyInfo();
+    const chips = Object.entries(SE.CHAPTERS).map(([n, nm]) => { n = +n; const st = n < si.ch || si.end ? 'done' : n === si.ch ? 'now' : 'lock'; return `<span class="chchip ${st}" title="${esc(nm)}">${st === 'done' ? '✔' : st === 'now' ? '▶' : '🔒'} ${n}章</span>`; }).join('');
+    const qs = SE.QUESTS.map(q => ({ q, i: SE.questInfo(q) }));
+    const order = { active: 0, new: 1, done: 2, locked: 3 };
+    qs.sort((a, b) => order[a.i.state] - order[b.i.state]);
+    const badge = { active: '<span class="qbadge act">進行中</span>', new: '<span class="qbadge new">まだ 受けていない</span>', done: '<span class="qbadge done">クリア</span>', locked: '<span class="qbadge lock">？？？</span>' };
+    const qrow = ({ q, i }, k) => `<div class="qrow ${i.state}"><div class="grow">
+        <div class="nm">${i.state === 'locked' ? '？？？' : esc(q.name)} ${badge[i.state]}${i.state === 'active' ? `<span class="muted"> ${i.stage + 1}/${i.total}</span>` : ''}</div>
+        ${i.state !== 'done' ? `<div class="ob">${i.state === 'active' ? '目的：' : ''}${fm(i.obj)}</div>` : ''}
+        ${i.dest ? `<div class="ds">📍 目的地：${esc(i.dest)}</div>` : ''}</div>
+        ${i.pos ? `<button class="btn sm qmap" data-k="${k}">🗺️ 地図</button>` : ''}</div>`;
+    const act = ERM.activeErrands();
+    s.body.innerHTML = `
+      <div class="jmain">
+        <div class="jch">${si.end ? 'ストーリー クリア！' : `第${si.ch}章「${esc(si.chName)}」`}</div>
+        <div class="jobj"><b>目的</b>${fm(si.obj)}</div>
+        ${si.dest ? `<div class="jdest"><b>目的地</b>${esc(si.dest)}${si.dist != null ? `<span class="muted">（ここから ${si.dist}m）</span>` : ''}</div>` : ''}
+        <div class="row" style="gap:.5em;margin-top:.5em">${si.pos ? '<button class="btn sm pri smap">🗺️ 地図で 目的地を 見る</button>' : ''}</div>
+        <div class="chchips">${chips}</div>
+        <div class="crownrow"><span class="${G.save.crowns?.s ? 'got' : ''}">👑 銀の王冠：第6章クリア（4つ目の紋章）${G.save.crowns?.s ? ' ✔' : ''}</span><span class="g ${G.save.crowns?.g ? 'got' : ''}">👑 金の王冠：ストーリー クリア${G.save.crowns?.g ? ' ✔' : ''}</span></div>
+      </div>
+      <h4 style="margin:.8em 0 .3em">サイドストーリー <span class="muted" style="font-size:.8em;font-weight:400">クリア ${qs.filter(x => x.i.state === 'done').length}/${qs.length}</span></h4>
+      ${qs.map(qrow).join('')}
+      <h4 style="margin:.8em 0 .3em">おつかい <span class="muted" style="font-size:.8em;font-weight:400">${act.length}件 引き受け中・完了 ${G.save.errandsDone || 0}回</span></h4>
+      ${act.map(e => { const pr = ERM.reqProgress(e.g, e.s, e.req); return `<div class="qrow"><div class="grow"><div class="nm">${esc(ERM.reqSummary(e.req))}</div><div class="ds">${esc(ERM.TOWN_NAME[e.g.town])}の ${esc(e.g.name)}　${pr.ok ? '✅ 報告できる' : esc(pr.txt)}</div></div></div>`; }).join('') || '<p class="muted">町の 人の 頭の上に 🧺 が 出ていたら 話しかけてみよう。</p>'}
+      <div class="row" style="margin-top:.4em"><button class="btn sm errs">🧺 おつかいの 画面を 開く</button></div>`;
+    const sm = s.body.querySelector('.smap');
+    if (sm) sm.onclick = () => openMap({ x: si.pos[0], z: si.pos[1], label: si.dest, obj: si.obj, title: 'ストーリーの 目的地' });
+    s.body.querySelectorAll('.qmap').forEach(b => b.onclick = () => { const { q, i } = qs[+b.dataset.k]; openMap({ x: i.pos[0], z: i.pos[1], label: q.name, obj: `${q.name}：${i.obj}`, title: 'サイドストーリー' }); });
+    s.body.querySelector('.errs').onclick = async () => { await openErrands(); if (!s.closed) render(); };
+  };
+  render();
+  await waitClose(s);
+}
+
+// ---------- おつかい ----------
+let ERM = null;
+const ER_active = () => { try { return ERM ? ERM.activeErrands().length : Object.values(G.save.errands || {}).filter(x => x.st === 'active').length; } catch (e) { return 0; } };
+export async function openErrands() {
+  ERM = await import('../game/errands.js');
+  const { MATS, errandReward, ERRAND_MAX, GIVER_BY_ID } = await import('../data/errands.js');
+  const s = openScreen('おつかい', { extra: `<span class="muted">完了 ${G.save.errandsDone || 0}回</span>` });
+  const render = () => {
+    const act = ERM.activeErrands();
+    const rows = act.map(e => {
+      const pr = ERM.reqProgress(e.g, e.s, e.req), money = errandReward(e.req, e.g.town);
+      const where = e.req.t === 'deliver' ? `とどけ先：${ERM.TOWN_NAME[GIVER_BY_ID[e.req.to].town]}の ${GIVER_BY_ID[e.req.to].name}` : `たのんだ人：${ERM.TOWN_NAME[e.g.town]}の ${e.g.name}`;
+      return `<div class="errow${pr.ok ? ' ok' : ''}"><div class="grow"><div class="nm">${esc(ERM.reqSummary(e.req))}</div>
+        <div class="ds">${esc(where)}</div></div>
+        <div class="prog">${pr.ok ? '✅ 報告できる' : esc(pr.txt)}</div><div class="money">¥${money}</div>
+        <button class="btn sm cancel" data-id="${e.g.id}">やめる</button></div>`;
+    }).join('');
+    const mats = Object.values(MATS).map(M => `<span class="matc"><b>${M.icon}</b>${M.name} <em>${itemCount(M.item)}</em></span>`).join('');
+    s.body.innerHTML = `
+      <div class="card errhelp">町の 住民や 通行人の 頭の上の <b>🧺</b> は お願いの しるし。話しかけると おつかいを たのまれる。<br>
+      <b>💰</b> は 報告できる、<b>📦</b> は 届け物の あいて。同時に 引き受けられるのは ${ERRAND_MAX}つまで。</div>
+      <h4 style="margin:.6em 0 .3em">引き受け中（${act.length}/${ERRAND_MAX}）</h4>
+      ${rows || '<p class="muted">いまは 何も 引き受けていない。町の 人に 話しかけてみよう！</p>'}
+      <h4 style="margin:.8em 0 .3em">素材 <span class="muted" style="font-size:.8em;font-weight:400">フィールドの 木・岩・しげみ などの 前で A（Space）</span></h4>
+      <div class="matlist">${mats}</div>`;
+    s.body.querySelectorAll('.cancel').forEach(b => b.onclick = async () => {
+      if (!(await confirmBox('この おつかいを やめますか？'))) return;
+      ERM.cancelErrand(b.dataset.id); toast('おつかいを やめた'); render();
+    });
+  };
+  render();
   await waitClose(s);
 }
 
@@ -71,13 +173,21 @@ export async function openParty() {
 }
 
 // ---------- 詳細 ----------
-export async function monDetail(m, where) {
-  const s = openScreen(monName(m));
+export async function monDetail(m, where, opts = {}) {
+  const s = openScreen(monName(m), opts.readOnly ? { extra: `<span class="muted">${esc(opts.note || '見るだけ')}</span>` } : {});
   const render = () => {
     const sp = SPECIES[m.sp], st = calcStats(m), ab = ABILITIES[sp.ability];
     const ivr = ivRank(m);
-    const statRow = (k) => `<div class="statrow"><span>${STAT_JA[k]}</span><b>${st[k]}</b><div class="bar"><i style="width:${Math.min(100, st[k] / (k === 'hp' ? 3.6 : 2.6))}%"></i></div></div>`;
-    const ivRow = (k) => `<div class="statrow ivrow"><span>${STAT_JA[k].replace(/（.*）/, '')}</span><b>${m.iv[k]}</b><div class="bar"><i style="width:${m.iv[k] / 15 * 100}%"></i></div></div>`;
+    const ab2 = adjBase(m);
+    // 種族値 → 個体値で調整 → いまのレベルでの能力
+    const statRow = (k) => {
+      const b = sp.base[k], a = ab2[k], pct = (ivMul(m.iv[k]) - 1) * 100, iv = m.iv[k];
+      const cls = pct > 0.05 ? 'up' : pct < -0.05 ? 'dn' : '';
+      return `<div class="sttr"><span class="k">${STAT_JA[k].replace(/（.*）/, '')}</span><span class="b">${b}</span>
+        <span class="iv"><i style="width:${iv / 15 * 100}%"></i><em>${iv}</em></span>
+        <span class="a ${cls}">${a.toFixed(1)}<small>${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%</small></span>
+        <span class="v">${st[k]}</span><span class="bar"><i style="width:${Math.min(100, st[k] / (k === 'hp' ? 3.6 : 2.6))}%"></i></span></div>`;
+    };
     s.head.querySelector('h2').textContent = monName(m);
     s.body.innerHTML = `<div class="detail"><div><img class="bigpic" src="${portrait(m.sp, m.shiny)}">
       <div style="text-align:center;margin-top:.4em">${m.shiny ? '<span class="shiny">✨色違い</span> ' : ''}${m.fav ? '★お気に入り' : ''}</div>
@@ -87,12 +197,14 @@ export async function monDetail(m, where) {
         <div class="muted" style="font-size:.85em">次のレベルまで ${expToNext(m).toLocaleString()} EXP</div><div class="expbar"><i style="width:${expProgress(m) * 100}%"></i></div>
         <div class="card" style="margin:.5em 0;padding:.5em"><b>特殊能力：${esc(ab?.name || '')}</b><div class="muted">${esc(ab?.desc || '')}</div></div>
         <div class="card" style="padding:.5em">持ち物：<b>${m.item ? esc(ITEMS[m.item].name) : 'なし'}</b>${m.item ? `<div class="muted">${esc(ITEMS[m.item].desc)}</div>` : ''}</div>
-        <h4 style="margin:.6em 0 .2em">能力</h4>${['hp', 'atk', 'def', 'spe'].map(statRow).join('')}
-        <h4 style="margin:.6em 0 .2em">個体値 <span style="color:${ivr.c}">（${ivr.s}・合計${ivTotal(m)}/60）</span></h4>${['atk', 'def', 'hp', 'spe'].map(ivRow).join('')}
-        <h4 style="margin:.6em 0 .2em">技</h4>${m.moves.map(x => { const mv = MOVES[x.id]; return `<div class="movechip" style="border-left-color:${TYPE_COLOR[mv.type]}"><span><b>${esc(mv.name)}</b> <span class="muted">${TYPE_JA[mv.type]}・${mv.power ? '威力' + mv.power : '変化'}${mv.acc ? '・命中' + mv.acc : ''}</span></span><span class="pp">PP ${x.pp}/${mv.pp}</span></div>`; }).join('')}
+        <h4 style="margin:.6em 0 .2em">能力 <span class="muted" style="font-size:.78em;font-weight:400">個体値 <b style="color:${ivr.c}">${ivr.s}・合計${ivTotal(m)}/60</b></span></h4>
+        <div class="sttable"><div class="sttr hd"><span class="k"></span><span class="b">種族値</span><span class="iv">個体値</span><span class="a">調整後</span><span class="v">Lv${m.lv}</span><span class="bar"></span></div>${['hp', 'atk', 'def', 'spe'].map(statRow).join('')}
+        <div class="stnote">個体値 7.5 が基準。15 なら 種族値 +9%、1 なら −7.8%（1ごとに 1.2%）</div></div>
+        <h4 style="margin:.6em 0 .2em">技</h4>${m.moves.map(x => { const mv = MOVES[x.id]; return `<div class="movechip" style="border-left-color:${TYPE_COLOR[mv.type]}"><span><b>${esc(mv.name)}</b> <span class="muted">${TYPE_JA[mv.type]}・${mv.power ? '威力' + mv.power : '変化'}${mv.acc ? '・命中' + mv.acc : ''}</span><span class="mvdesc">${esc(mv.desc)}${moveEffects(mv).length ? `<em>${esc(moveEffectText(mv))}</em>` : ''}</span></span><span class="pp">PP ${x.pp}/${mv.pp}</span></div>`; }).join('')}
         <div class="row" style="margin-top:.7em" id="acts"></div>
       </div></div>`;
     const acts = s.body.querySelector('#acts');
+    if (opts.readOnly) return;   // トレード相手の アニモンなど：見るだけ
     const btn = (t, fn, cls = '') => { const b = el('button', 'btn sm ' + cls, t); b.onclick = async () => { audio.sfx('select'); await fn(); render(); }; acts.appendChild(b); };
     const pi = G.save.party.indexOf(m), bi = G.save.box.indexOf(m);
     if (pi > 0) btn('先頭にする', () => { G.save.party.splice(pi, 1); G.save.party.unshift(m); toast('先頭にしました'); });
@@ -141,7 +253,7 @@ async function scrollLearn(m) {
   const sp = SPECIES[m.sp];
   const cand = sp.moves.map(x => x.id).filter(id => !m.moves.find(y => y.id === id));
   if (!cand.length) { toast('覚えられる技は 全部 覚えている！'); return; }
-  const k = await ask('おもいだしの巻物：どの技を 覚えさせる？', [...cand.map(id => `${MOVES[id].name}（${TYPE_JA[MOVES[id].type]}・${MOVES[id].power || '変化'}）`), 'やめる']);
+  const k = await ask('おもいだしの巻物：どの技を 覚えさせる？', [...cand.map(id => `${MOVES[id].name}（${TYPE_JA[MOVES[id].type]}・${MOVES[id].power ? '威力' + MOVES[id].power : '変化'}${moveEffects(MOVES[id]).length ? '・' + moveEffectText(MOVES[id]) : ''}）`), 'やめる']);
   if (k >= cand.length) return;
   useItem('scroll');
   await learnMove(m, cand[k]);
@@ -199,6 +311,7 @@ export function pickFromAll(title, filterFn, multi = 0) {
     const sel = [];
     s.body.innerHTML = `<div class="row" style="margin-bottom:.5em"><span class="muted grow">${multi ? `${multi}匹 選んでください（同じアニモンは1匹まで）` : '1匹 選んでください'}</span>${multi ? '<button class="btn pri ok">けってい</button>' : ''}</div><div class="boxgrid"></div>`;
     const grid = s.body.querySelector('.boxgrid');
+    if (!all.length) grid.outerHTML = '<p class="muted" style="margin:1em 0">えらべる アニモンが いません。（伝説・ルル・パーティーに 1匹だけの子は 出せません）</p>';
     const okB = s.body.querySelector('.ok');
     const upd = () => { if (okB) { okB.disabled = sel.length !== multi; okB.textContent = `けってい（${sel.length}/${multi}）`; } };
     for (const m of all) {
@@ -260,8 +373,9 @@ export async function dexDetail(id) {
     <div class="row">${sp.types.map(typeBadge).join('')}${sp.legend ? '<span class="tbadge" style="background:#b8860b">伝説</span>' : ''}${sp.ride ? `<span class="tbadge" style="background:#2a7f62">ライド：${{ land: '陸', swim: '水', fly: '空' }[sp.ride]}</span>` : ''}</div>
     <p>${esc(sp.desc)}</p>
     <div class="card" style="padding:.5em"><b>特殊能力：${esc(ab.name)}</b><div class="muted">${esc(ab.desc)}</div></div>
-    <h4 style="margin:.6em 0 .2em">種族値</h4>${['hp', 'atk', 'def', 'spe'].map(k => `<div class="statrow"><span>${STAT_JA[k]}</span><b>${base[k]}</b><div class="bar"><i style="width:${base[k] / 1.4}%"></i></div></div>`).join('')}
-    <h4 style="margin:.6em 0 .2em">覚える技（8種類）</h4>${sp.moves.map(x => { const mv = MOVES[x.id]; return `<div class="movechip" style="border-left-color:${TYPE_COLOR[mv.type]}"><span><b>${esc(mv.name)}</b> <span class="muted">${TYPE_JA[mv.type]}・${mv.power ? '威力' + mv.power : '変化'}${mv.sig ? '・<span style="color:var(--acc)">特別技</span>' : ''}</span></span><span class="pp">Lv${x.lv}</span></div>`; }).join('')}
+    <div class="rarity" style="--rc:${RARITY_COL[sp.rarity]}"><b>出現しやすさ</b><span class="rst">${sp.rarity >= 5 ? '★★★★★' : rarityStars(sp.rarity)}</span><span>${RARITY_JA[sp.rarity]}</span><span class="muted">（種族値の合計 ${sp.bst}${sp.rarity >= 5 ? '' : '・強いほど 出にくい'}）</span></div>
+    <h4 style="margin:.6em 0 .2em">種族値 <span class="muted" style="font-size:.78em;font-weight:400">個体値 1〜15 で ±8% ほど 変わる</span></h4>${['hp', 'atk', 'def', 'spe'].map(k => `<div class="statrow"><span>${STAT_JA[k]}</span><b>${base[k]}</b><div class="bar"><i style="width:${base[k] / 1.4}%"></i></div></div>`).join('')}
+    <h4 style="margin:.6em 0 .2em">覚える技（8種類）</h4>${sp.moves.map(x => { const mv = MOVES[x.id]; return `<div class="movechip" style="border-left-color:${TYPE_COLOR[mv.type]}"><span><b>${esc(mv.name)}</b> <span class="muted">${TYPE_JA[mv.type]}・${mv.power ? '威力' + mv.power : '変化'}${mv.sig ? '・<span style="color:var(--acc)">特別技</span>' : ''}</span><span class="mvdesc">${esc(mv.desc)}${moveEffects(mv).length ? `<em>${esc(moveEffectText(mv))}</em>` : ''}</span></span><span class="pp">Lv${x.lv}</span></div>`; }).join('')}
     <h4 style="margin:.6em 0 .2em">進化</h4><div class="row">${evo.map((e, i) => `${i ? '→ ' : ''}<span>${G.save.dex.seen[e.id] ? esc(e.name) : '？？？'}${e.evoLv && e.evoTo ? `<span class="muted">（Lv${e.evoLv}）</span>` : ''}</span>`).join(' ')}${evo.length === 1 ? '<span class="muted">進化しない</span>' : ''}</div>
     <h4 style="margin:.6em 0 .2em">生息地・入手方法</h4>${howToGet(sp).map(t => `<p class="muted" style="margin:.2em 0">${esc(t)}</p>`).join('')}
   </div></div>`;
@@ -275,8 +389,8 @@ export async function dexDetail(id) {
 export async function openBag() {
   const s = openScreen('バッグ');
   let tab = 'heal';
-  const cats = { heal: ['heal', 'revive', 'status', 'pp', 'candy'], food: ['food'], held: ['held'], scroll: ['scroll'] };
-  const tabJa = { heal: '回復', food: 'エサ', held: '持ち物', scroll: 'その他' };
+  const cats = { heal: ['heal', 'revive', 'status', 'pp', 'candy'], food: ['food'], held: ['held'], mat: ['mat'], scroll: ['crown', 'scroll'] };
+  const tabJa = { heal: '回復', food: 'エサ', held: '持ち物', mat: '素材', scroll: 'その他' };
   const render = () => {
     s.body.innerHTML = `<div class="tabs">${Object.keys(cats).map(k => `<button class="tab ${k === tab ? 'on' : ''}" data-k="${k}">${tabJa[k]}</button>`).join('')}</div><div class="list"></div>`;
     s.body.querySelectorAll('.tab').forEach(b => b.onclick = () => { tab = b.dataset.k; render(); });
@@ -284,10 +398,10 @@ export async function openBag() {
     const items = Object.values(ITEMS).filter(i => cats[tab].includes(i.cat) && itemCount(i.id) > 0);
     if (!items.length) list.innerHTML = '<p class="muted">何も 持っていない。</p>';
     for (const it of items) {
-      const r = el('div', 'itemrow', `<div class="grow"><div class="nm">${esc(it.name)}</div><div class="ds">${esc(it.desc)}</div></div><div class="cnt">×${itemCount(it.id)}</div>`);
-      if (['heal', 'revive', 'status', 'pp', 'candy', 'held', 'scroll'].includes(it.cat)) {
+      const r = el('div', 'itemrow' + (it.cat === 'crown' ? ' crown ' + it.id : ''), `<div class="grow"><div class="nm">${it.icon && (it.cat === 'mat' || it.cat === 'crown') ? `<span class="ic">${it.icon}</span> ` : ''}${esc(it.name)}</div><div class="ds">${esc(it.desc)}</div></div><div class="cnt">×${itemCount(it.id)}</div>`);
+      if (['heal', 'revive', 'status', 'pp', 'candy', 'held', 'scroll', 'crown'].includes(it.cat)) {
         const b = el('button', 'btn sm pri', it.cat === 'held' ? '持たせる' : '使う');
-        b.onclick = async () => { audio.sfx('select'); await useOnMon(it); render(); };
+        b.onclick = async () => { audio.sfx('select'); await (it.cat === 'crown' ? useCrown(it) : useOnMon(it)); render(); };
         r.appendChild(b);
       }
       list.appendChild(r);
@@ -295,6 +409,34 @@ export async function openBag() {
   };
   render();
   await waitClose(s);
+}
+// 王冠：銀＝個体値を 1つ 最大に／金＝4つとも 最大に（ボックスの子にも 使える）
+const IV_JA = { hp: 'HP（体力）', atk: '攻撃', def: '防御', spe: '素早さ' };
+async function useCrown(it) {
+  const all = it.crown === 'all';
+  const notMax = (m) => ['hp', 'atk', 'def', 'spe'].some(k => (m.iv?.[k] ?? 0) < 15);
+  if (![...G.save.party, ...G.save.box].some(notMax)) { toast('個体値が 最大でない アニモンが いない'); return; }
+  const m = await pickFromAll(`${it.name}を だれに 使う？（個体値が 最大の子は 出てきません）`, notMax);
+  if (!m) return;
+  let keys;
+  if (all) keys = ['hp', 'atk', 'def', 'spe'];
+  else {
+    const cand = ['hp', 'atk', 'def', 'spe'].filter(k => m.iv[k] < 15);
+    const k = await ask(`${monName(m)}の どの 個体値を 最大に する？`, [...cand.map(k => `${IV_JA[k]}（いま ${m.iv[k]} → 15）`), 'やめる']);
+    if (k >= cand.length) return;
+    keys = [cand[k]];
+  }
+  const what = keys.map(k => `${IV_JA[k]} ${m.iv[k]}→15`).join('、');
+  if (!(await confirmBox(`${monName(m)}に ${it.name}を 使いますか？\n${what}\n（${it.name}は 1つしか 手に入らず、使うと なくなります）`))) return;
+  const before = maxHp(m);
+  for (const k of keys) m.iv[k] = 15;
+  m.hp = Math.max(1, Math.min(maxHp(m), m.hp + (maxHp(m) - before)));
+  useItem(it.id);
+  audio.sfx('kiran');
+  const { glintAt } = await import('./ui.js');
+  glintAt(innerWidth / 2, innerHeight * 0.42, '👑 MAX！');
+  save();
+  await say([`|${monName(m)}の ${keys.length === 4 ? '個体値が ぜんぶ' : IV_JA[keys[0]] + 'の 個体値が'} 最大（15）に なった！`]);
 }
 async function useOnMon(it) {
   const party = G.save.party;
@@ -429,59 +571,105 @@ export async function openRide() {
   ov.startRide(cands[k]);
 }
 
-// ---------- マップ ----------
-let mapImg = null;
-export async function openMap() {
-  const s = openScreen('大陸マップ');
-  s.body.style.display = 'flex'; s.body.style.flexDirection = 'column';
-  s.body.innerHTML = `<div class="mapwrap"><canvas width="768" height="768"></canvas></div><div class="legend"><span>🏠 町</span><span><b style="color:#5ef">◆</b> 登録済みの岩</span><span><b style="color:#999">◆</b> 未登録の岩</span><span>⛩ ダンジョン</span><span><b style="color:#f44">▲</b> 現在地</span><span>🔒 まだ行けない地域</span></div>`;
-  const cv = s.body.querySelector('canvas');
-  const g = cv.getContext('2d');
-  const W = G.world;
-  const N = WORLD.n;
-  if (!mapImg) {
-    const im = g.createImageData(N, N);
-    const cols = { start: [140, 200, 110], plains: [130, 200, 100], forest: [60, 140, 60], lake: [120, 190, 110], desert: [230, 205, 140], canyon: [200, 120, 80], snow: [235, 240, 250], swamp: [100, 115, 75], highland: [150, 210, 120], volcano: [90, 75, 75], sanctuary: [210, 200, 150], inner: [200, 185, 235], sea: [60, 120, 200] };
-    const RID = ['start', 'plains', 'forest', 'lake', 'desert', 'canyon', 'snow', 'swamp', 'highland', 'volcano', 'sanctuary', 'inner', 'sea'];
-    for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
-      const k = j * N + i;
-      const h = W.H[j * (N + 1) + i];
-      let c = cols[RID[W.REG[k]]] || [0, 0, 0];
-      if (h < -0.4) c = h < -5 ? [40, 90, 170] : [70, 140, 215];
-      else { const sh = Math.max(0.7, Math.min(1.25, 0.85 + h / 60)); c = c.map(v => Math.min(255, v * sh)); if (W.ROAD[k]) c = [215, 190, 140]; }
-      im.data.set([c[0], c[1], c[2], 255], k * 4);
-    }
-    const oc = document.createElement('canvas'); oc.width = N; oc.height = N; oc.getContext('2d').putImageData(im, 0, 0);
-    mapImg = oc;
-  }
-  const toC = (x, z) => [(x + WORLD.half) / (WORLD.half * 2) * 768, (z + WORLD.half) / (WORLD.half * 2) * 768];
+// ---------- マップ（全体）：画面に合わせて表示・ドラッグで移動・ピンチ／ホイール／ボタンで拡大 ----------
+export async function openMap(focus = null) {
+  const ov = await import('../game/overworld.js');
+  const SE = await import('../game/storyEngine.js');
+  const { getMapImage, worldToImg } = await import('./mapimage.js');
+  const s = openScreen('大陸マップ', { cls: 'mapscreen' });
+  // focus：ストーリー一覧の「地図で見る」から来たときの 行き先 { x, z, label, obj }
+  const tgt = focus || SE.navTarget();
+  s.body.innerHTML = `<div class="mapview"><canvas></canvas>
+      <div class="mapbtns"><button class="btn sm zin">＋</button><button class="btn sm zout">－</button><button class="btn sm here">📍現在地</button>${tgt ? '<button class="btn sm pri goal">⭐行き先</button>' : ''}<button class="btn sm all">全体</button></div></div>
+    <div class="mapside">
+      ${tgt ? `<div class="mapgoal"><b>⭐ ${focus ? esc(focus.title || '行き先') : '次の行き先'}</b><div>${esc(UI_fmt(focus ? (focus.obj || focus.label || '') : SE.objective().txt))}</div></div>` : ''}
+      <div class="legend"><span>🏠 町</span><span><b style="color:#5ef">◆</b> 登録済みの岩</span><span><b style="color:#999">◆</b> 未登録の岩</span><span>⛩ ダンジョン</span><span><b style="color:#f44">▲</b> 現在地</span><span>⭐ 行き先</span><span>🔒 まだ行けない</span></div>
+      <p class="muted maphint">ドラッグで移動・2本指／ホイールで拡大縮小</p>
+    </div>`;
+  const view = s.body.querySelector('.mapview'), cv = view.querySelector('canvas'), g = cv.getContext('2d');
+  const img = getMapImage(), N = img.width;
+  const P = ov.OW.player;
+  // 表示：中心（地図画像の座標）と 1ピクセルあたりの倍率
+  const V = { cx: N / 2, cy: N / 2, k: 1 };
+  let cw = 0, ch = 0, dpr = 1;
+  const fitAll = () => { V.cx = N / 2; V.cy = N / 2; V.k = Math.min(cw, ch) / N * 0.98; };
+  const clampV = () => { const mn = Math.min(cw, ch) / N * 0.7; V.k = Math.max(mn, Math.min(V.k, 14)); V.cx = Math.max(0, Math.min(N, V.cx)); V.cy = Math.max(0, Math.min(N, V.cy)); };
+  const toS = (ix, iy) => [(ix - V.cx) * V.k + cw / 2, (iy - V.cy) * V.k + ch / 2];
+  const toSw = (x, z) => { const q = worldToImg(x, z); return toS(q[0], q[1]); };
+  const icon = (t, x, y, sz) => { g.font = `${sz}px sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(t, x, y); };
+  const text = (t, x, y, sz, col) => { g.font = `bold ${sz}px sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,.65)'; g.strokeText(t, x, y); g.fillStyle = col; g.fillText(t, x, y); };
   const draw = () => {
-    g.imageSmoothingEnabled = false;
-    g.drawImage(mapImg, 0, 0, 768, 768);
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.fillStyle = '#2a5fae'; g.fillRect(0, 0, cw, ch);
+    g.imageSmoothingEnabled = V.k < 2;
+    const o = toS(0, 0); g.drawImage(img, o[0], o[1], N * V.k, N * V.k);
+    const us = V.k * N / 768;  // 768px 表示のときを 1 とした大きさ
     // 未解放の地域を暗く
-    g.save();
+    const c0 = toSw(0, 0), rr = (r) => r * V.k * N / (WORLD.half * 2);
     for (const id of RING) {
       if (isUnlocked(id)) continue;
       const a0 = (REGIONS[id].ang - 20) * Math.PI / 180, a1 = (REGIONS[id].ang + 20) * Math.PI / 180;
-      g.beginPath(); const c = toC(0, 0); g.moveTo(c[0] + Math.cos(a0) * 105, c[1] + Math.sin(a0) * 105); g.arc(c[0], c[1], 380, a0, a1); g.arc(c[0], c[1], 105, a1, a0, true); g.closePath();
+      g.beginPath(); g.arc(c0[0], c0[1], rr(760), a0, a1); g.arc(c0[0], c0[1], rr(210), a1, a0, true); g.closePath();
       g.fillStyle = 'rgba(10,10,30,.55)'; g.fill();
-      const m = toC(Math.cos((a0 + a1) / 2) * 450, Math.sin((a0 + a1) / 2) * 450); g.font = '28px sans-serif'; g.textAlign = 'center'; g.fillText('🔒', m[0], m[1]);
+      const m = toSw(Math.cos((a0 + a1) / 2) * 450, Math.sin((a0 + a1) / 2) * 450); icon('🔒', m[0], m[1], Math.max(14, 26 * us));
     }
-    if (!isUnlocked('sanctuary')) { const c = toC(0, 0); g.beginPath(); g.arc(c[0], c[1], 103, 0, Math.PI * 2); g.fillStyle = 'rgba(10,10,30,.55)'; g.fill(); g.font = '30px sans-serif'; g.textAlign = 'center'; g.fillText('🔒', c[0], c[1] + 10); }
-    g.restore();
-    g.font = 'bold 15px sans-serif'; g.textAlign = 'center';
-    // 地域名
-    for (const id of RING) { const a = REGIONS[id].ang * Math.PI / 180; const p = toC(Math.cos(a) * 560, Math.sin(a) * 560); g.fillStyle = 'rgba(0,0,0,.55)'; g.fillText(REGIONS[id].name, p[0] + 1, p[1] + 1); g.fillStyle = '#fff'; g.fillText(REGIONS[id].name, p[0], p[1]); }
-    for (const t of TOWNS) { const p = toC(t.pos[0], t.pos[1]); g.font = '18px sans-serif'; g.fillText('🏠', p[0], p[1] + 6); g.font = 'bold 12px sans-serif'; g.fillStyle = '#000'; g.fillText(t.name, p[0] + 1, p[1] + 21); g.fillStyle = '#ffe680'; g.fillText(t.name, p[0], p[1] + 20); g.fillStyle = '#fff'; }
-    for (const st of STONES) { if (st.town) continue; const p = toC(st.pos[0], st.pos[1]); g.fillStyle = G.save.stones[st.id] ? '#55eeff' : '#999'; g.font = 'bold 16px sans-serif'; g.fillText('◆', p[0], p[1] + 5); }
-    for (const [id, d] of Object.entries(DUNGEONS)) { const p = toC(d.pos[0], d.pos[1]); g.font = '16px sans-serif'; g.fillText('⛩', p[0], p[1] + 5); }
-    const P = ov.OW.player; const p = toC(P.x, P.z);
-    g.save(); g.translate(p[0], p[1]); g.rotate(-P.ry + Math.PI); g.fillStyle = '#ff3344'; g.strokeStyle = '#fff'; g.lineWidth = 2; g.beginPath(); g.moveTo(0, -10); g.lineTo(7, 8); g.lineTo(-7, 8); g.closePath(); g.fill(); g.stroke(); g.restore();
+    if (!isUnlocked('sanctuary')) { g.beginPath(); g.arc(c0[0], c0[1], rr(206), 0, Math.PI * 2); g.fillStyle = 'rgba(10,10,30,.55)'; g.fill(); icon('🔒', c0[0], c0[1], Math.max(14, 28 * us)); }
+    const fs = Math.max(11, Math.min(20, 14 * us));
+    for (const id of RING) { const a = REGIONS[id].ang * Math.PI / 180; const p = toSw(Math.cos(a) * 560, Math.sin(a) * 560); text(REGIONS[id].name, p[0], p[1], fs, '#fff'); }
+    for (const t of TOWNS) { const p = toSw(t.pos[0], t.pos[1]); icon('🏠', p[0], p[1], Math.max(14, 18 * us)); text(t.name, p[0], p[1] + Math.max(14, 18 * us), Math.max(10, 12 * us), '#ffe680'); }
+    for (const st of STONES) { if (st.town) continue; const p = toSw(st.pos[0], st.pos[1]); text('◆', p[0], p[1], Math.max(12, 16 * us), G.save.stones[st.id] ? '#55eeff' : '#aaa'); }
+    for (const d of Object.values(DUNGEONS)) { const p = toSw(d.pos[0], d.pos[1]); icon('⛩', p[0], p[1], Math.max(13, 16 * us)); }
+    // 行き先（光る星と、現在地からの点線）
+    const pp = toSw(P.x, P.z);
+    if (tgt) {
+      const q = toSw(tgt.x, tgt.z);
+      g.save(); g.setLineDash([6, 6]); g.lineWidth = 2.5; g.strokeStyle = 'rgba(255,230,80,.9)'; g.beginPath(); g.moveTo(pp[0], pp[1]); g.lineTo(q[0], q[1]); g.stroke(); g.restore();
+      const pulse = 1 + Math.sin(performance.now() / 250) * 0.12;
+      g.save(); g.shadowColor = '#ffd23f'; g.shadowBlur = 14; icon('⭐', q[0], q[1], Math.max(20, 24 * us) * pulse); g.restore();
+      // 町そのものが行き先なら 町の名前と重なるので 星だけにする
+      if (!TOWNS.some(t => Math.hypot(t.pos[0] - tgt.x, t.pos[1] - tgt.z) < t.r + 6)) text(tgt.label, q[0], q[1] - Math.max(18, 22 * us), Math.max(11, 13 * us), '#ffe14d');
+    }
+    // 現在地（向きつきの三角）
+    g.save(); g.translate(pp[0], pp[1]); g.rotate(-P.ry + Math.PI); const z = Math.max(1, Math.min(1.6, us));
+    g.fillStyle = '#ff3344'; g.strokeStyle = '#fff'; g.lineWidth = 2; g.beginPath(); g.moveTo(0, -11 * z); g.lineTo(8 * z, 9 * z); g.lineTo(-8 * z, 9 * z); g.closePath(); g.fill(); g.stroke(); g.restore();
   };
-  const ov = await import('../game/overworld.js');
-  draw();
+  const resize = () => {
+    const r = view.getBoundingClientRect();
+    dpr = Math.min(2, window.devicePixelRatio || 1);
+    const first = !cw;
+    cw = Math.max(50, r.width); ch = Math.max(50, r.height);
+    cv.width = Math.round(cw * dpr); cv.height = Math.round(ch * dpr);
+    if (first) { fitAll(); if (focus) { const q = worldToImg(focus.x, focus.z); V.cx = q[0]; V.cy = q[1]; V.k = Math.min(cw, ch) / N * 2.2; } }
+    clampV();
+  };
+  // ドラッグ・ピンチ
+  const pts = new Map(); let pinch = null;
+  cv.addEventListener('pointerdown', (e) => { cv.setPointerCapture(e.pointerId); pts.set(e.pointerId, [e.clientX, e.clientY]); if (pts.size === 2) { const [a, b] = [...pts.values()]; pinch = { d: Math.hypot(a[0] - b[0], a[1] - b[1]), k: V.k }; } });
+  cv.addEventListener('pointermove', (e) => {
+    const p = pts.get(e.pointerId); if (!p) return;
+    if (pts.size === 1) { V.cx -= (e.clientX - p[0]) / V.k; V.cy -= (e.clientY - p[1]) / V.k; }
+    pts.set(e.pointerId, [e.clientX, e.clientY]);
+    if (pts.size === 2 && pinch) { const [a, b] = [...pts.values()]; V.k = pinch.k * Math.hypot(a[0] - b[0], a[1] - b[1]) / Math.max(1, pinch.d); }
+    clampV();
+  });
+  const up = (e) => { pts.delete(e.pointerId); if (pts.size < 2) pinch = null; };
+  cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', up);
+  cv.addEventListener('wheel', (e) => { e.preventDefault(); V.k *= e.deltaY < 0 ? 1.2 : 1 / 1.2; clampV(); }, { passive: false });
+  const go = (x, z, k) => { const q = worldToImg(x, z); V.cx = q[0]; V.cy = q[1]; if (k) V.k = Math.max(V.k, Math.min(cw, ch) / N * k); clampV(); };
+  s.body.querySelector('.zin').onclick = () => { V.k *= 1.4; clampV(); };
+  s.body.querySelector('.zout').onclick = () => { V.k /= 1.4; clampV(); };
+  s.body.querySelector('.here').onclick = () => go(P.x, P.z, 3);
+  s.body.querySelector('.all').onclick = () => { fitAll(); };
+  const gb = s.body.querySelector('.goal'); if (gb) gb.onclick = () => go(tgt.x, tgt.z, 3);
+  const ro = new ResizeObserver(() => resize()); ro.observe(view);
+  resize();
+  let alive = true;
+  const frame = () => { if (!alive) return; draw(); requestAnimationFrame(frame); };
+  requestAnimationFrame(frame);
   await waitClose(s);
+  alive = false; ro.disconnect();
 }
+const UI_fmt = (t) => t.replace(/\{P\}/g, G.save.name);
 
 // ---------- 設定 ----------
 export async function openSettings(fromTitle) {

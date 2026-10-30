@@ -187,6 +187,8 @@ const DUNGEON_OF = { start: 'ruins', plains: 'ruins', forest: 'ruins', lake: 'py
 export function isWaterSp(s) { return s.plan === 'fish' || (s.hab.includes('sea') && s.types.includes('water')) || (s.types.includes('water') && s.plan === 'serpent' && s.hab.includes('lake')); }
 
 const _encCache = {};
+// 出現の重み（種族値の合計 230 を 1 として、強いほど 小さく）
+export const spawnMul = (sp) => Math.pow(230 / (sp.bst || 230), 2.4) * (sp.rare ? 0.6 : 1);
 export function encounterTable(region, water = false) {
   const key = region + (water ? '_w' : '');
   if (_encCache[key]) return _encCache[key];
@@ -196,7 +198,8 @@ export function encounterTable(region, water = false) {
   const add = (sp, w) => {
     const minLv = sp.evoFrom ? SPECIES[sp.evoFrom].evoLv : 1;
     if (minLv > lv[1] + 2) return;
-    out.push({ sp: sp.id, w, minLv });
+    // 強い（種族値の合計が高い）ほど 出にくい。もともと珍しい種族は さらに出にくい
+    out.push({ sp: sp.id, w: w * spawnMul(sp), minLv });
   };
   const isDungeon = !!DUNGEONS[region];
   for (const s of SPECIES) {
@@ -214,8 +217,8 @@ export function encounterTable(region, water = false) {
     if (region === 'inner') { if (!s.evoTo && s.stage > 1) add(s, 1); if (s.hab.includes('inner')) add(s, 4); continue; }
     if (region === 'sea') { if (s.hab.includes('sea') || (s.evoFrom && hab.includes('sea'))) add(s, s.stage === 1 ? 8 : 3); continue; }
     if (!hab.includes(region)) continue;
-    if (s.stage === 1) add(s, s.rare ? 1.5 : (s.stages === 1 ? 4 : 10));
-    else add(s, s.stage === 2 ? 2.5 : 0.8);
+    if (s.stage === 1) add(s, s.stages === 1 ? 5 : 10);
+    else add(s, s.stage === 2 ? 4 : 2);
   }
   if (water && !out.length && region !== 'sea') return (_encCache[key] = encounterTable('sea', true));
   _encCache[key] = out;

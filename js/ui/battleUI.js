@@ -4,13 +4,13 @@
 import { Battle } from '../game/battle.js';
 import { BattleView } from '../render/battleScene.js';
 import { SPECIES, BY_NAME } from '../data/species.js';
-import { MOVES } from '../data/moves.js';
+import { MOVES, moveEffectText, moveEffects } from '../data/moves.js';
 import { ITEMS } from '../data/items.js';
 import { TRAINERS, rivalTeam, DUNGEONS, REGIONS } from '../data/world.js';
 import { typeBadge, TYPE_COLOR, TYPE_JA, typeEff } from '../data/types.js';
 import { createMon, monName, calcStats, evolveMon, healMon, cloneMon } from '../game/mon.js';
 import { G, giveMon, registerDex, itemCount, useItem, addMoney, save, healParty, findMon } from '../game/state.js';
-import { $, el, esc, UI, toast, say, ask, confirmBox, inputText, fade, flash, hpClass, hideDialog, letterbox } from './ui.js';
+import { $, el, esc, UI, toast, say, ask, confirmBox, inputText, fade, flash, hpClass, hideDialog, letterbox, glintAt } from './ui.js';
 import { audio } from '../audio.js';
 import { portrait } from '../render/portrait.js';
 import { STATUS_JA } from '../game/battle.js';
@@ -68,6 +68,13 @@ async function runBattle(cfg) {
   bv = new BattleView();
   bv.setup(cfg.biome || 'plains', cfg.format);
   G.battleView = bv;
+  // 色違いが 出たら キラーン（画面に 光の十字＋音＋一瞬の 白い光）
+  bv.onGlint = (p) => {
+    audio.sfx('kiran');
+    const R = G.renderer, q = bv.cam.project(p, R.cssW, R.cssH);
+    if (q[2] > 0) glintAt(q[0], q[1]);
+    flash(180);
+  };
   buildUI(cfg);
   battleWipe(false);
   if (cfg.trainerName) cutIn(`VS ${cfg.trainerName}`);
@@ -128,6 +135,10 @@ async function afterBattle(cfg, result, caught, pendingMoves, evos) {
     await blackout();
     return 'lose';
   }
+  // おつかい：野生のアニモンを たおした／つかまえた
+  if (cfg.kind === 'wild' && !cfg.boss && (result === 'win' || caught)) {
+    try { (await import('../game/errands.js')).onWildBeaten((caught || cfg.sides[1].team[0]).sp); } catch (e) { console.warn(e); }
+  }
   if (result === 'win' && cfg.kind === 'trainer') {
     audio.jingle('victory');
     if (cfg.reward) { addMoney(cfg.reward); await say([`|${cfg.trainerName} に 勝った！`, `|${cfg.reward}円 を 手に入れた！`]); }
@@ -136,6 +147,7 @@ async function afterBattle(cfg, result, caught, pendingMoves, evos) {
     caught.ot = G.save.name; caught.caughtAt = Date.now();
     caught.metAt = OW.dungeon ? DUNGEONS[OW.dungeon.id].name : (REGIONS[OW.region]?.name || '');
     caught.status = null;
+    if (caught.boss) { delete caught.boss; G.save.bossCaught = G.save.bossCaught || {}; if (OW.dungeon) G.save.bossCaught[OW.dungeon.id] = true; }
     const first = !G.save.dex.caught[caught.sp];
     const where = giveMon(caught);
     const money = 50 + caught.lv * 15 + (caught.shiny ? 1000 : 0);
@@ -238,7 +250,7 @@ async function play(events) {
         const b = B.active(e.side, e.slot);
         renderPanel(e.side, e.slot);
         await bv.setMon(vs(e.side), e.slot, b.m);
-        if (b.m.shiny) { audio.sfx('shiny'); await msg(`✨ ${monName(b.m)} は キラキラと 光っている！`); }
+        if (b.m.shiny) await msg(`✨ キラーン！ ${monName(b.m)} は 色違いだ！ キラキラと 光っている！`);
         break;
       }
       case 'withdraw': await bv.withdraw(vs(e.side), e.slot); break;
@@ -323,10 +335,20 @@ function chooseCommand(b, slot, pvp, already, setAuto) {
         const foe = B.foesOf(b)[0];
         let effTxt = '';
         if (mv.power > 0 && foe) { const e = typeEff(mv.type, foe.types); effTxt = e === 0 ? ' 効果なし' : e > 1 ? ' ◎ばつぐん' : e < 1 ? ' △いまひとつ' : ''; }
-        const bt = el('button', 'cmd move', `${esc(mv.name)}<small>${TYPE_JA[mv.type]} ${mv.power ? '威力' + mv.power : '変化'}　PP ${mm.pp}/${mv.pp}${effTxt}</small>`);
+        const fx = moveEffectText(mv);
+        const bt = el('button', 'cmd move', `${esc(mv.name)}<small>${TYPE_JA[mv.type]} ${mv.power ? '威力' + mv.power : '変化'}${mv.acc ? '・命中' + mv.acc : ''}　PP ${mm.pp}/${mv.pp}${effTxt}</small>${fx ? `<small class="fx">${esc(fx)}</small>` : ''}`);
         bt.style.background = `linear-gradient(${TYPE_COLOR[mv.type]}, ${TYPE_COLOR[mv.type]}cc)`;
         bt.disabled = mm.pp <= 0 || locked || vest;
+        // 説明：マウスを のせる／長押しで 下の メッセージ欄に 技の くわしい 効果を 出す
+        const info = () => setMsg(`【${mv.name}】${mv.desc || ''}${fx && fx !== '追加効果なし' ? `（${fx}）` : ''}`);
+        let lp = null, longed = false;
+        bt.onpointerenter = (e) => { if (e.pointerType === 'mouse') info(); };
+        bt.onpointerleave = (e) => { if (e.pointerType === 'mouse') setMsg('どの 技を つかう？'); clearTimeout(lp); };
+        bt.onpointerdown = (e) => { longed = false; if (e.pointerType !== 'mouse') lp = setTimeout(() => { longed = true; info(); }, 450); };
+        bt.onpointerup = () => clearTimeout(lp);
+        bt.oncontextmenu = (e) => e.preventDefault();
         bt.onclick = async () => {
+          if (longed) { longed = false; return; }
           audio.sfx('select');
           let target = null;
           const targetsFoe = mv.power > 0 || mv.e.some(e => e[2] === 'foe' || ['brn', 'psn', 'par', 'slp', 'frz'].includes(e[0]));
@@ -340,7 +362,7 @@ function chooseCommand(b, slot, pvp, already, setAuto) {
         box.appendChild(bt);
       });
       backBtn(() => { audio.sfx('cancel'); main(); });
-      setMsg('どの 技を つかう？');
+      setMsg(Input.touch ? 'どの 技を つかう？（長押しで 技の説明）' : 'どの 技を つかう？（マウスを のせると 技の説明）');
     };
     const catchCmd = () => {
       const foods = Object.values(ITEMS).filter(i => i.cat === 'food' && itemCount(i.id) > 0).sort((a, b) => (a.rank || 0) - (b.rank || 0));
@@ -456,8 +478,8 @@ export async function learnMove(m, moveId) {
   if (m.moves.find(x => x.id === moveId)) return;
   if (m.moves.length < 4) { m.moves.push({ id: moveId, pp: mv.pp }); await say([`|${monName(m)} は ${mv.name} を 覚えた！`]); return; }
   await say([`|${monName(m)} は ${mv.name} を 覚えたい……`, '|しかし 技を 4つ 覚えていて いっぱいだ！']);
-  const opts = [...m.moves.map(x => MOVES[x.id].name + ' を忘れる'), `${mv.name} を覚えない`];
-  const k = await ask(`${mv.name}（${TYPE_JA[mv.type]}・${mv.power ? '威力' + mv.power : '変化'}）\n${mv.desc}\n代わりに どの技を 忘れさせる？`, opts);
+  const opts = [...m.moves.map(x => { const o = MOVES[x.id]; return `${o.name}（${o.power ? '威力' + o.power : '変化'}${moveEffects(o).length ? '・' + moveEffects(o)[0] : ''}）を忘れる`; }), `${mv.name} を覚えない`];
+  const k = await ask(`${mv.name}（${TYPE_JA[mv.type]}・${mv.power ? '威力' + mv.power : '変化'}${mv.acc ? '・命中' + mv.acc : ''}）\n${mv.desc}${moveEffects(mv).length ? '\n効果：' + moveEffectText(mv) : ''}\n代わりに どの技を 忘れさせる？`, opts);
   if (k < 4) {
     const old = MOVES[m.moves[k].id].name;
     m.moves[k] = { id: moveId, pp: mv.pp };

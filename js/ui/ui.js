@@ -138,3 +138,12 @@ export function loadingProgress(p, msg) { const l = curLoading(); if (!l) return
 export function hideLoading() { const l = curLoading(); if (l) { l.dataset.closing = '1'; l.classList.add('off'); setTimeout(() => l.remove(), 600); } }
 
 export function hpClass(r) { return r > 0.5 ? '' : r > 0.2 ? 'mid' : 'low'; }
+
+// ---- 色違いの「キラーン」：画面上の (x, y) に 大きな 光の十字と 文字を 出す ----
+export function glintAt(x, y, label = 'キラーン！') {
+  const host = document.getElementById('ui') || document.body;
+  const g = el('div', 'glint', `<svg viewBox="-50 -50 100 100"><path d="M0,-48 C4,-10 10,-4 48,0 C10,4 4,10 0,48 C-4,10 -10,4 -48,0 C-10,-4 -4,-10 0,-48Z" fill="#fffbe0"/><path d="M0,-30 C2,-6 6,-2 30,0 C6,2 2,6 0,30 C-2,6 -6,2 -30,0 C-6,-2 -2,-6 0,-30Z" fill="#ffffff" transform="rotate(45)"/></svg>${label ? `<b>${esc(label)}</b>` : ''}`);
+  g.style.left = Math.round(x) + 'px'; g.style.top = Math.round(y) + 'px';
+  host.appendChild(g);
+  setTimeout(() => g.remove(), 1500);
+}

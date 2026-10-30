@@ -138,6 +138,13 @@ class GameAudio {
       case 'evolve': seq([60, 64, 67, 72, 76, 79, 84, 88, 91, 96], 'triangle', 0.09, 0.3); break;
       case 'item': seq([76, 81, 88], 'square', 0.07, 0.18); break;
       case 'shiny': seq([96, 100, 103, 108], 'sine', 0.05, 0.2); break;
+      // 色違いの「キラーン」：高い音が かけあがって、最後に 長く ひびく
+      case 'kiran': {
+        seq([91, 96, 100, 103, 108, 112], 'sine', 0.032, 0.22);
+        this._tone(hz(115), t + 0.2, 0.55, 'triangle', 0.2, B);
+        this._tone(hz(122), t + 0.24, 0.45, 'sine', 0.12, B);
+        break;
+      }
       case 'faint': seq([67, 64, 60, 55], 'triangle', 0.12, 0.3); break;
       case 'stat': seq([72, 79], 'sine', 0.06, 0.2); break;
       case 'bump': seq([48], 'triangle', 0.05, 0.2); break;

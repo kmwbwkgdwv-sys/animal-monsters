@@ -139,7 +139,9 @@ export function fitViewport() {
   };
   apply();
   window.addEventListener('resize', apply);
-  window.addEventListener('orientationchange', () => setTimeout(apply, 300));
+  window.addEventListener('orientationchange', () => { for (const ms of [60, 300, 800, 1500]) setTimeout(apply, ms); });
+  // 回転のあと 値が 古いまま 残ることがあるので、ときどき 確かめる
+  setInterval(apply, 1000);
   if (window.visualViewport) { window.visualViewport.addEventListener('resize', apply); window.visualViewport.addEventListener('scroll', apply); }
   document.addEventListener('focusout', () => setTimeout(apply, 120));
 }

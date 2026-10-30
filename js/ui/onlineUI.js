@@ -3,10 +3,12 @@ import * as ON from '../online.js';
 import { G, save, giveMon, registerDex } from '../game/state.js';
 import { SPECIES } from '../data/species.js';
 import { typeBadge } from '../data/types.js';
-import { calcStats, monName, ivTotal, cloneMon, healMon } from '../game/mon.js';
+import { calcStats, monName, ivTotal, ivRank, ivMul, cloneMon, healMon, maxHp } from '../game/mon.js';
+import { MOVES } from '../data/moves.js';
+import { ITEMS } from '../data/items.js';
 import { $, el, esc, openScreen, toast, ask, confirmBox, inputText, say } from './ui.js';
 import { portrait } from '../render/portrait.js';
-import { pickFromAll } from './menus.js';
+import { pickFromAll, monDetail } from './menus.js';
 import { startPvpBattle } from './battleUI.js';
 import { audio } from '../audio.js';
 import { writeGame } from '../game/save.js';
@@ -23,7 +25,17 @@ export async function openFriends() {
   s.body.innerHTML = `
     <div class="card" style="margin-bottom:.6em"><div class="row"><div class="grow">あなたのフレンドコード：<b style="font-size:1.4em;letter-spacing:.12em;color:var(--acc)">${esc(me.code.replace(/(\d{4})(\d{4})/, '$1-$2'))}</b><div class="muted">このコードを 友だちに 教えてね</div></div><button class="btn sm copy">コピー</button></div></div>
     <div class="row" style="margin-bottom:.6em"><input class="textin grow" placeholder="友だちのフレンドコード（8けた）" inputmode="numeric" style="max-width:20em"><button class="btn pri add">申請する</button></div>
-    <div class="inv"></div><div class="req"></div><h3 style="margin:.4em 0">フレンド</h3><div class="fr"><p class="muted">読み込み中…</p></div>`;
+    <div class="wcard"></div><div class="inv"></div><div class="req"></div><h3 style="margin:.4em 0">フレンド</h3><div class="fr"><p class="muted">読み込み中…</p></div>`;
+  // いっしょのワールド（いまの状態）
+  const renderWorldCard = () => {
+    const wc = s.body.querySelector('.wcard'); if (!wc) return;
+    const W = ON.World;
+    if (!W.host) { wc.innerHTML = `<div class="card wcardin"><b>🌏 いっしょのワールド</b><p class="muted" style="margin:.2em 0 0">フレンドの「🌏 いっしょに」を 押すと、あなたの ワールドに 招待できます。参加すると おたがいの すがたが 見えて、近づいて 話しかけると あいさつ・対戦・トレードが できます。</p></div>`; return; }
+    const names = Object.values(W.members || {}).map(m => esc(m.name)).join('・');
+    wc.innerHTML = `<div class="card wcardin on"><div class="row"><div class="grow"><b>🌏 ${W.host === ON.Online.pid ? 'あなた' : esc(W.hostName)}の ワールドに いる</b><div class="muted">${names}</div></div><button class="btn sm red wleave">${W.host === ON.Online.pid ? '閉じる' : '退出'}</button></div></div>`;
+    wc.querySelector('.wleave').onclick = async () => { await ON.leaveWorld(); toast('ワールドから 退出した'); renderWorldCard(); };
+  };
+  renderWorldCard();
   s.body.querySelector('.copy').onclick = () => { navigator.clipboard?.writeText(me.code).then(() => toast('コピーしました')); };
   const inp = s.body.querySelector('input'); inp.onkeydown = (e) => e.stopPropagation();
   s.body.querySelector('.add').onclick = async () => {
@@ -34,9 +46,10 @@ export async function openFriends() {
     inv.innerHTML = st.invites.length ? '<h3 style="margin:.4em 0">招待が 届いています</h3>' : '';
     for (const i of st.invites) {
       const set = i.settings || {};
-      const r = el('div', 'itemrow', `<div class="grow"><div class="nm">${esc(i.fromName)} から ${i.type === 'battle' ? '対戦' : 'トレード'}の 招待</div><div class="ds">${i.type === 'battle' ? `${set.format === 'double' ? 'ダブル（2対2）' : 'シングル'}・${set.count}匹・${set.lv99 ? 'レベル99固定' : 'レベルそのまま'}` : ''}</div></div>`);
-      const ok = el('button', 'btn sm pri', '参加する'); ok.onclick = async () => { ON.stopWatch(); s.close(); await (i.type === 'battle' ? battleRoom(i.id, 'guest') : tradeRoom(i.id, 'guest')); };
-      const ng = el('button', 'btn sm', 'ことわる'); ng.onclick = () => ON.declineInvite(i.id);
+      const what = i.type === 'world' ? '🌏 ワールド' : i.type === 'battle' ? '⚔ 対戦' : '🔄 トレード';
+      const r = el('div', 'itemrow', `<div class="grow"><div class="nm">${esc(i.fromName)} から ${what}の 招待</div><div class="ds">${i.type === 'battle' ? `${set.format === 'double' ? 'ダブル（2対2）' : 'シングル'}・${set.count}匹・${set.lv99 ? 'レベル99固定' : 'レベルそのまま'}` : i.type === 'world' ? 'いっしょに 同じ大陸を 歩けます（ストーリーや アニモンは それぞれの データのまま）' : ''}</div></div>`);
+      const ok = el('button', 'btn sm pri', '参加する'); ok.onclick = async () => { ON.stopWatch(); s.close(); await acceptInvite(i); };
+      const ng = el('button', 'btn sm', 'ことわる'); ng.onclick = () => (i.type === 'world' ? ON.declineWorldInvite(i.id) : ON.declineInvite(i.id));
       r.append(ok, ng); inv.appendChild(r);
     }
     req.innerHTML = st.requests.length ? '<h3 style="margin:.4em 0">フレンド申請</h3>' : '';
@@ -51,12 +64,34 @@ export async function openFriends() {
       const r = el('div', 'itemrow', `<div class="grow"><div class="nm">${esc(f.name)}</div></div>`);
       const b1 = el('button', 'btn sm pri', '⚔ 対戦'); b1.onclick = async () => { const set = await battleSettings(); if (!set) return; ON.stopWatch(); s.close(); const id = await ON.createRoom(f.pid, f.name, 'battle', set); await battleRoom(id, 'host'); };
       const b2 = el('button', 'btn sm grn', '🔄 トレード'); b2.onclick = async () => { ON.stopWatch(); s.close(); const id = await ON.createRoom(f.pid, f.name, 'trade', {}); await tradeRoom(id, 'host'); };
+      const b0 = el('button', 'btn sm wld', '🌏 いっしょに'); b0.onclick = async () => {
+        try { await ON.inviteToWorld(f.pid); toast(`${f.name} を ワールドに 招待した！ 参加すると すがたが 見えるよ`, 3200); renderWorldCard(); } catch (e) { toast(e.message || '招待できませんでした'); }
+      };
       const b3 = el('button', 'btn sm', '削除'); b3.onclick = async () => { if (await confirmBox(`${f.name} を フレンドから 削除しますか？`)) ON.removeFriend(f.pid); };
-      r.append(b1, b2, b3); fr.appendChild(r);
+      r.append(b0, b1, b2, b3); fr.appendChild(r);
     }
   });
   await waitClose(s);
   ON.stopWatch();
+}
+
+// 招待を 受ける（フレンド画面・ゲーム中の 通知 共通）
+export async function acceptInvite(i) {
+  if (i.type === 'world') {
+    try { await ON.joinWorld(i.world); toast(`🌏 ${i.fromName} の ワールドに 参加した！`, 3000); audio.sfx('warp'); } catch (e) { toast(e.message || '参加できませんでした'); }
+    return;
+  }
+  await (i.type === 'battle' ? battleRoom(i.id, 'guest') : tradeRoom(i.id, 'guest'));
+}
+// ワールドで 近くの フレンドに 申しこむ
+export async function startBattleWith(pid, name) {
+  try { await ON.ensurePlayer(); } catch (e) { toast(e.message); return; }
+  const set = await battleSettings(); if (!set) return;
+  const id = await ON.createRoom(pid, name, 'battle', set); await battleRoom(id, 'host');
+}
+export async function startTradeWith(pid, name) {
+  try { await ON.ensurePlayer(); } catch (e) { toast(e.message); return; }
+  const id = await ON.createRoom(pid, name, 'trade', {}); await tradeRoom(id, 'host');
 }
 
 async function battleSettings() {
@@ -122,30 +157,57 @@ async function tradeRoom(id, role) {
   const s = openScreen('フレンドとトレード', { noClose: true, extra: '<button class="btn sm red leave">やめる</button>' });
   const un = ON.watchRoom(id, (r) => { room = r; render(); });
   s.head.querySelector('.leave').onclick = () => { ON.closeRoom(id, 'abandoned'); un(); s.close(); };
-  const card = (m) => m ? `<img class="portrait" style="width:6em;height:6em" src="${portrait(m.sp, m.shiny)}"><div><b>${m.shiny ? '✨' : ''}${esc(monName(m))}</b> Lv${m.lv}<div>${SPECIES[m.sp].types.map(typeBadge).join('')}</div><div class="muted">個体値 攻${m.iv.atk} 防${m.iv.def} 体${m.iv.hp} 速${m.iv.spe}（合計${ivTotal(m)}）</div><div class="muted">おや：${esc(m.ot || '')}</div></div>` : '<p class="muted">まだ 選ばれていません</p>';
+  // 出されたアニモンの カード：個体値（4つ・合計・ランク）と 調整後の能力・技・持ち物まで 交換の前に 全部 見せる
+  const IVK = [['hp', 'HP'], ['atk', '攻撃'], ['def', '防御'], ['spe', '素早さ']];
+  const card = (m) => {
+    if (!m) return '<p class="muted">まだ 選ばれていません</p>';
+    const sp = SPECIES[m.sp]; if (!sp) return '<p class="muted">？？？</p>';
+    const st = calcStats(m), r = ivRank(m);
+    const rows = IVK.map(([k, nm]) => { const v = m.iv?.[k] ?? 0, pct = (ivMul(v) - 1) * 100; return `<div class="tiv"><span class="k">${nm}</span><span class="bar"><i style="width:${v / 15 * 100}%"></i></span><b>${v}</b><span class="p ${pct >= 0 ? 'up' : 'dn'}">${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%</span><span class="v">${st[k]}</span></div>`; }).join('');
+    return `<div class="tcard"><img class="portrait" src="${portrait(m.sp, m.shiny)}"><div class="grow">
+      <div><b>${m.shiny ? '✨' : ''}${esc(monName(m))}</b> <span class="lv">Lv${m.lv}</span> ${sp.types.map(typeBadge).join('')}${sp.legend ? ' <b style="color:var(--ng)">伝説（交換不可）</b>' : ''}</div>
+      <div class="muted" style="font-size:.8em">No.${String(sp.id).padStart(3, '0')} ${esc(sp.name)}　おや：${esc(m.ot || '')}${m.item && ITEMS[m.item] ? `　持ち物：${esc(ITEMS[m.item].name)}` : ''}</div>
+      <div class="tivs"><div class="tiv hd"><span class="k">個体値</span><span class="bar"></span><b></b><span class="p">種族値に</span><span class="v">能力</span></div>${rows}</div>
+      <div class="tivsum">合計 <b>${ivTotal(m)}</b>/60　<span style="color:${r.c};font-weight:800">${r.s}</span></div>
+      <div class="muted" style="font-size:.78em">技：${(m.moves || []).map(x => MOVES[x.id]?.name).filter(Boolean).join('・')}</div>
+      <button class="btn sm more">🔍 くわしく見る</button></div></div>`;
+  };
+  // 相手の 出したものが あとから 変わっていないかを 確かめる しるし
+  const sig = (m) => { if (!m) return ''; const j = JSON.stringify([m.uid, m.sp, m.lv, m.iv, m.shiny, m.item, (m.moves || []).map(x => x.id)]); let h = 0; for (let i = 0; i < j.length; i++) h = (h * 31 + j.charCodeAt(i)) >>> 0; return 'k' + h.toString(36); };
   const render = () => {
     if (!room || finished) return;
     if (room.status === 'abandoned' || room.status === 'declined') { finished = true; un(); s.close(); say(['|トレードは 中止されました。']); return; }
     if (room.status === 'invited') { s.body.innerHTML = '<p class="muted" style="text-align:center;margin-top:2em">相手の 参加を 待っています……</p>'; return; }
     const mine = room['offer_' + role] ? JSON.parse(room['offer_' + role]) : null;
     const theirs = room['offer_' + other] ? JSON.parse(room['offer_' + other]) : null;
-    s.body.innerHTML = `<div class="detail" style="grid-template-columns:1fr 1fr"><div class="card"><h3 style="margin-top:0">あなたが 出す</h3><div class="row">${card(mine)}</div><div class="row" style="margin-top:.6em"><button class="btn sel">アニモンを 選ぶ</button><button class="btn pri ok" ${mine && theirs ? '' : 'disabled'}>${room['ok_' + role] ? 'OK済み' : 'これでOK'}</button></div></div>
-      <div class="card"><h3 style="margin-top:0">${esc(role === 'host' ? room.guestName : room.hostName)} が 出す</h3><div class="row">${card(theirs)}</div><p class="muted">${room['ok_' + other] ? '相手は OKしました' : ''}</p></div></div>
-      <p class="muted">※ 伝説のアニモンと ルルは トレードできません。</p>`;
+    // 伝説のアニモンは 交換できない（古いバージョンの相手から 出されても 受け取らない）
+    const illegal = (m) => !!m && (!SPECIES[m.sp] || SPECIES[m.sp].legend);
+    const blocked = illegal(mine) || illegal(theirs);
+    const myOk = !!room['ok_' + role] && room['ok_' + role] === sig(theirs), theirOk = !!room['ok_' + other] && room['ok_' + other] === sig(mine);
+    s.body.innerHTML = `<div class="detail tradegrid" style="grid-template-columns:1fr 1fr"><div class="card"><h3 style="margin-top:0">あなたが 出す</h3>${card(mine)}<div class="row" style="margin-top:.6em"><button class="btn sel">アニモンを 選ぶ</button><button class="btn pri ok" ${mine && theirs && !blocked ? '' : 'disabled'}>${myOk ? 'OK済み' : 'これでOK'}</button></div></div>
+      <div class="card theirs"><h3 style="margin-top:0">${esc(role === 'host' ? room.guestName : room.hostName)} が 出す</h3>${card(theirs)}<p class="muted">${theirOk ? '✅ 相手は OKしました' : theirs ? '相手の OKを 待っています' : ''}</p></div></div>
+      ${blocked ? '<p style="color:var(--ng);font-weight:800">⚠ 伝説のアニモンは トレードできません。ちがう アニモンを 選んでもらってください。</p>' : ''}
+      <p class="muted">※ 伝説のアニモンと ルルは トレードできません。<br>※ 上に 出ている 個体値・レベル・技・色違いが そのまま 届きます（個体値の 抽選しなおしは ありません）。<br>※ OKの あとで 相手が アニモンを 変えたら、OKは 取り消されます（見たものと ちがう アニモンが 届くことは ありません）。</p>`;
+    s.body.querySelectorAll('.more').forEach((b, i) => { const m = b.closest('.theirs') ? theirs : mine; b.onclick = () => monDetail(m, null, { readOnly: true, note: b.closest('.theirs') ? '相手の アニモン（見るだけ）' : '' }); });
     s.body.querySelector('.sel').onclick = async () => {
       const m = await pickFromAll('トレードに 出す アニモン', (x) => !SPECIES[x.sp].legend && x.uid !== G.save.story.luluUid && !(G.save.party.length === 1 && G.save.party[0] === x));
       if (!m) return;
       myOffer = m;
       await ON.updateRoom(id, { ['offer_' + role]: JSON.stringify(m), ok_host: false, ok_guest: false });
     };
-    s.body.querySelector('.ok').onclick = async () => { await ON.updateRoom(id, { ['ok_' + role]: true }); };
+    // OK は「いま 見ている 相手の アニモン」に 対して（あとで すり替えられたら 無効）
+    s.body.querySelector('.ok').onclick = async () => { await ON.updateRoom(id, { ['ok_' + role]: sig(theirs) }); };
     // 両方OKで交換
-    if (room.ok_host && room.ok_guest && mine && theirs && !room['done_' + role]) {
+    if (myOk && theirOk && mine && theirs && !blocked && !room['done_' + role]) {
       finished = true;
       const uid = mine.uid;
       for (const arr of [G.save.party, G.save.box]) { const i = arr.findIndex(x => x.uid === uid); if (i >= 0) arr.splice(i, 1); }
       if (!G.save.party.length && G.save.box.length) G.save.party.push(G.save.box.shift());
       theirs.uid = theirs.uid + '_t' + Date.now().toString(36);
+      // 個体値は 相手のアニモンのまま（1〜15 の範囲に おさめるだけ）
+      theirs.iv = theirs.iv || {};
+      for (const k of ['hp', 'atk', 'def', 'spe']) { const v = Math.round(+theirs.iv[k]); theirs.iv[k] = Number.isFinite(v) ? Math.max(1, Math.min(15, v)) : 8; }
+      theirs.hp = Math.min(theirs.hp ?? 0, maxHp(theirs)); if (theirs.hp <= 0) theirs.hp = maxHp(theirs);
       giveMon(theirs);
       save();
       ON.updateRoom(id, { ['done_' + role]: true });

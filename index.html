@@ -21,13 +21,14 @@
 <div id="ui">
   <div id="labels"></div>
   <div id="hud" class="hidden">
-    <div id="objective"><div class="ch"></div><div class="txt"></div><div class="quest"></div></div>
+    <div id="objective"><div class="ch"></div><div class="txt"></div><div class="quest"></div>
+      <div id="navline"><span class="arr">➤</span><span class="lab"></span><span class="dist"></span></div></div>
     <div id="hudRight">
       <div id="money">¥0</div>
-      <button id="btnCam" class="hbtn" aria-label="視点を戻す" title="視点を戻す（C）"><span class="needle"><i></i></span></button>
-      <button id="btnMap" class="hbtn" aria-label="マップ">🗺️</button>
-      <button id="btnMenu" class="hbtn" aria-label="メニュー">☰</button>
+      <button id="btnMap" class="hbtn" aria-label="マップ" title="マップ（M）">🗺️</button>
+      <button id="btnMenu" class="hbtn" aria-label="メニュー" title="メニュー（Esc）">☰</button>
     </div>
+    <div id="minimap" title="押すと 大陸マップ"><canvas></canvas><button id="btnCam" aria-label="視点を戻す" title="視点を戻す（C）">⟲</button></div>
     <div id="regionName"></div>
     <div id="prompt"></div>
   </div>

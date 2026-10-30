@@ -56,6 +56,22 @@
         ".write": "auth != null && ((newData.exists() && newData.child('pid').isString() && (root.child('players').child(newData.child('pid').val()).child('owner').val() === auth.uid || root.child('players').child(newData.child('pid').val()).child('devices').child(auth.uid).val() === true)) || (!newData.exists() && data.child('pid').isString() && (root.child('players').child(data.child('pid').val()).child('owner').val() === auth.uid || root.child('players').child(data.child('pid').val()).child('devices').child(auth.uid).val() === true)))"
       }
     },
+    "worlds": {
+      "$host": {
+        ".read": "auth != null",
+        "meta": {
+          ".write": "auth != null && (root.child('players').child($host).child('owner').val() === auth.uid || root.child('players').child($host).child('devices').child(auth.uid).val() === true)",
+          ".validate": "newData.child('host').val() === $host && newData.child('open').isBoolean()"
+        },
+        "members": {
+          ".write": "auth != null && (root.child('players').child($host).child('owner').val() === auth.uid || root.child('players').child($host).child('devices').child(auth.uid).val() === true)",
+          "$pid": {
+            ".write": "auth != null && (root.child('players').child($pid).child('owner').val() === auth.uid || root.child('players').child($pid).child('devices').child(auth.uid).val() === true) && ($pid === $host || root.child('friends').child($host).child($pid).exists())",
+            ".validate": "!newData.exists() || (newData.child('name').isString() && newData.child('name').val().length <= 20)"
+          }
+        }
+      }
+    },
     "rankings": {
       ".read": "auth != null",
       ".indexOn": [

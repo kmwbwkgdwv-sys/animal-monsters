@@ -2,16 +2,17 @@
 //  ストーリー進行・ムービー（カットシーン）・サイドストーリー
 // =============================================================
 import { STEPS, STEP_INDEX, SCENES, CHAPTERS, QUESTS, GUARDIAN_STEP, CREST_JA, NPCS } from '../data/story.js';
-import { TOWNS, TRAINERS } from '../data/world.js';
+import { TOWNS, TRAINERS, REGIONS, DUNGEONS } from '../data/world.js';
 import { SPECIES, BY_NAME } from '../data/species.js';
 import { createMon, legendIv } from './mon.js';
 import { G, giveMon, addItem, addMoney, healParty, save, itemName, registerDex } from './state.js';
 import { ITEMS, SHOP_FOODS } from '../data/items.js';
-import { UI, $, say, sayLine, hideDialog, narrate, fade, flash, letterbox, chapterTitle, toast } from '../ui/ui.js';
+import { UI, $, say, sayLine, hideDialog, narrate, fade, flash, letterbox, chapterTitle, toast, ask } from '../ui/ui.js';
 import { audio } from '../audio.js';
 import { OW, spawnActor, despawnActor, camTo, buildBarriers, refreshActors, refreshFollower, runFlow } from './overworld.js';
 import { startTrainerBattle, startWildBattle } from '../ui/battleUI.js';
 import * as MENU from '../ui/menus.js';
+import * as ER from './errands.js';
 
 export function currentStep() { return STEPS[Math.min(G.save.story.step, STEPS.length - 1)]; }
 export function stepIdx(id) { return STEP_INDEX[id]; }
@@ -23,10 +24,85 @@ export function objective() {
   if (act) quest = `◆${act.q.name}：${act.q.steps[act.st.stage].obj}`;
   return { ch, txt: st.obj, quest };
 }
+// 次の行き先（ミニマップ・マップ・HUDの矢印用）
+//  返り値 { x, z, label, kind:'story'|'quest' } または null
+export function navTarget() {
+  const st = currentStep(), t = st.trig;
+  const npcPos = (id) => {
+    const live = OW.npcs.find(n => n.id === id); if (live) return [live.x, live.z];
+    const sp = OW.spawned && OW.spawned[id]; if (sp && sp.root) return [sp.root.pos[0], sp.root.pos[2]];
+    const d = NPCS.find(n => n.id === id); return d && d.pos ? d.pos : null;
+  };
+  let p = null, label = '';
+  if (t.t === 'talk') { p = npcPos(t.npc); label = (NPCS.find(n => n.id === t.npc) || {}).name || ''; }
+  else if (t.t === 'reach') { p = t.pos; }
+  else if (t.t === 'region') { const tw = TOWNS.find(x => x.region === t.region); p = tw ? tw.pos : null; label = REGIONS[t.region]?.name || ''; }
+  else if (t.t === 'guardian') {
+    const tw = TOWNS.find(x => x.guardian === 'g' + t.g);
+    const door = OW.trig.find(d => d.kind === 'door' && d.type === 'hall' && d.town === tw?.id);
+    p = door ? [door.x, door.z] : tw?.pos; label = '守護者の館';
+  }
+  if (p) return { x: p[0], z: p[1], label: label || st.obj.replace(/（.*?）/g, '').slice(0, 14), kind: 'story' };
+  // ストーリーの行き先がないときは、進行中のサイドストーリー
+  const act = activeQuest();
+  if (act) {
+    const qs = act.q.steps[act.st.stage], qt = qs.trig;
+    let qp = qt.pos || (qt.t === 'talk' ? act.q.giver.pos : null);
+    if (qt.t === 'dungeon' && DUNGEONS[qt.id]) qp = DUNGEONS[qt.id].pos;
+    if (qp) return { x: qp[0], z: qp[1], label: act.q.name, kind: 'quest' };
+  }
+  return null;
+}
 function activeQuest() {
   let best = null;
   for (const q of QUESTS) { const st = G.save.quests[q.id]; if (st && !st.done && (!best || st.t > best.st.t)) best = { q, st }; }
   return best;
+}
+// ---- ストーリー一覧（目的の枠を 押すと 開く画面）用 ----
+const townNear = (p) => { if (!p) return ''; let b = null, bd = 1e9; for (const t of TOWNS) { const d = Math.hypot(t.pos[0] - p[0], t.pos[1] - p[1]); if (d < bd) { bd = d; b = t; } } return b && bd < b.r + 8 ? b.name : ''; };
+const regionName = (p) => { if (!p || !G.world) return ''; const r = G.world.regionAt(p[0], p[1]); return REGIONS[r]?.name || ''; };
+export function placeName(p) { return townNear(p) || regionName(p) || ''; }
+// サイドストーリーの 状態と 行き先
+export function questInfo(q) {
+  const st = G.save.quests[q.id];
+  const reqI = STEP_INDEX[q.req] ?? 0;
+  const avail = G.save.story.step >= reqI;
+  if (st && st.done) return { state: 'done', obj: 'クリア済み' };
+  if (!st) {
+    if (!avail) return { state: 'locked', obj: 'ストーリーを 進めると 見つかるかも……' };
+    return { state: 'new', obj: `${placeName(q.giver.pos)}の ${q.giver.name}に 話しかけよう`, pos: q.giver.pos, dest: `${placeName(q.giver.pos)}（${q.giver.name}）` };
+  }
+  const step = q.steps[st.stage], t = step.trig;
+  let pos = t.pos || (t.t === 'talk' ? q.giver.pos : null);
+  if (t.t === 'dungeon' && DUNGEONS[t.id]) pos = DUNGEONS[t.id].pos;
+  if (t.t === 'battle') pos = TOWNS.find(x => x.id === 'lake')?.pos;
+  const dest = t.t === 'talk' ? `${placeName(pos)}（${q.giver.name}）` : t.t === 'dungeon' ? DUNGEONS[t.id]?.name : placeName(pos);
+  return { state: 'active', obj: step.obj, pos, dest, stage: st.stage, total: q.steps.length };
+}
+export function storyInfo() {
+  const st = currentStep(), nav = navTarget();
+  const P = OW.player;
+  const p = nav && nav.kind === 'story' ? [nav.x, nav.z] : null;
+  const t = st.trig, pl = p ? placeName(p) : '';
+  const dest = !p ? '' : t.t === 'talk' ? `${pl}（${nav.label}）` : t.t === 'guardian' ? `${pl}の 守護者の館` : pl;
+  return { ch: st.ch, chName: CHAPTERS[st.ch] || '', obj: st.obj, pos: p, dest, dist: p && P ? Math.round(Math.hypot(p[0] - P.x, p[1] - P.z)) : null, end: t.t === 'none' };
+}
+export { CHAPTERS, QUESTS };
+
+// ---------- 王冠（銀：第6章クリア／金：ストーリークリア。1アカウント 1つずつ） ----------
+export const CROWN_SILVER_CRESTS = 4;
+export async function grantCrown(kind, quiet = false) {
+  const C = (G.save.crowns ||= {});
+  if (C[kind]) return false;
+  C[kind] = true;
+  const id = kind === 'g' ? 'crown_g' : 'crown_s';
+  addItem(id, 1);
+  audio.sfx('kiran');
+  const how = kind === 'g' ? 'アニモン1匹の 個体値を 4つとも 最大に できる' : 'アニモン1匹の 個体値を 1つ 最大に できる';
+  if (quiet) toast(`👑 ${ITEMS[id].name} を 手に入れた！（${how}）`, 4000);
+  else await sayLine('', `👑 ${ITEMS[id].name} を 手に入れた！\n${how}。バッグの「その他」から 使えます（使うと なくなります）。`);
+  save();
+  return true;
 }
 
 // ---------- シーン実行 ----------
@@ -104,6 +180,8 @@ async function doAction(c) {
       await sayLine('', `${CREST_JA[c.n - 1]} を 手に入れた！`);
       // 新しいエサがショップに入荷
       for (const id of SHOP_FOODS) { const u = ITEMS[id].unlock; if (u > before && u <= S.crests) await sayLine('', `ショップに 新しいエサ「${ITEMS[id].name}」（なつきやすさ ${'★'.repeat(ITEMS[id].rank)}）が 入荷した！`); }
+      // 4つ目の紋章（第6章クリア）の ごほうび：銀の王冠
+      if (S.crests >= CROWN_SILVER_CRESTS) await grantCrown('s');
       break;
     }
     case 'takeLulu': case 'loseLulu': {
@@ -152,6 +230,7 @@ async function doAction(c) {
     }
     case 'postGame': {
       G.save.postGame = true;
+      await grantCrown('g');
       if (!G.save.unlocked.includes('inner')) G.save.unlocked.push('inner');
       buildBarriers(); refreshActors();
       break;
@@ -189,12 +268,29 @@ export async function runStep() {
   } finally { running = false; }
 }
 
+// 場所に着くと始まる ストーリーの イベントは、いきなり 始めずに 確認する。
+//  「あとで」を 選んだら、その場所を いったん 離れるまで 始まらない（前の章の やり残しを 先に 終わらせられる）
+//  地域に入るタイプは、境目を かすっただけで 始まらないよう 少し 奥まで 入ったときだけ
+let declined = -1;
+const deepIn = (x, z, region) => [[6, 0], [-6, 0], [0, 6], [0, -6]].every(([dx, dz]) => G.world.regionAt(x + dx, z + dz) === region);
 export function checkPosition(x, z, reg) {
   if (running) return;
   const st = currentStep();
   const t = st.trig;
-  if ((t.t === 'reach' && Math.hypot(x - t.pos[0], z - t.pos[1]) < t.r) || (t.t === 'region' && reg === t.region) || t.t === 'auto') {
-    runFlow(() => runStep());
+  if (t.t === 'auto') { runFlow(() => runStep()); return; }
+  const near = t.t === 'reach' ? Math.hypot(x - t.pos[0], z - t.pos[1]) : 0;
+  const hit = (t.t === 'reach' && near < t.r) || (t.t === 'region' && reg === t.region && deepIn(x, z, t.region));
+  if (declined === G.save.story.step) {
+    // 離れたら また 確認するように
+    if ((t.t === 'reach' && near > t.r + 12) || (t.t === 'region' && reg !== t.region)) declined = -1;
+  } else if (hit) {
+    const stepNow = G.save.story.step;
+    runFlow(async () => {
+      const ch = st.ch <= 11 ? `第${st.ch}章「${CHAPTERS[st.ch]}」` : '';
+      const k = await ask(`📖 ここから ストーリーの イベントが 始まります。${ch}\n目的：${UI.fmt(st.obj)}\n今 進めますか？（「あとで」なら いったん 離れて また 来れば 始まります）`, ['進める', 'あとで']);
+      if (k === 0) { running = false; await runStep(); }
+      else { declined = stepNow; toast('準備が できたら また ここに 来よう'); }
+    });
     return;
   }
   // サイドストーリー（場所に着く）
@@ -227,6 +323,7 @@ export function npcMark(n) {
   }
   if (n.kind === 'spot') return '!';
   if (n.kind === 'questTrainer' && !G.save.defeated[n.id]) return '!';
+  if (n.kind === 'errand') return ER.errandMark(n);
   return null;
 }
 export async function talkNpc(n) {
@@ -237,6 +334,7 @@ export async function talkNpc(n) {
     await say([`${n.name}|勝負だ！`]);
     return startTrainerBattle(n.tr.id, { route: n.tr });
   }
+  if (n.kind === 'errand') return ER.talkErrand(n);
   if (n.kind === 'giver') return giverTalk(n.quest);
   if (n.kind === 'spot') return spotTalk(n.quest);
   if (n.kind === 'questTrainer') {
@@ -251,6 +349,12 @@ export async function talkNpc(n) {
     const res = await startTrainerBattle(n.trainer, { rematch: true });
     if (res === 'win' && n.after) await runScene(n.after);
     return;
+  }
+  if (n.rest) {
+    // ママ：話すと 休ませてくれる（家の入口と 同じことを 2回 しないよう ここに まとめた）
+    await say(['ママ|{P}、おかえり！ 少し 休んでいきなさい。']);
+    await fade(true, 400); MENU.healAll(); audio.sfx('heal'); await fade(false, 400);
+    return say(['|アニモンたちは 元気いっぱいに なった！', 'ママ|アニモンが ケガをしたら 病院に 連れていくのよ。いってらっしゃい！']);
   }
   if (n.talk) return runScene(typeof n.talk === 'string' ? n.talk : n.talk);
   return say([`${n.name}|こんにちは！`]);

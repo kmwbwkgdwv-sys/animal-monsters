@@ -13,14 +13,17 @@ import { SPECIES, BY_NAME } from '../data/species.js';
 import { DESIGN } from '../data/designs.js';
 import { NPCS, LOOKS, QUESTS, STEPS } from '../data/story.js';
 import { ITEMS } from '../data/items.js';
-import { createMon } from './mon.js';
+import { createMon, bossIv } from './mon.js';
 import { G, isUnlocked, addItem, save, itemName } from './state.js';
 import { Input, readMove } from '../input.js';
 import { audio } from '../audio.js';
-import { $, el, esc, toast, say, confirmBox, fade, UI } from '../ui/ui.js';
+import { $, el, esc, toast, say, confirmBox, fade, UI, glintAt } from '../ui/ui.js';
 import * as SE from './storyEngine.js';
 import { startWildBattle, startTrainerBattle } from '../ui/battleUI.js';
 import * as MENU from '../ui/menus.js';
+import * as ER from './errands.js';
+import * as COOP from './coop.js';
+import { ERRAND_GIVERS } from '../data/errands.js';
 
 function norm(v) { const l = Math.hypot(...v); return v.map(x => x / l); }
 export const OW = {
@@ -70,7 +73,8 @@ export async function buildOverworld(progress) {
       const x = t.pos[0] + dx, z = t.pos[1] + dz;
       const n = new Node(B.geo, { mat: MAT.building }); n.setPos(x, h, z); S.add(n);
       W.boxes.push({ x0: x - B.w / 2, x1: x + B.w / 2, z0: z - B.d / 2, z1: z + B.d / 2 });
-      OW.trig.push({ kind: 'door', type, town: t.id, x: x + B.door[0], z: z + B.door[1], r: 2.8, label: type === 'house' ? '' : (type === 'hall' ? t.name.replace(/町|村|里|集落|タウン|まち/, '') + 'の守護者の館' : BUILD_JA[type]), ly: B.h + 3, lx: x, lz: z, bi });
+      // 研究所・家は 前に立っている 博士・ママに 話しかければ いいので、入口は 名前を 出すだけ（同じ会話が 2つ出ないように）
+      OW.trig.push({ kind: 'door', type, town: t.id, x: x + B.door[0], z: z + B.door[1], r: (type === 'lab' || type === 'home') ? 0 : 2.8, label: type === 'house' ? '' : (type === 'hall' ? t.name.replace(/町|村|里|集落|タウン|まち/, '') + 'の守護者の館' : BUILD_JA[type]), ly: B.h + 3, lx: x, lz: z, bi });
     });
     // 町の広場の飾り（噴水）
     const f = new GeoBuilder();
@@ -142,8 +146,15 @@ export async function buildOverworld(progress) {
   // シャドウ
   P.shadow = new Node(PRIM.disc, { color: [0, 0, 0], alpha: 0.28, unlit: true }); P.shadow.noDepthWrite = true; P.shadow.setScale(0.75); S.add(P.shadow);
   refreshActors();
-  refreshFollower();
   W.buildAll(P.x, P.z, 140);
+  // セーブした場所が 立てない所（水の上・結界の外・木の中など）なら 最後に寄った病院の前へ
+  if (!spawnOk(P.x, P.z)) {
+    const st = STONES.find(x => x.id === G.save.lastHospital) || STONES.find(x => x.id === 't_start');
+    P.x = st.pos[0]; P.z = st.pos[1] + 4; P.ry = 0;
+    W.buildAll(P.x, P.z, 140);
+  }
+  P.y = W.heightAt(P.x, P.z);
+  refreshFollower();
   OW.region = null; OW.dungeon = null;
   progress && progress(0.95, 'もうすぐ…');
 }
@@ -234,8 +245,72 @@ export function refreshActors() {
       }
     }
   }
+  // 町の住民・通行人（おつかい）
+  for (const g of ERRAND_GIVERS) {
+    if (!ER.giverTownUnlocked(g)) continue;
+    const spot = errandSpot(g);
+    if (!spot) continue;
+    const n = makeNpc({ id: g.id, name: g.name, pos: spot.pos, ry: spot.ry, kind: 'errand', giver: g }, g.look);
+    if (spot.path) { n.path = spot.path; n.pi = spot.pi || 0; n.wait = 1 + Math.random() * 2; }
+    OW.npcs.push(n);
+  }
   // シーンで出したもの
   for (const k in OW.spawned) { const sp = OW.spawned[k]; if (!sp.root.parent) OW.scene.add(sp.root); }
+}
+
+// 住民の立つ場所・通行人の散歩道を 町の中から さがす（建物・入口・ほかの人と 重ならない）
+const errSpots = {};
+function errandSpot(g) {
+  if (errSpots[g.id]) return errSpots[g.id];
+  const t = TOWNS.find(x => x.id === g.town); if (!t) return null;
+  const W = G.world, [cx, cz] = t.pos;
+  const free = (x, z, rad = 1.1) => {
+    if (W.blockedByObst(x, z, rad)) return false;
+    if (W.heightAt(x, z) < -0.3) return false;
+    if (Math.hypot(x - cx, z - cz) > t.r - 5) return false;
+    for (const tr of OW.trig) if (Math.hypot(tr.x - x, tr.z - z) < 3.4) return false;
+    for (const n of OW.npcs) if (Math.hypot(n.x - x, n.z - z) < 3.2) return false;
+    for (const id in errSpots) { const o = errSpots[id]; if (o.path) { for (const q of o.path) if (Math.hypot(q[0] - x, q[1] - z) < 2.5) return false; } else if (Math.hypot(o.pos[0] - x, o.pos[1] - z) < 3.2) return false; }
+    return true;
+  };
+  const r = mulberry32(hashStr(g.id));
+  if (g.walk) {
+    // 広場を ぐるっと 回る 6角形の道（途中も 通れるか 確かめる）
+    for (const R of [12, 15, 10, 18, 8, 21]) {
+      const a0 = r() * Math.PI * 2, pts = [];
+      for (let k = 0; k < 6; k++) { const a = a0 + k / 6 * Math.PI * 2; pts.push([cx + Math.cos(a) * R, cz + Math.sin(a) * R]); }
+      let ok = true;
+      for (let k = 0; k < 6 && ok; k++) {
+        const A = pts[k], B = pts[(k + 1) % 6], L = Math.hypot(B[0] - A[0], B[1] - A[1]);
+        for (let d = 0; d <= L; d += 1.2) { const x = A[0] + (B[0] - A[0]) * d / L, z = A[1] + (B[1] - A[1]) * d / L; if (W.blockedByObst(x, z, 0.8) || W.heightAt(x, z) < -0.3 || Math.hypot(x - cx, z - cz) > t.r - 4) { ok = false; break; } }
+      }
+      if (ok) return (errSpots[g.id] = { pos: pts[0], ry: 0, path: pts, pi: 1 });
+    }
+  }
+  for (let k = 0; k < 80; k++) {
+    const a = r() * Math.PI * 2, R = 10 + r() * (t.r - 16);
+    const x = cx + Math.cos(a) * R, z = cz + Math.sin(a) * R;
+    if (!free(x, z)) continue;
+    return (errSpots[g.id] = { pos: [x, z], ry: Math.atan2(cx - x, cz - z) });
+  }
+  return null;
+}
+
+// 通行人の散歩（話しかけられる距離に プレイヤーがいると 立ち止まる）
+function walkNpc(n, dt) {
+  const P = OW.player;
+  if (G.busy || Math.hypot(P.x - n.x, P.z - n.z) < 3.4) return false;
+  if (n.wait > 0) { n.wait -= dt; return false; }
+  const tg = n.path[n.pi], dx = tg[0] - n.x, dz = tg[1] - n.z, d = Math.hypot(dx, dz);
+  if (d < 0.3) { n.pi = (n.pi + 1) % n.path.length; n.wait = Math.random() < 0.35 ? 1 + Math.random() * 2.5 : 0; return false; }
+  const sp = 1.6, st = Math.min(d, sp * dt);
+  n.x += dx / d * st; n.z += dz / d * st;
+  const W = G.world, y = W.groundAt(n.x, n.z);
+  const want = Math.atan2(dx, dz); n.H.root.rot[1] += angleDiff(n.H.root.rot[1], want) * Math.min(1, dt * 8);
+  n.H.root.setPos(n.x, y, n.z);
+  if (n.shadow) n.shadow.setPos(n.x, y + 0.05, n.z);
+  animateHuman(n.H, dt, 'walk', 0.9);
+  return true;
 }
 
 // ---------- 連れ歩き ----------
@@ -352,7 +427,18 @@ function updateWilds(dt) {
     }
     w.M.root.setPos(w.x, w.water ? -0.35 : W.heightAt(w.x, w.z), w.z);
     animateAnimon(w.M, dt, moving ? 'walk' : 'idle', moving ? 1.25 / Math.sqrt(Math.max(0.5, w.big)) : 1);
-    if (w.mon.shiny) { w.sparkle -= dt; if (w.sparkle <= 0) { w.sparkle = 0.25; sparkleAt(w.x, W.heightAt(w.x, w.z) + w.M.height, w.z); } }
+    if (w.mon.shiny) {
+      w.sparkle -= dt; if (w.sparkle <= 0) { w.sparkle = 0.25; sparkleAt(w.x, W.heightAt(w.x, w.z) + w.M.height, w.z); }
+      // 近くに 色違いが 現れたら 1回だけ キラーン！
+      if (!w.glinted && Math.hypot(w.x - P.x, w.z - P.z) < 34 && !G.busy) {
+        w.glinted = true;
+        const top = [w.x, W.heightAt(w.x, w.z) + w.M.height * 0.8, w.z], R = G.renderer, q = OW.cam.project(top, R.cssW, R.cssH);
+        for (let k = 0; k < 10; k++) sparkleAt(top[0], top[1] - 0.5, top[2]);
+        audio.sfx('kiran');
+        if (q[2] > 0 && q[0] > 0 && q[0] < R.cssW && q[1] > 0 && q[1] < R.cssH) glintAt(q[0], q[1]);
+        toast(`✨ キラーン！ 色違いの ${SPECIES[w.mon.sp].name} が いる！`, 3200);
+      }
+    }
     const pd = Math.hypot(w.x - P.x, w.z - P.z);
     if (pd > 80 || w.life <= 0) { OW.scene.root.remove(w.M.root); OW.wilds.splice(i, 1); continue; }
     if (!G.busy && OW.mode !== 'fly' && !OW.noEnc && pd < 1.1 + w.big * 0.8 && OW.encCool <= 0) {
@@ -379,10 +465,16 @@ export function biomeHere() {
 export async function runFlow(fn) {
   if (G.busy) return;
   G.busy = true;
-  try { await fn(); } catch (e) { console.error(e); toast('エラーが発生しました: ' + e.message); }
+  try { await fn(); } catch (e) {
+    console.error(e); toast('エラーが発生しました: ' + e.message);
+    // 途中で 止まっても 画面が 真っ暗のまま・会話が 出たままに ならないように 片付ける
+    try { const f = $('#fade'); f.style.transitionDuration = '300ms'; f.style.opacity = 0; $('#narr').classList.remove('on'); $('#letterbox').classList.remove('on'); $('#dialog').classList.add('hidden'); } catch (er) { /* */ }
+  }
   G.busy = false;
   Input.clearEdges();
   OW.encCool = 2.5;
+  // 念のため：処理が 終わったのに 暗転が 残っていたら 戻す
+  setTimeout(() => { if (!G.busy && G.state === 'world') { const f = $('#fade'); if (f && +getComputedStyle(f).opacity > 0.5) { f.style.transitionDuration = '300ms'; f.style.opacity = 0; } } }, 900);
 }
 
 // ---------- メインの更新 ----------
@@ -489,6 +581,7 @@ export function updateOverworld(dt) {
   }
   // NPCアニメ
   for (const n of OW.npcs) {
+    if (n.path && n.H) { if (walkNpc(n, dt)) continue; }
     if (n.H) animateHuman(n.H, dt, 'idle');
     if (n.M) animateAnimon(n.M, dt, 'idle');
     if (n.marker) { n.marker.rot[1] += dt * 2; }
@@ -580,9 +673,31 @@ export function updateOverworld(dt) {
     if (OW.skyTheme) OW.sky.setTheme(OW.skyTheme, Math.min(1, dt * 1.5));
     if (OW.amb) OW.amb.update(dt, [P.x - Math.sin(OW.camYawS || 0) * 4, (P.y || 0) + 0.5, P.z - Math.cos(OW.camYawS || 0) * 4], OW.scene.wind);
   }
+  // 最後に 地面に立っていた場所（泳ぎ・飛行中に セーブしたとき用）
+  if (!D && (OW.t * 4 | 0) !== (OW.lgT | 0)) { OW.lgT = OW.t * 4; if (W.heightAt(P.x, P.z) > -0.3 && !W.blockedByObst(P.x, P.z, 0.6)) OW.lastGround = [P.x, P.z]; }
   updatePrompt();
   updateLabels();
 }
+
+// ---------- セーブ位置 ----------
+//  セーブするたびに 今いる場所を 記録 → 次に「続きから」で その場所に出る
+//  ダンジョンの中なら 入り口の前、泳いでいる・飛んでいるときは 最後に 地面に立っていた場所
+function spawnOk(x, z) {
+  const W = G.world;
+  if (!Number.isFinite(x) || !Number.isFinite(z) || Math.abs(x) > 760 || Math.abs(z) > 760) return false;
+  if (!isUnlocked(W.regionAt(x, z))) return false;
+  if (W.heightAt(x, z) < -0.4) return false;
+  return !W.blockedByObst(x, z, 0.6);
+}
+export function capturePos() {
+  const P = OW.player; if (!P || !G.save) return;
+  let x = P.x, z = P.z, ry = P.ry || 0;
+  if (OW.dungeon && OW.saveOut) { x = OW.saveOut[0]; z = OW.saveOut[1] + 2; ry = 0; }
+  else if ((OW.mode === 'swim' || OW.mode === 'fly') && OW.lastGround) { [x, z] = OW.lastGround; }
+  if (!Number.isFinite(x) || !Number.isFinite(z)) return;
+  G.save.pos = [Math.round(x * 100) / 100, Math.round(z * 100) / 100]; G.save.ry = Math.round(ry * 100) / 100;
+}
+G.capturePos = capturePos;
 
 function canStand(x, z) {
   const W = G.world;
@@ -630,6 +745,13 @@ function nearest() {
   }
   for (const t of OW.trig) { if (t.kind === 'item' && G.save.items[t.id]) continue; const d = Math.hypot(t.x - P.x, t.z - P.z); if (d < t.r && d < bd) { bd = d; best = t; } }
   for (const n of OW.npcs) { const d = Math.hypot(n.x - P.x, n.z - P.z); if (d < 3.6 && d < bd) { bd = d; best = { kind: 'npcRef', n }; } }
+  // 同じワールドの フレンド
+  if (!best) { const r = COOP.nearestRemote(P); if (r) best = { kind: 'friend', r }; }
+  // 木・岩・しげみ など（素材集め）
+  if (!best && !OW.inTown) {
+    const o = G.world.nearestObst(P.x, P.z, 1.3);
+    if (o) { const verb = ER.harvestVerb(o); if (verb) best = { kind: 'harvest', o, verb }; }
+  }
   return best;
 }
 function updatePrompt() {
@@ -639,7 +761,7 @@ function updatePrompt() {
   let txt = '';
   if (t) {
     const btn = Input.touch ? 'A' : 'Space';
-    const verb = { door: '入る', stone: '岩にさわる', item: '拾う', dungeon: '入る', npcRef: '話す', exit: '外に出る', chest: '開ける', boss: '調べる' }[t.kind] || '調べる';
+    const verb = t.kind === 'harvest' ? t.verb : t.kind === 'friend' ? `${t.r.name}と 話す` : ({ door: '入る', stone: '岩にさわる', item: '拾う', dungeon: '入る', npcRef: '話す', exit: '外に出る', chest: '開ける', boss: '調べる' }[t.kind] || '調べる');
     txt = `${btn}：${verb}`;
   }
   if (p.textContent !== txt) p.textContent = txt;
@@ -647,6 +769,12 @@ function updatePrompt() {
 export function interact() {
   const t = nearest();
   if (!t) return;
+  if (t.kind === 'harvest') {
+    // 素材集めは 会話なしで その場で（連続で 押しやすいように）
+    if (G.busy) return;
+    const P = OW.player; P.ry = Math.atan2(t.o.x - P.x, t.o.z - P.z);
+    ER.harvest(t.o); return;
+  }
   audio.sfx('select');
   runFlow(async () => {
     const P = OW.player;
@@ -654,7 +782,8 @@ export function interact() {
       const n = t.n;
       if (n.H) n.H.root.rot[1] = Math.atan2(P.x - n.x, P.z - n.z);
       await SE.talkNpc(n);
-    } else if (t.kind === 'door') await doorAction(t);
+    } else if (t.kind === 'friend') await COOP.talkRemote(t.r);
+    else if (t.kind === 'door') await doorAction(t);
     else if (t.kind === 'stone') await stoneAction(t);
     else if (t.kind === 'item') {
       G.save.items[t.id] = true; addItem(t.item, 1); OW.scene.root.remove(t.node); audio.sfx('item');
@@ -746,7 +875,8 @@ async function dungeonEnter(id) {
     const n = new Node(chestGeo(), { emis: [0.08, 0.05, 0] }); n.setPos(c[0], 0, c[1]); n.rot[1] = (i % 4) * Math.PI / 2; S.add(n);
     OW.dtrig.push({ kind: 'chest', x: c[0], z: c[1], r: 2.4, i, node: n });
   });
-  if (!G.save.cleared[id]) {
+  // 主は なつかせる（仲間にする）まで 何度でも 現れる
+  if (!G.save.cleared[id] || !(G.save.bossCaught || {})[id]) {
     const B = DUNGEON_BOSS[id];
     const M = buildAnimon(BY_NAME[B[0]].id, false); M.root.setPos(Dg.boss[0], 0, Dg.boss[1]); M.root.rot[1] = Math.PI; S.add(M.root);
     OW.dtrig.push({ kind: 'boss', x: Dg.boss[0], z: Dg.boss[1], r: 3.5, M });
@@ -768,16 +898,22 @@ export const DUNGEON_BOSS = { ruins: ['イニシエ', 22], pyramid: ['ホウタ�
 async function dungeonBoss() {
   const id = OW.dungeon.id;
   const [nm, lv] = DUNGEON_BOSS[id];
-  await say([`|${DUNGEONS[id].name}の 主 ${nm} が 立ちはだかった！`]);
-  const mon = createMon(BY_NAME[nm].id, lv);
+  const again = G.save.cleared[id];
+  await say([`|${DUNGEONS[id].name}の 主 ${nm} が 立ちはだかった！`, '|（主は「つかまえる」で なつかせることが できる。個体値は すべて 6以上！）']);
+  const mon = createMon(BY_NAME[nm].id, lv, { iv: bossIv(), shiny: false });
+  mon.boss = true;
   const res = await startWildBattle(mon, { biome: DUNGEONS[id].theme, boss: true });
   if (res === 'win' || res === 'caught') {
+    const first = !again;
     G.save.cleared[id] = true;
+    if (res === 'caught') { G.save.bossCaught = G.save.bossCaught || {}; G.save.bossCaught[id] = true; }
     if (OW.dbossM) { OW.dscene.root.remove(OW.dbossM.root); OW.dbossM = null; }
     OW.dtrig = OW.dtrig.filter(t => t.kind !== 'boss');
-    const money = lv * 100; G.save.money += money;
-    await say([`|${DUNGEONS[id].name} を 攻略した！`, `|${money}円 を 手に入れた！`]);
-    SE.onDungeonClear(id);
+    const lines = [];
+    if (first) { const money = lv * 100; G.save.money += money; lines.push(`|${DUNGEONS[id].name} を 攻略した！`, `|${money}円 を 手に入れた！`); }
+    if (res === 'win') lines.push(`|${nm}は 去っていった……。（次に ダンジョンに 入ったとき、また 挑めます）`);
+    if (lines.length) await say(lines);
+    if (first) SE.onDungeonClear(id);
     save();
     if (await confirmBox('入り口まで 戻りますか？')) await exitDungeon();
   }
@@ -827,13 +963,14 @@ function updateLabels() {
       for (const n of OW.npcs) {
         const d = Math.hypot(n.x - P.x, n.z - P.z); if (d > 26) continue;
         const mark = SE.npcMark(n);
-        if (mark) show(n.x, gr(n.x, n.z) + 3.0, n.z, mark, mark === '!' ? 'ex' : 'ex q');
+        if (mark) show(n.x, gr(n.x, n.z) + 3.0, n.z, mark, mark === '!' ? 'ex' : mark === '?' ? 'ex q' : 'ex er');
         else if (d < 9 && n.name) show(n.x, gr(n.x, n.z) + 2.7, n.z, n.name);
       }
     } else {
       for (const t of OW.dtrig) { const d = Math.hypot(t.x - P.x, t.z - P.z); if (d > 20) continue; if (t.kind === 'exit') show(t.x, 2.2, t.z, '出口'); if (t.kind === 'boss') show(t.x, 4, t.z, '!', 'ex'); }
     }
     if (OW.exMark) show(OW.exMark.x, gr(OW.exMark.x, OW.exMark.z) + 3.2, OW.exMark.z, '!', 'ex');
+    if (!OW.dungeon) COOP.coopLabels(show, P);
   }
   for (let i = k; i < pool.length; i++) if (pool[i].style.display !== 'none') pool[i].style.display = 'none';
 }

@@ -16,6 +16,7 @@
 //   saves/{pid}              セーブデータ（連携したすべての端末で共有・自動同期）
 //   transfers/{連携コード}     → { pid }（ほかの端末をこのデータに連携するためのコード）
 //   rankings/{pid}           ランキング用の公開成績
+//   worlds/{ホストpid}         フレンドと 同じワールドで あそぶ（meta と members/{pid} に 位置など）
 //
 //  1つのデータ（pid）に 複数の端末（匿名ログインの uid）を登録できる：players/{pid}/devices/{uid} = true
 // =============================================================
@@ -341,3 +342,67 @@ export function remoteFor(roomId, role) {
     close() { un(); },
   };
 }
+
+// ---------------- いっしょのワールド（フレンドと 同じ大陸を 歩く） ----------------
+//  worlds/{hostPid}/meta            = { host, hostName, open, at }
+//  worlds/{hostPid}/members/{pid}   = { name, look, x, z, ry, st, mode, ride, lead, shiny, dg, t, emo, emoAt }
+//  ・ホストが ワールドを ひらいて フレンドを 招待 → フレンドが 参加
+//  ・それぞれの セーブデータ（ストーリー・アニモン）は そのまま。おたがいの すがたが 見える
+export const World = { host: null, hostName: '', members: {}, open: false, unsubs: [], onChange: null, onClosed: null };
+const wref = (...p) => ref('worlds', ...p);
+function worldUnsub() { while (World.unsubs.length) { try { World.unsubs.pop()(); } catch (e) { /* */ } } }
+export function inWorld() { return !!World.host; }
+export async function hostWorld() {
+  await ensurePlayer();
+  if (World.host === Online.pid) return;
+  if (World.host) await leaveWorld();
+  await R.set(wref(Online.pid, 'meta'), { host: Online.pid, hostName: String(G.save.name).slice(0, 20), open: true, at: now() });
+  await enterWorld(Online.pid, G.save.name);
+}
+export async function inviteToWorld(friendPid) {
+  if (!World.host) await hostWorld();
+  await R.set(ref('invites', friendPid, 'w_' + World.host), { from: Online.pid, fromName: String(G.save.name).slice(0, 20), type: 'world', world: World.host, worldName: World.hostName, at: now() });
+}
+export async function joinWorld(hostPid) {
+  await ensurePlayer();
+  try { await R.remove(ref('invites', Online.pid, 'w_' + hostPid)); } catch (e) { /* */ }
+  const meta = await val('worlds', hostPid, 'meta');
+  if (!meta || !meta.open) throw new Error('その ワールドは もう 閉じられています。');
+  if (World.host && World.host !== hostPid) await leaveWorld();
+  await enterWorld(hostPid, meta.hostName || '');
+}
+async function enterWorld(hostPid, hostName) {
+  worldUnsub();
+  World.host = hostPid; World.hostName = hostName; World.members = {}; World.open = true;
+  const me = wref(hostPid, 'members', Online.pid);
+  await R.set(me, { name: String(G.save.name).slice(0, 20), look: G.save.look || {}, x: 0, z: 0, ry: 0, st: 'idle', mode: 'walk', t: now() });
+  // 通信が 切れたら 自動で 退出（本物の Firebase のみ）
+  try { if (R.onDisconnect) R.onDisconnect(me).remove(); } catch (e) { /* */ }
+  World.unsubs.push(R.onValue(wref(hostPid, 'members'), (snap) => { World.members = snap.val() || {}; World.onChange && World.onChange(); }, () => {}));
+  World.unsubs.push(R.onValue(wref(hostPid, 'meta'), (snap) => {
+    const m = snap.val();
+    if (World.host === hostPid && (!m || !m.open) && hostPid !== Online.pid) { const nm = World.hostName; worldUnsub(); World.host = null; World.members = {}; World.onClosed && World.onClosed(nm); }
+  }, () => {}));
+  World.onChange && World.onChange();
+}
+export async function publishWorld(data) {
+  if (!World.host || !R) return;
+  try { await R.update(wref(World.host, 'members', Online.pid), { ...data, t: now() }); } catch (e) { /* */ }
+}
+export async function leaveWorld() {
+  if (!World.host) return;
+  const host = World.host;
+  worldUnsub();
+  World.host = null; World.members = {};
+  try { await R.remove(wref(host, 'members', Online.pid)); } catch (e) { /* */ }
+  if (host === Online.pid) { try { await R.set(wref(host, 'meta'), { host, hostName: String(G.save.name).slice(0, 20), open: false, at: now() }); await R.remove(wref(host, 'members')); } catch (e) { /* */ } }
+  World.onChange && World.onChange();
+}
+// 招待（対戦・トレード・ワールド）を ゲーム中 いつでも 受け取る
+let invUn = null;
+export function watchInvitesAlways(cb) {
+  if (invUn) { try { invUn(); } catch (e) { /* */ } }
+  invUn = R.onValue(ref('invites', Online.pid), s => cb(list(s.val(), 'id').filter(i => !i.at || Date.now() - i.at < 30 * 60 * 1000)), () => {});
+  return invUn;
+}
+export async function declineWorldInvite(id) { try { await R.remove(ref('invites', Online.pid, id)); } catch (e) { /* */ } }

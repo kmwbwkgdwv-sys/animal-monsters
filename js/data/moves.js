@@ -222,3 +222,36 @@ export const COVERAGE = {
   bug: ['rock', 'fighting', 'poison'], rock: ['ground', 'fighting', 'steel'], ghost: ['dark', 'psychic', 'poison'], dragon: ['fire', 'ground', 'steel'],
   dark: ['ghost', 'fighting', 'poison'], fairy: ['psychic', 'fire', 'grass'],
 };
+
+// ---- 技の効果を 短い日本語に（バトルの技ボタン・詳細画面で表示） ----
+const ST_JA = { brn: 'やけど', psn: 'どく', par: 'まひ', slp: 'ねむり', frz: 'こおり', flinch: 'ひるませる' };
+const STAT_JA2 = { atk: '攻撃', def: '防御', spe: '素早さ', acc: '命中' };
+const frac = (x) => Math.abs(x - 0.5) < 0.01 ? '半分' : Math.abs(x - 1 / 3) < 0.01 ? '1/3' : Math.abs(x - 0.25) < 0.01 ? '1/4' : Math.abs(x - 0.75) < 0.01 ? '3/4' : Math.round(x * 100) + '%';
+export function moveEffects(mv) {
+  const out = [];
+  if (mv.pri > 0 && !mv.protect && !mv.redirect && !mv.help) out.push('先制できる');
+  for (const e of mv.e || []) {
+    if (ST_JA[e[0]]) {
+      const p = e[1];
+      if (e[0] === 'flinch') out.push(`${p}%で ひるませる`);
+      else out.push(p >= 100 ? `相手を ${ST_JA[e[0]]}にする` : `${p}%で ${ST_JA[e[0]]}`);
+    } else if (STAT_JA2[e[0]]) {
+      const n = e[1], who = e[2] === 'self' ? '自分の' : '相手の', p = e[3] ?? 100;
+      const arrow = n > 0 ? '↑'.repeat(Math.min(3, n)) : '↓'.repeat(Math.min(3, -n));
+      out.push(`${p < 100 ? p + '%で ' : ''}${who}${STAT_JA2[e[0]]}${arrow}`);
+    }
+  }
+  if (mv.heal) out.push(`HPを ${frac(mv.heal)} 回復`);
+  if (mv.drain) out.push(`与えたダメージの ${frac(mv.drain)} 回復`);
+  if (mv.recoil) out.push(`反動で 自分も ${frac(mv.recoil)} ダメージ`);
+  if (mv.crit) out.push('急所に 当たりやすい');
+  if (mv.protect) out.push('そのターン 攻撃を ふせぐ');
+  if (mv.redirect) out.push('相手の攻撃を 引きつける');
+  if (mv.help) out.push('味方の技 1.5倍');
+  return out;
+}
+export function moveEffectText(mv) {
+  const e = moveEffects(mv);
+  if (e.length) return e.join('・');
+  return mv.power > 0 ? '追加効果なし' : '';
+}

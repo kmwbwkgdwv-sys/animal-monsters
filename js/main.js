@@ -15,11 +15,13 @@ import { initInput, Input } from './input.js';
 import { audio } from './audio.js';
 import { $, el, esc, UI, openScreen, toast, confirmBox, say, ask, loadingProgress, hideLoading, advance, topScreen, fade, closeAllScreens } from './ui/ui.js';
 import { OW, buildOverworld, updateOverworld, runFlow, buildBarriers, refreshActors, resetCamera } from './game/overworld.js';
+import { initMinimap, updateMinimap } from './ui/minimap.js';
+import { initCoop, updateCoop, startInviteWatch } from './game/coop.js';
 import * as SE from './game/storyEngine.js';
 import * as MENU from './ui/menus.js';
 import { SPECIES } from './data/species.js';
 import * as BATTLE from './ui/battleUI.js';
-import { createMon } from './game/mon.js';
+import { createMon, maxHp } from './game/mon.js';
 
 const canvas = $('#game');
 let title = null, last = performance.now(), saveTimer = 0;
@@ -45,7 +47,17 @@ async function boot() {
   initPrims();
   resize();
   window.addEventListener('resize', resize);
-  window.addEventListener('orientationchange', () => { setTimeout(resize, 120); setTimeout(resize, 500); });
+  // 画面を回したとき、端末によっては 大きさが 少しずつ 変わるので 何回か 合わせなおす
+  window.addEventListener('orientationchange', () => { for (const ms of [60, 200, 450, 800, 1300, 2000]) setTimeout(resize, ms); });
+  if (screen.orientation && screen.orientation.addEventListener) screen.orientation.addEventListener('change', () => { for (const ms of [60, 300, 900, 1600]) setTimeout(resize, ms); });
+  // 3D表示が こわれた（WebGL のコンテキスト消失）ときは、セーブして 自動で 読み込みなおす
+  canvas.addEventListener('webglcontextlost', (e) => {
+    e.preventDefault();
+    if (G.ctxLost) return; G.ctxLost = true;
+    try { if (G.save && G.state !== 'title') { save(); sessionStorage.setItem('animon_autocont', '1'); } } catch (er) { /* */ }
+    const o = document.createElement('div'); o.id = 'ctxlost'; o.innerHTML = '<div>画面を 復元しています…</div>'; document.body.appendChild(o);
+    setTimeout(() => location.reload(), 1200);
+  }, false);
   if (window.visualViewport) window.visualViewport.addEventListener('resize', () => requestAnimationFrame(resize));
   if (window.ResizeObserver) new ResizeObserver(() => resize()).observe(canvas);
   initInput();
@@ -56,10 +68,22 @@ async function boot() {
   // 会話送り
   window.addEventListener('pointerdown', (e) => { if (e.target.closest('button, input, select, .screen')) return; advance(); });
   window.addEventListener('keydown', (e) => { if (['Space', 'Enter', 'KeyZ', 'KeyE'].includes(e.code)) advance(); });
-  // HUDボタン
-  $('#btnMenu').onclick = () => { if (G.state === 'world') runFlow(() => MENU.openMainMenu()); };
-  $('#btnMap').onclick = () => { if (G.state === 'world') runFlow(() => MENU.openMap()); };
-  $('#btnCam').onclick = () => { if (G.state === 'world') { resetCamera(); toast('視点を 元に戻しました（北が上）'); } };
+  // HUDボタン（押した指が 少しずれて 離れても 反応するように：押した場所から 45px 以内で 離せば OK）
+  const tap = (node, fn) => {
+    if (!node) return;
+    let down = null, fired = 0;
+    node.addEventListener('pointerdown', (e) => { e.stopPropagation(); down = { id: e.pointerId, x: e.clientX, y: e.clientY }; try { node.setPointerCapture(e.pointerId); } catch (er) { /* */ } });
+    node.addEventListener('pointerup', (e) => { if (!down || e.pointerId !== down.id) return; const ok = Math.hypot(e.clientX - down.x, e.clientY - down.y) < 45; down = null; if (ok) { fired = performance.now(); fn(e); } });
+    node.addEventListener('pointercancel', () => { down = null; });
+    node.addEventListener('click', (e) => { e.stopPropagation(); if (performance.now() - fired < 700) return; fn(e); });
+  };
+  tap($('#btnMenu'), () => { if (G.state === 'world') runFlow(() => MENU.openMainMenu()); });
+  tap($('#btnMap'), () => { if (G.state === 'world') runFlow(() => MENU.openMap()); });
+  // 左上の「目的」を押すと ストーリー・サイドストーリー・おつかいの 一覧
+  tap($('#objective'), () => { if (G.state === 'world' && !G.busy) runFlow(() => MENU.openJournal()); });
+  tap($('#btnCam'), () => { if (G.state === 'world') { resetCamera(); toast('視点を 元に戻しました（北が上）'); } });
+  initMinimap();
+  initCoop();
   // アプリを閉じる・切り替えるときはクラウドにも保存。戻ってきたら、ほかの端末で進めていないか確認
   let hiddenAt = 0;
   document.addEventListener('visibilitychange', () => {
@@ -195,9 +219,9 @@ async function showTitle() {
     <div class="menu">
       <button class="btn pri new"><span class="ic">✨</span>最初から始める</button>
       <button class="btn cont" ${has ? '' : 'disabled'}><span class="ic">▶</span>続きから始める</button>
-      <button class="btn trans"><span class="ic">🔗</span>データ連携（スマホ・パソコン共通）・引き継ぎ</button>
+      <button class="btn trans"><span class="ic">🔑</span>引き継ぎコードの発行・アカウント引き継ぎ</button>
       <button class="btn set"><span class="ic">⚙️</span>設定</button>
-    </div></div><div class="copy">© アニマルモンスター</div><div class="ver">ver 1.2　PC・スマホ（横画面）対応</div>`;
+    </div></div><div class="copy">© アニマルモンスター</div><div class="ver">ver 1.3　PC・スマホ（横画面）対応</div>`;
   $('#screens').appendChild(s);
   s.querySelector('.new').onclick = async () => {
     audio.sfx('select');
@@ -312,8 +336,13 @@ async function startGame(state, isNew) {
   G.save = state;
   // 旧データ互換
   state.cleared ||= {}; state.quests ||= {}; state.items ||= {};
+  state.errands ||= {}; state.crowns ||= {};
   for (const m of [...(state.party || []), ...(state.box || [])]) {
-    if (!SPECIES[m.sp]?.legend || !m.iv) continue;
+    if (!m.iv) continue;
+    // 個体値は 1〜15（古いデータの 0 は 1 に）。能力の計算式が変わったので HP は上限に合わせる
+    for (const k of ['atk', 'def', 'hp', 'spe']) if (!(m.iv[k] >= 1)) m.iv[k] = 1;
+    try { const mx = maxHp(m); if (m.hp > mx) m.hp = mx; } catch (e) { /* */ }
+    if (!SPECIES[m.sp]?.legend) continue;
     let h = 0; for (const ch of String(m.uid)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
     for (const k of ['atk', 'def', 'hp', 'spe']) { h = (h * 1103515245 + 12345) >>> 0; if (m.iv[k] < 10) m.iv[k] = 10 + (h >>> 8) % 6; }
   }
@@ -337,6 +366,11 @@ async function startGame(state, isNew) {
   } else {
     audio.playBgm('field');
     toast(`おかえりなさい、${state.name}さん！`);
+    // すでに 条件を 満たしている データには 王冠を あとから わたす（1つずつだけ）
+    setTimeout(async () => {
+      if ((state.story.crests || 0) >= SE.CROWN_SILVER_CRESTS) await SE.grantCrown('s', true);
+      if (state.postGame) await SE.grantCrown('g', true);
+    }, 2500);
   }
   // 視点操作の案内（最初の1回だけ）
   if (!G.settings.camHint) {
@@ -344,7 +378,7 @@ async function startGame(state, isNew) {
     setTimeout(hint, 5000);
   }
   // オンラインが使える設定なら、裏でランキングに自分の成績を載せておく
-  setTimeout(() => import('./online.js').then(m => { if (m.isConfigured()) m.ensurePlayer().then(() => m.publishRanking(true)).catch(() => {}); }), 4000);
+  setTimeout(() => import('./online.js').then(m => { if (m.isConfigured()) m.ensurePlayer().then(() => { m.publishRanking(true); startInviteWatch(); }).catch(() => {}); }), 4000);
 }
 
 // ---------- HUD ----------
@@ -363,9 +397,14 @@ function updateHud(force = false) {
 }
 
 // ---------- ループ ----------
+let sizeChk = 0;
 function loop(now) {
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
   const R = G.renderer;
+  if (G.ctxLost) { requestAnimationFrame(loop); return; }
+  // 表示の大きさと 描画の大きさが ずれていたら 合わせる（画面の回転で 下が黒くなるのを防ぐ）
+  sizeChk -= dt;
+  if (sizeChk <= 0) { sizeChk = 0.5; const r = canvas.getBoundingClientRect(); if (Math.abs(Math.round(r.width) - R.cssW) > 1 || Math.abs(Math.round(r.height) - R.cssH) > 1) resize(); }
   R.time += dt;
   try {
     if (G.state === 'title' && title) {
@@ -381,6 +420,8 @@ function loop(now) {
       updateOverworld(dt);
       if (topScreen() && !busyBefore) G.busy = false;
       if (OW.shake > 0) { OW.shake -= dt; OW.cam.pos[0] += (Math.random() - 0.5) * OW.shake; OW.cam.pos[1] += (Math.random() - 0.5) * OW.shake; }
+      updateMinimap(dt);
+      try { updateCoop(dt); } catch (e) { console.warn(e); }
       R.render(OW.dungeon ? OW.dscene : OW.scene, OW.cam);
       updateHud();
     }

@@ -346,8 +346,8 @@ export const LOOKS = {
 // ---------------- NPC ----------------
 // show: [表示開始ステップ, 表示終了ステップ(含まない)]  trainer: 話しかけるとバトル（未撃破のみ）
 export const NPCS = [
-  { id: 'mom', name: 'ママ', look: 'mom', pos: at('start', -12, 22), ry: 0, talk: 'momTalk' },
-  { id: 'alma', name: 'アルマ博士', look: 'alma', pos: at('start', 18, -4), ry: 0, show: [null, 'end'], talk: ['アルマ博士|アニモンの「個体値」は ボックスで アニモンを 押すと 確認できるよ。', 'アルマ博士|攻撃・防御・体力・素早さ が 0〜15で 決まっていて、高いほど 強くなるんだ。'] },
+  { id: 'mom', name: 'ママ', look: 'mom', pos: at('start', -12, 22), ry: 0, talk: 'momTalk', rest: true },
+  { id: 'alma', name: 'アルマ博士', look: 'alma', pos: at('start', 18, -4), ry: 0, show: [null, 'end'], talk: ['アルマ博士|アニモンの「個体値」は ボックスで アニモンを 押すと 確認できるよ。', 'アルマ博士|攻撃・防御・体力・素早さ が 1〜15で 決まっていて、7.5が ふつう。15なら その能力が 1割くらい 強くなるんだ。'] },
   { id: 'almaPost', name: 'アルマ博士', look: 'alma', pos: at('start', 18, -4), ry: 0, show: ['end', null], trainer: 'champ', before: 'postAlma', after: 'postAlmaWin', rematch: true },
   { id: 'grunt1', name: 'クロギリ団の下っ端', look: 'grunt', pos: polar(118, 300), ry: 0.5, show: ['s4', 's6'], lulu: true },
   { id: 'zina1', name: 'クロギリ団幹部ジーナ', look: 'zina', pos: polar(172, 318), ry: Math.PI / 2, show: ['s8', 's9'] },
