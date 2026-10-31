@@ -5,7 +5,7 @@ import { STEPS, STEP_INDEX, SCENES, CHAPTERS, QUESTS, GUARDIAN_STEP, CREST_JA, N
 import { TOWNS, TRAINERS, REGIONS, DUNGEONS } from '../data/world.js';
 import { SPECIES, BY_NAME } from '../data/species.js';
 import { createMon, legendIv } from './mon.js';
-import { G, giveMon, addItem, addMoney, healParty, save, itemName, registerDex } from './state.js';
+import { G, giveMon, addItem, addMoney, healParty, save, itemName, registerDex, monCap } from './state.js';
 import { ITEMS, SHOP_FOODS } from '../data/items.js';
 import { UI, $, say, sayLine, hideDialog, narrate, fade, flash, letterbox, chapterTitle, toast, ask } from '../ui/ui.js';
 import { audio } from '../audio.js';
@@ -180,6 +180,7 @@ async function doAction(c) {
       await sayLine('', `${CREST_JA[c.n - 1]} を 手に入れた！`);
       // 新しいエサがショップに入荷
       for (const id of SHOP_FOODS) { const u = ITEMS[id].unlock; if (u > before && u <= S.crests) await sayLine('', `ショップに 新しいエサ「${ITEMS[id].name}」（なつきやすさ ${'★'.repeat(ITEMS[id].rank)}）が 入荷した！`); }
+      if (S.crests > before) await sayLine('', `📦 アニモンを 持てる数が ${monCap()}匹に 増えた！`);
       // 4つ目の紋章（第6章クリア）の ごほうび：銀の王冠
       if (S.crests >= CROWN_SILVER_CRESTS) await grantCrown('s');
       break;
@@ -231,6 +232,7 @@ async function doAction(c) {
     case 'postGame': {
       G.save.postGame = true;
       await grantCrown('g');
+      await sayLine('', `📦 アニモンを 持てる数が 最大の ${monCap()}匹に なった！`);
       if (!G.save.unlocked.includes('inner')) G.save.unlocked.push('inner');
       buildBarriers(); refreshActors();
       break;

@@ -630,3 +630,35 @@ b, strong { font-weight: 800; }
 /* ワープの地図：スマホでは 凡例を 隠して 行き先の ボタンを 広く */
 .warpmap .warplist { max-height: none; }
 @media (max-height: 520px) { .warpmap .legend, .warpmap .maphint { display: none; } .warpmap .warpinfo div { font-size: .85em; } }
+/* ---------- パーティー：指で スライドして 入れかえ ---------- */
+.ptgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(46%, 17em), 1fr)); gap: .55em; }
+.ptcard { position: relative; touch-action: pan-y; -webkit-touch-callout: none; }
+.ptcard .ptno { position: absolute; left: .35em; top: .2em; font-size: .68em; font-weight: 900; color: rgba(255, 255, 255, .55); }
+.ptslot { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 4.2em; border-radius: 14px; border: 2px dashed rgba(160, 185, 255, .45); color: #aab4e0; font-weight: 800; }
+.ptslot small { font-size: .7em; font-weight: 600; opacity: .8; }
+.pthint { font-size: .78em; color: var(--sub, #aab4e0); margin: .55em 0 .35em; line-height: 1.6; }
+.ptboxhd { display: flex; align-items: center; gap: .6em; margin: .3em 0 .3em; }
+.ptboxhd .q { max-width: 11em; padding: .25em .6em; }
+.ptbox { display: flex; gap: .45em; overflow-x: auto; overflow-y: hidden; padding: .45em .3em .6em; border-radius: 14px; background: rgba(8, 14, 44, .45); border: 2px solid rgba(160, 185, 255, .3); min-height: 6.6em; touch-action: pan-x; -webkit-overflow-scrolling: touch; }
+.bxcard { flex: 0 0 auto; width: 5.4em; display: flex; flex-direction: column; align-items: center; padding: .25em .2em .3em; border-radius: 12px; background: linear-gradient(160deg, rgba(255, 255, 255, .13), rgba(255, 255, 255, .04)); border: 2px solid rgba(160, 185, 255, .45); color: #fff; touch-action: pan-x; -webkit-touch-callout: none; }
+.bxcard img { width: 3.6em; height: 3.6em; object-fit: contain; pointer-events: none; }
+.bxcard .nm { font-size: .7em; font-weight: 800; width: 100%; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bxcard .lv { font-size: .64em; color: var(--acc); font-weight: 800; }
+.bxcard.dup { opacity: .55; }
+.ptcard.dragging, .bxcard.dragging { opacity: .35; transform: scale(.95); }
+.dropon { outline: 3px solid var(--acc); outline-offset: 2px; box-shadow: 0 0 16px rgba(255, 210, 63, .6) !important; }
+.ptbox.dropon { background: rgba(255, 210, 63, .14); }
+.isdrag, .isdrag * { user-select: none; -webkit-user-select: none; }
+.dragghost { position: fixed; z-index: 200; pointer-events: none; transform: translate(-50%, -60%) scale(1.08) rotate(-4deg); display: flex; flex-direction: column; align-items: center; padding: .3em .5em .4em; border-radius: 14px; background: linear-gradient(rgba(30, 44, 100, .95), rgba(14, 20, 56, .95)); border: 2px solid var(--acc); box-shadow: 0 10px 24px rgba(0, 0, 0, .5); color: #fff; font-size: .85em; }
+.dragghost img { width: 4.4em; height: 4.4em; object-fit: contain; }
+@media (max-height: 520px) { .ptgrid { grid-template-columns: repeat(3, 1fr); gap: .4em; } .ptgrid .mcard { padding: .25em .4em; } .ptgrid .mcard img { width: 2.8em; height: 2.8em; } .ptslot { min-height: 3.4em; } .pthint { font-size: .7em; margin: .35em 0 .2em; } .ptbox { min-height: 5.6em; } .bxcard { width: 4.8em; } .bxcard img { width: 3em; height: 3em; } }
+/* ---------- 逃がす（まとめて） ---------- */
+.relbar { display: none; align-items: center; gap: .5em; flex-wrap: wrap; margin: .2em 0 .5em; padding: .45em .7em; border-radius: 12px; background: rgba(255, 90, 110, .14); border: 2px solid rgba(255, 120, 140, .6); position: sticky; top: 0; z-index: 2; backdrop-filter: blur(4px); }
+.relbar.on { display: flex; }
+.relbar .t { font-weight: 800; flex: 1 1 auto; }
+.boxgrid.bulkmode .bcell { border-style: dashed; }
+.bcell.picked { border: 3px solid #ff6b7d !important; background: linear-gradient(160deg, rgba(255, 107, 125, .35), rgba(255, 107, 125, .1)); }
+.bcell.locked { opacity: .35; }
+.bcell .chk { position: absolute; right: .2em; bottom: .15em; width: 1.3em; height: 1.3em; border-radius: 50%; background: rgba(0, 0, 0, .45); border: 2px solid #fff; display: grid; place-items: center; font-size: .8em; font-weight: 900; color: #fff; }
+.bcell.picked .chk { background: #ff4766; }
+.capfull { color: #ff8a9a; }

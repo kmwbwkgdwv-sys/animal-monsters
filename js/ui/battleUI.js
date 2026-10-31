@@ -9,7 +9,7 @@ import { ITEMS } from '../data/items.js';
 import { TRAINERS, rivalTeam, DUNGEONS, REGIONS } from '../data/world.js';
 import { typeBadge, TYPE_COLOR, TYPE_JA, typeEff } from '../data/types.js';
 import { createMon, monName, calcStats, evolveMon, healMon, cloneMon } from '../game/mon.js';
-import { G, giveMon, registerDex, itemCount, useItem, addMoney, save, healParty, findMon } from '../game/state.js';
+import { G, giveMon, registerDex, itemCount, useItem, addMoney, save, healParty, findMon, monFull, monCount, monCap } from '../game/state.js';
 import { $, el, esc, UI, toast, say, ask, confirmBox, inputText, fade, flash, hpClass, hideDialog, letterbox, glintAt } from './ui.js';
 import { audio } from '../audio.js';
 import { portrait } from '../render/portrait.js';
@@ -160,6 +160,7 @@ async function afterBattle(cfg, result, caught, pendingMoves, evos) {
       if (nm) caught.nick = nm;
     }
     if (where === 'box') await say([`|${monName(caught)} は ボックスに 送られた。` + (G.save.party.length >= 6 ? '（パーティーがいっぱい）' : '（同じアニモンが パーティーにいる）')]);
+    { const left = monCap() - monCount(); if (left <= 0) await say([`|アニモンが いっぱいに なった！（${monCount()}/${monCap()}匹）ボックスで 逃がすと また つかまえられる。`]); else if (left <= 5) toast(`📦 あと ${left}匹で いっぱい（${monCount()}/${monCap()}匹）`, 3000); }
   }
   // 技を覚える
   for (const pm of pendingMoves) { const m = findMon(pm.uid); if (m) await learnMove(m, pm.move); }
@@ -367,6 +368,8 @@ function chooseCommand(b, slot, pvp, already, setAuto) {
     const catchCmd = () => {
       const foods = Object.values(ITEMS).filter(i => i.cat === 'food' && itemCount(i.id) > 0).sort((a, b) => (a.rank || 0) - (b.rank || 0));
       const box = cmdBox(); box.innerHTML = '';
+      // 持てる数が いっぱいなら つかまえられない
+      if (monFull()) { setMsg(`アニモンが いっぱいで これ以上 なかまに できない！（${monCount()}/${monCap()}匹）\nボックスで 逃がして 空きを つくろう。（紋章を 手に入れると 持てる数が 増える）`); backBtn(() => { audio.sfx('cancel'); main(); }); return; }
       if (!foods.length) { setMsg('エサを 持っていない！ ショップで 買おう。'); }
       const foe = B.foesOf(b)[0];
       for (const f of foods) {

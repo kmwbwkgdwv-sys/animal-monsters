@@ -8,7 +8,7 @@ import { ABILITIES } from '../data/abilities.js';
 import { TYPES, TYPE_JA, TYPE_COLOR, typeBadge } from '../data/types.js';
 import { TOWNS, STONES, DUNGEONS, REGIONS, RING, howToGet, hiddenInDex, WORLD, START_POS } from '../data/world.js';
 import { CREST_JA } from '../data/story.js';
-import { G, PARTY_MAX, partyHasSpecies, itemCount, addItem, useItem, addMoney, save, healParty, crests, isUnlocked, dexCounts, findMon } from '../game/state.js';
+import { G, PARTY_MAX, partyHasSpecies, itemCount, addItem, useItem, addMoney, save, healParty, crests, isUnlocked, dexCounts, findMon, monCap, monCount, monFull, canRelease } from '../game/state.js';
 import { calcStats, adjBase, ivMul, monName, ivTotal, ivRank, expProgress, expToNext, healMon, maxHp, addExp, expForLevel } from '../game/mon.js';
 import { $, el, esc, openScreen, toast, ask, confirmBox, inputText, say, fade, hpClass, closeAllScreens } from './ui.js';
 import { portrait, portraitAsync, BLANK } from '../render/portrait.js';
@@ -48,7 +48,7 @@ export async function openMainMenu() {
     const grid = s.body.querySelector('.mtiles');
     const items = [
       ['🐾', 'パーティー', `${G.save.party.length}/${PARTY_MAX}匹`, '#ff8a5c', () => openParty()],
-      ['📦', 'ボックス', `${G.save.box.length}匹`, '#c08a4a', () => openBox()],
+      ['📦', 'ボックス', `所持 ${monCount()}/${monCap()}`, '#c08a4a', () => openBox()],
       ['📖', '図鑑', `${c.caught}/${DEX_COUNT}`, '#e05a7a', () => openDex()],
       ['🎒', 'バッグ', `${bagN}こ`, '#f0a830', () => openBag()],
       ['📜', 'ストーリー', SE.currentStep().ch <= 11 ? `第${SE.currentStep().ch}章・サイド` : 'クリア後・サイド', '#d98c3a', () => openJournal()],
@@ -160,18 +160,141 @@ function monCardHtml(m, extra = '') {
 
 // ---------- パーティー ----------
 export async function openParty() {
-  const s = openScreen('パーティー', { extra: '<span class="muted">同じアニモンは1匹まで・最大6匹</span>' });
-  const render = () => {
-    s.body.innerHTML = '<div class="mlist"></div>';
-    const list = s.body.querySelector('.mlist');
-    G.save.party.forEach((m, i) => {
-      const c = el('button', 'mcard' + (m.hp <= 0 ? ' fnt' : ''), monCardHtml(m, i === 0 ? '　<b style="color:var(--acc)">先頭</b>' : ''));
-      c.onclick = async () => { audio.sfx('select'); await monDetail(m, 'party'); render(); };
-      list.appendChild(c);
-    });
+  const s = openScreen('パーティー', { extra: '<span class="muted">長押しして ドラッグで 入れかえ</span>' });
+  let q = '';
+  const P = () => G.save.party, B = () => G.save.box;
+  const renderBox = () => {
+    const box = s.body.querySelector('.ptbox'); if (!box) return;
+    box.innerHTML = '';
+    const list = B().map((m, i) => ({ m, i })).filter(({ m }) => !q || monName(m).includes(q) || SPECIES[m.sp].name.includes(q));
+    if (!list.length) box.innerHTML = `<p class="muted" style="margin:.6em">${B().length ? '見つかりません' : 'ボックスは からっぽ。ここに パーティーの アニモンを 落とすと 預けられます'}</p>`;
+    for (const { m, i } of list) {
+      const c = el('button', 'bxcard' + (partyHasSpecies(m.sp) ? ' dup' : ''), `<img src="${BLANK}" draggable="false"><div class="nm">${m.shiny ? '✨' : ''}${esc(monName(m))}</div><div class="lv">Lv${m.lv}</div>`);
+      c.dataset.drag = 'box'; c.dataset.i = i;
+      portraitAsync(m.sp, m.shiny, false, (u) => { const im = c.querySelector('img'); if (im) im.src = u; });
+      c.onclick = async () => { if (justDragged()) return; audio.sfx('select'); await monDetail(m, 'box'); render(); };
+      box.appendChild(c);
+    }
   };
+  const render = () => {
+    s.body.innerHTML = `<div class="ptgrid"></div>
+      <div class="pthint">👆 アニモンを <b>長押し</b>（PCは そのまま ドラッグ）して ほかの アニモンに 重ねると 入れかわります。下の ボックスに 落とすと 預けて、ボックスの 子を 上に 落とすと パーティーに 入ります。</div>
+      <div class="ptboxhd"><b>📦 ボックス</b><span class="muted">${B().length}匹・持てる数 ${monCount()}/${monCap()}</span><span class="grow"></span><input class="textin q" placeholder="名前で さがす" value="${esc(q)}"></div>
+      <div class="ptbox" data-drop="box"></div>`;
+    const grid = s.body.querySelector('.ptgrid');
+    for (let i = 0; i < PARTY_MAX; i++) {
+      const m = P()[i];
+      if (m) {
+        const c = el('button', 'mcard ptcard' + (m.hp <= 0 ? ' fnt' : ''), `<span class="ptno">${i + 1}</span>` + monCardHtml(m, i === 0 ? '　<b style="color:var(--acc)">先頭</b>' : ''));
+        c.dataset.drag = 'party'; c.dataset.drop = 'party'; c.dataset.i = i;
+        c.querySelectorAll('img').forEach(im => { im.draggable = false; });
+        c.onclick = async () => { if (justDragged()) return; audio.sfx('select'); await monDetail(m, 'party'); render(); };
+        grid.appendChild(c);
+      } else {
+        const c = el('div', 'ptslot', '<span>＋ 空き</span><small>ボックスから ここへ</small>');
+        c.dataset.drop = 'party'; c.dataset.i = i;
+        grid.appendChild(c);
+      }
+    }
+    const inp = s.body.querySelector('.q');
+    inp.onkeydown = (e) => e.stopPropagation();
+    inp.oninput = () => { q = inp.value.trim(); renderBox(); };
+    renderBox();
+  };
+
+  // ---- ドラッグ（指で スライド）----
+  let drag = null, dragEnd = 0;
+  const justDragged = () => performance.now() - dragEnd < 350;
+  const begin = (d) => {
+    if (d.active) return;
+    d.active = true;
+    const src = d.zone === 'party' ? P()[d.i] : B()[d.i]; if (!src) { drag = null; return; }
+    d.mon = src;
+    const g = el('div', 'dragghost', `<img src="${portrait(src.sp, src.shiny)}"><b>${esc(monName(src))}</b>`);
+    document.body.appendChild(g); d.ghost = g;
+    d.el.classList.add('dragging');
+    s.body.classList.add('isdrag');
+    try { navigator.vibrate && navigator.vibrate(12); } catch (e) { /* */ }
+    audio.sfx('select');
+    move(d.x, d.y);
+  };
+  const targetAt = (x, y) => { const e = document.elementFromPoint(x, y); return e && e.closest && e.closest('[data-drop]'); };
+  const move = (x, y) => {
+    const d = drag; if (!d || !d.active) return;
+    d.ghost.style.left = x + 'px'; d.ghost.style.top = y + 'px';
+    const t = targetAt(x, y);
+    if (d.hover !== t) { if (d.hover) d.hover.classList.remove('dropon'); d.hover = t; if (t && t !== d.el) t.classList.add('dropon'); }
+  };
+  const finish = (x, y) => {
+    const d = drag; drag = null;
+    if (!d) return;
+    clearTimeout(d.timer);
+    if (!d.active) return;
+    dragEnd = performance.now();
+    d.ghost.remove(); d.el.classList.remove('dragging'); s.body.classList.remove('isdrag');
+    if (d.hover) d.hover.classList.remove('dropon');
+    const t = targetAt(x, y);
+    if (!t) return;
+    drop(d, t.dataset.drop, +t.dataset.i);
+  };
+  const drop = (d, zone, j) => {
+    const party = P(), box = B();
+    const species = (m) => SPECIES[m.sp].name;
+    if (d.zone === 'party' && zone === 'party') {
+      if (j === d.i) return;
+      if (j >= party.length) { const [m] = party.splice(d.i, 1); party.push(m); toast(`${monName(m)} を うしろへ`); }
+      else { [party[d.i], party[j]] = [party[j], party[d.i]]; toast(j === 0 || d.i === 0 ? `${monName(party[0])} が 先頭に なった！` : '入れかえました'); }
+    } else if (d.zone === 'party' && zone === 'box') {
+      if (party.length <= 1) { toast('パーティーが 0匹に なってしまう！'); return; }
+      const [m] = party.splice(d.i, 1); box.unshift(m); toast(`${monName(m)} を ボックスに 預けた`);
+    } else if (d.zone === 'box' && zone === 'party') {
+      const m = box[d.i]; if (!m) return;
+      if (j < party.length) {
+        const out = party[j];
+        if (party.some((x, k) => k !== j && x.sp === m.sp)) { toast(`${species(m)} は もう パーティーに いる！（同じアニモンは 1匹まで）`); return; }
+        party[j] = m; box.splice(d.i, 1); box.unshift(out);
+        toast(`${monName(m)} と ${monName(out)} を 入れかえた！`);
+      } else {
+        if (party.length >= PARTY_MAX) { toast('パーティーが いっぱい！'); return; }
+        if (partyHasSpecies(m.sp)) { toast(`${species(m)} は もう パーティーに いる！（同じアニモンは 1匹まで）`); return; }
+        box.splice(d.i, 1); party.push(m); toast(`${monName(m)} を パーティーに 入れた！`);
+      }
+    } else return;
+    audio.sfx('item'); save(); render();
+  };
+  const onDown = (e) => {
+    const c = e.target.closest && e.target.closest('[data-drag]'); if (!c || !s.body.contains(c)) return;
+    if (e.button !== undefined && e.button > 0) return;
+    drag = { zone: c.dataset.drag, i: +c.dataset.i, el: c, x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY, id: e.pointerId, type: e.pointerType, active: false };
+    // 指は 長押しで つかむ（ふつうに なぞると スクロール）、マウスは 少し 動かせば つかむ
+    if (e.pointerType !== 'mouse') { const d = drag; d.timer = setTimeout(() => { if (drag === d) begin(d); }, 260); }
+  };
+  const onMove = (e) => {
+    const d = drag; if (!d || e.pointerId !== d.id) return;
+    d.x = e.clientX; d.y = e.clientY;
+    const far = Math.hypot(d.x - d.x0, d.y - d.y0);
+    if (!d.active) {
+      if (d.type === 'mouse' && far > 6) begin(d);
+      else if (d.type !== 'mouse' && far > 12) { clearTimeout(d.timer); drag = null; }   // 長押し前に 動いた ＝ スクロール
+      return;
+    }
+    move(d.x, d.y);
+  };
+  const onUp = (e) => { if (drag && e.pointerId === drag.id) finish(e.clientX, e.clientY); };
+  const onCancel = (e) => { if (drag && e.pointerId === drag.id) { const d = drag; if (d.active) finish(d.x, d.y); else { clearTimeout(d.timer); drag = null; } } };
+  // つかんでいる あいだは 画面が スクロールしないように
+  const noScroll = (e) => { if (drag && drag.active) e.preventDefault(); };
+  s.body.addEventListener('pointerdown', onDown);
+  window.addEventListener('pointermove', onMove);
+  window.addEventListener('pointerup', onUp);
+  window.addEventListener('pointercancel', onCancel);
+  document.addEventListener('touchmove', noScroll, { passive: false });
+  s.body.addEventListener('contextmenu', (e) => e.preventDefault());
   render();
   await waitClose(s);
+  window.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', onUp); window.removeEventListener('pointercancel', onCancel);
+  document.removeEventListener('touchmove', noScroll);
+  if (drag && drag.ghost) drag.ghost.remove();
   (await import('../game/overworld.js')).refreshFollower();
 }
 
@@ -230,9 +353,8 @@ export async function monDetail(m, where, opts = {}) {
     btn('ニックネーム', async () => { const nm = await inputText('ニックネーム（空欄で元の名前）', m.nick || sp.name, 10); if (nm !== null) m.nick = nm === sp.name ? '' : nm; });
     if (itemCount('scroll')) btn('巻物で技を覚える', () => scrollLearn(m));
     if (bi >= 0) btn(m.fav ? '★を外す' : '★お気に入り', () => { m.fav = !m.fav; });
-    if (bi >= 0) btn('逃がす', async () => {
-      if (m.uid === G.save.story.luluUid || m.uid === G.save.story.legendUid || SPECIES[m.sp].legend) { toast('この子は 逃がせない！'); return; }
-      if (await confirmBox(`本当に ${monName(m)} を 逃がしますか？（もどせません）`)) { G.save.box.splice(G.save.box.indexOf(m), 1); toast(`${monName(m)} は 元気に 帰っていった……`); s.close(); }
+    if (bi >= 0 || (pi >= 0 && G.save.party.length > 1)) btn('🌿 逃がす', async () => {
+      if (await releaseMons([m])) s.close();
     }, 'red');
     save();
   };
@@ -263,6 +385,31 @@ async function scrollLearn(m) {
 }
 
 // ---------- ボックス（しぼりこみ付き） ----------
+// ---------- 逃がす（1匹・まとめて 共通） ----------
+//  ルル・伝説は 逃がせない。パーティーは 最低1匹 残す。持たせていた 道具は バッグに もどる
+export async function releaseMons(list) {
+  const ok = list.filter(m => canRelease(m));
+  const ng = list.length - ok.length;
+  if (!ok.length) { toast('この子は 逃がせない！（ルル・伝説の アニモン）'); return false; }
+  const inParty = ok.filter(m => G.save.party.includes(m));
+  if (inParty.length && inParty.length >= G.save.party.length) { toast('パーティーが 0匹に なってしまう！'); return false; }
+  const shiny = ok.filter(m => m.shiny).length, high = ok.filter(m => ivTotal(m) >= 50).length, fav = ok.filter(m => m.fav).length;
+  const warn = [shiny ? `✨色違い ${shiny}匹` : '', high ? `💎個体値の高い子 ${high}匹` : '', fav ? `★お気に入り ${fav}匹` : ''].filter(Boolean).join('・');
+  const head = ok.length === 1 ? `${monName(ok[0])}（Lv${ok[0].lv}）を 逃がしますか？` : `${ok.length}匹を まとめて 逃がしますか？`;
+  if (!(await confirmBox(`${head}${warn ? `\n⚠ ${warn} が ふくまれています` : ''}${ng ? `\n（ルル・伝説の ${ng}匹は 逃がせないので 残ります）` : ''}\n逃がした アニモンは もどってきません。`, '逃がす', 'やめる'))) return false;
+  if (ok.length >= 10 && !(await confirmBox(`ほんとうに ${ok.length}匹を 逃がしますか？`, '逃がす', 'やめる'))) return false;
+  let items = 0;
+  for (const m of ok) {
+    if (m.item) { addItem(m.item, 1); items++; m.item = null; }
+    for (const arr of [G.save.party, G.save.box]) { const i = arr.indexOf(m); if (i >= 0) arr.splice(i, 1); }
+  }
+  audio.sfx('cancel');
+  toast(ok.length === 1 ? `${monName(ok[0])} は 元気に 帰っていった……` : `${ok.length}匹が 元気に 帰っていった……`, 2800);
+  if (items) toast(`持たせていた 道具 ${items}個は バッグに もどした`, 2800);
+  save();
+  return true;
+}
+
 export async function openBox(opts = {}) {
   const s = openScreen('ボックス');
   const f = G.boxFilter ||= { q: '', type: '', sort: 'new', shiny: false, fav: false, iv: 0 };
@@ -272,8 +419,25 @@ export async function openBox(opts = {}) {
     <select class="sort">${[['new', '新しい順'], ['dex', '図鑑番号順'], ['lv', 'レベルが高い順'], ['iv', '個体値が高い順'], ['name', '名前順']].map(([v, n]) => `<option value="${v}" ${f.sort === v ? 'selected' : ''}>${n}</option>`).join('')}</select>
     <select class="iv">${[[0, '個体値：すべて'], [30, '個体値合計30以上'], [45, '個体値合計45以上'], [55, '個体値合計55以上']].map(([v, n]) => `<option value="${v}" ${+f.iv === v ? 'selected' : ''}>${n}</option>`).join('')}</select>
     <button class="tog shiny ${f.shiny ? 'on' : ''}">✨色違い</button><button class="tog fav ${f.fav ? 'on' : ''}">★お気に入り</button>
-    <span class="muted cnt"></span></div><div class="boxgrid"></div>`;
+    <button class="btn sm red bulk">🌿 まとめて逃がす</button>
+    <span class="muted cnt"></span></div>
+    <div class="relbar"><span class="t"></span><button class="btn sm allsel">表示中を 全部 選ぶ</button><button class="btn sm red go">🌿 逃がす</button><button class="btn sm stop">やめる</button></div>
+    <div class="boxgrid"></div>`;
   const grid = s.body.querySelector('.boxgrid');
+  // まとめて逃がす モード：押した子を 選んで、まとめて 逃がす
+  let bulk = false, shown = [];
+  const picked = new Set();
+  const relbar = s.body.querySelector('.relbar');
+  const updBar = () => {
+    relbar.classList.toggle('on', bulk);
+    s.body.querySelector('.bulk').style.display = bulk ? 'none' : '';
+    relbar.querySelector('.t').textContent = `${picked.size}匹 選択中（ルル・伝説は 選べません）`;
+    relbar.querySelector('.go').disabled = !picked.size;
+  };
+  s.body.querySelector('.bulk').onclick = () => { audio.sfx('select'); bulk = true; picked.clear(); updBar(); render(); };
+  relbar.querySelector('.stop').onclick = () => { audio.sfx('cancel'); bulk = false; picked.clear(); updBar(); render(); };
+  relbar.querySelector('.allsel').onclick = () => { audio.sfx('select'); const all = shown.filter(m => canRelease(m)); const every = all.every(m => picked.has(m)); for (const m of all) every ? picked.delete(m) : picked.add(m); updBar(); render(); };
+  relbar.querySelector('.go').onclick = async () => { if (await releaseMons([...picked])) { bulk = false; picked.clear(); updBar(); render(); } };
   const render = () => {
     let list = G.save.box.slice();
     if (f.q) list = list.filter(m => monName(m).includes(f.q) || SPECIES[m.sp].name.includes(f.q));
@@ -283,17 +447,28 @@ export async function openBox(opts = {}) {
     if (+f.iv) list = list.filter(m => ivTotal(m) >= +f.iv);
     const cmp = { new: (a, b) => b.caughtAt - a.caughtAt, dex: (a, b) => a.sp - b.sp || b.lv - a.lv, lv: (a, b) => b.lv - a.lv, iv: (a, b) => ivTotal(b) - ivTotal(a), name: (a, b) => monName(a).localeCompare(monName(b), 'ja') }[f.sort];
     if (f.sort !== 'new') list.sort(cmp); else list.sort(cmp);
-    s.body.querySelector('.cnt').textContent = `${list.length}匹 / 全${G.save.box.length}匹`;
+    shown = list;
+    s.body.querySelector('.cnt').innerHTML = `${list.length}匹 / ボックス${G.save.box.length}匹　<b class="${monFull() ? 'capfull' : ''}">📦 持てる数 ${monCount()}/${monCap()}</b>`;
     grid.innerHTML = '';
+    grid.classList.toggle('bulkmode', bulk);
     if (!list.length) grid.innerHTML = '<p class="muted">アニモンが いません。</p>';
     for (const m of list) {
-      const c = el('button', 'bcell', `<img src="${BLANK}"><div class="lv">Lv${m.lv}</div>${m.shiny ? '<span class="shiny-mark">✨</span>' : ''}${m.fav ? '<span class="fav">★</span>' : ''}`);
+      const c = el('button', 'bcell' + (picked.has(m) ? ' picked' : '') + (bulk && !canRelease(m) ? ' locked' : ''), `<img src="${BLANK}"><div class="lv">Lv${m.lv}</div>${m.shiny ? '<span class="shiny-mark">✨</span>' : ''}${m.fav ? '<span class="fav">★</span>' : ''}${bulk ? `<span class="chk">${picked.has(m) ? '✔' : ''}</span>` : ''}`);
       c.title = monName(m);
       portraitAsync(m.sp, m.shiny, false, (u) => { c.querySelector('img').src = u; });
-      c.onclick = async () => { audio.sfx('select'); await monDetail(m, 'box'); render(); };
+      c.onclick = async () => {
+        if (bulk) {
+          if (!canRelease(m)) { toast('この子は 逃がせない！'); return; }
+          picked.has(m) ? picked.delete(m) : picked.add(m);
+          c.classList.toggle('picked', picked.has(m)); c.querySelector('.chk').textContent = picked.has(m) ? '✔' : '';
+          audio.sfx('select'); updBar(); return;
+        }
+        audio.sfx('select'); await monDetail(m, 'box'); render();
+      };
       grid.appendChild(c);
     }
   };
+  updBar();
   const q = s.body.querySelector('.q');
   q.oninput = () => { f.q = q.value.trim(); render(); };
   q.onkeydown = (e) => e.stopPropagation();

@@ -36,6 +36,13 @@ export function useItem(id) { if (!itemCount(id)) return false; addItem(id, -1);
 export function addMoney(n) { G.save.money = Math.max(0, Math.min(9999999, G.save.money + n)); }
 export function healParty() { for (const m of G.save.party) healMon(m); }
 export function crests() { return G.save.story.crests || 0; }
+// アニモンを 持てる数：はじめは 100匹。紋章 1つごとに +75、ストーリー クリアで 800匹
+export const MON_CAP_BASE = 100, MON_CAP_STEP = 75, MON_CAP_MAX = 800;
+export function monCap() { if (!G.save) return MON_CAP_BASE; return G.save.postGame ? MON_CAP_MAX : Math.min(MON_CAP_MAX, MON_CAP_BASE + crests() * MON_CAP_STEP); }
+export function monCount() { return (G.save.party?.length || 0) + (G.save.box?.length || 0); }
+export function monFull() { return monCount() >= monCap(); }
+// 逃がせない子（ルル・伝説）
+export function canRelease(m) { const S = G.save.story || {}; return !(m.uid === S.luluUid || m.uid === S.legendUid || SPECIES[m.sp]?.legend); }
 export function save() { if (G.save) { try { if (G.capturePos) G.capturePos(); } catch (e) { /* */ } if (G.save.pid) G.save.cloudDirty = true; writeGame(G.save); if (G.onSaved) G.onSaved(); } }
 export function itemName(id) { return ITEMS[id]?.name || id; }
 export function speciesName(id) { return SPECIES[id]?.name || '？'; }
