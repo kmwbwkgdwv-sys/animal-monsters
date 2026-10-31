@@ -493,13 +493,15 @@ function updateCamControl(dt) {
   const canTurn = !OW.camOverride && G.state === 'world' && !document.querySelector('#screens .screen');
   const dx = Input.camDX, dy = Input.camDY; Input.camDX = 0; Input.camDY = 0;
   if (canTurn) {
+    // 感度は 設定で 変えられる（左右・上下・反転）
+    const S = G.settings, kx = (S.camSens ?? 1) * (S.camInvX ? -1 : 1), ky = (S.camSensY ?? 1) * (S.camInvY ? -1 : 1);
     const sens = Input.touch ? 0.0052 : 0.006;
-    OW.camYaw -= dx * sens;
-    OW.camPitchAdj = clamp((OW.camPitchAdj || 0) + dy * sens * 0.5, -0.35, 0.6);
-    if (Input.keys.has('camL')) OW.camYaw += dt * 2.2;
-    if (Input.keys.has('camR')) OW.camYaw -= dt * 2.2;
-    if (Input.keys.has('camUp')) OW.camPitchAdj = clamp(OW.camPitchAdj + dt * 0.8, -0.35, 0.6);
-    if (Input.keys.has('camDown')) OW.camPitchAdj = clamp(OW.camPitchAdj - dt * 0.8, -0.35, 0.6);
+    OW.camYaw -= dx * sens * kx;
+    OW.camPitchAdj = clamp((OW.camPitchAdj || 0) + dy * sens * 0.5 * ky, -0.35, 0.6);
+    if (Input.keys.has('camL')) OW.camYaw += dt * 2.2 * kx;
+    if (Input.keys.has('camR')) OW.camYaw -= dt * 2.2 * kx;
+    if (Input.keys.has('camUp')) OW.camPitchAdj = clamp(OW.camPitchAdj + dt * 0.8 * ky, -0.35, 0.6);
+    if (Input.keys.has('camDown')) OW.camPitchAdj = clamp(OW.camPitchAdj - dt * 0.8 * ky, -0.35, 0.6);
     if (Input.edge('camReset')) resetCamera();
   }
   // なめらかに追いつく（角度は近い方向で）
@@ -541,7 +543,7 @@ export function updateOverworld(dt) {
     if (Input.edge('map')) runFlow(() => MENU.openMap());
     if (Input.edge('ride')) runFlow(() => MENU.toggleRide());
     Input.edge('b');
-    if (Input.wheel) { OW.zoom = clamp(OW.zoom + Input.wheel * 0.1, 0.55, 1.7); Input.wheel = 0; }
+    if (Input.wheel) { OW.zoom = clamp(OW.zoom + Input.wheel * 0.1 * (G.settings.zoomSens ?? 1), 0.55, 1.7); Input.wheel = 0; }
   } else P.state = P.state === 'walk' || P.state === 'run' ? 'idle' : P.state;
   updateCamControl(dt);
 

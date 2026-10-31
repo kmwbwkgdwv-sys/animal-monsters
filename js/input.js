@@ -35,17 +35,20 @@ export function initInput() {
 
   // タッチのジョイスティック
   const stick = $('#stick'), knob = $('#knob');
-  let sid = null, cx = 0, cy = 0, R = 60;
+  // Rv：つまみが 動く はんい（見た目）／ R：最高速に なる たおし量（感度で 変わる）
+  let sid = null, cx = 0, cy = 0, R = 60, Rv = 60, dead = 6;
   const set = (x, y) => {
     let dx = x - cx, dy = y - cy; const l = Math.hypot(dx, dy);
-    if (l > R) { dx = dx / l * R; dy = dy / l * R; }
-    knob.style.transform = `translate(${dx}px, ${dy}px)`;
+    const kv = l > Rv ? Rv / l : 1;
+    knob.style.transform = `translate(${dx * kv}px, ${dy * kv}px)`;
     const m = Math.min(1, l / R);
-    Input.tmx = l > 6 ? dx / R : 0; Input.tmz = l > 6 ? dy / R : 0; Input.tmag = m;
+    Input.tmx = l > dead ? dx / l * m : 0; Input.tmz = l > dead ? dy / l * m : 0; Input.tmag = l > dead ? m : 0;
   };
   stick.addEventListener('pointerdown', (e) => {
     Input.touch = true; sid = e.pointerId; stick.setPointerCapture(sid);
-    const r = stick.getBoundingClientRect(); cx = r.left + r.width / 2; cy = r.top + r.height / 2; R = r.width * 0.42; set(e.clientX, e.clientY);
+    // スティックの感度：高いほど 少し たおすだけで 速く 動く（あそびも 小さく）
+    const k = Math.max(0.5, Math.min(2, (window.ANIMON && window.ANIMON.G.settings && window.ANIMON.G.settings.stickSens) || 1));
+    const r = stick.getBoundingClientRect(); cx = r.left + r.width / 2; cy = r.top + r.height / 2; Rv = r.width * 0.42; R = Rv / k; dead = 6 / k; set(e.clientX, e.clientY);
   });
   stick.addEventListener('pointermove', (e) => { if (e.pointerId === sid) set(e.clientX, e.clientY); });
   const end = (e) => { if (e.pointerId !== sid) return; sid = null; knob.style.transform = ''; Input.tmx = Input.tmz = 0; Input.tmag = 0; };

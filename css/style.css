@@ -662,3 +662,10 @@ b, strong { font-weight: 800; }
 .bcell .chk { position: absolute; right: .2em; bottom: .15em; width: 1.3em; height: 1.3em; border-radius: 50%; background: rgba(0, 0, 0, .45); border: 2px solid #fff; display: grid; place-items: center; font-size: .8em; font-weight: 900; color: #fff; }
 .bcell.picked .chk { background: #ff4766; }
 .capfull { color: #ff8a9a; }
+/* ---------- 設定：感度スライダー ---------- */
+.sethd { margin: .9em 0 .3em; }
+.itemrow.sens .nm .sv { color: var(--acc); margin-left: .4em; }
+.srange { width: 100%; margin: .45em 0 .1em; accent-color: #ffd23f; height: 1.6em; touch-action: pan-x; }
+.sscale { position: relative; display: flex; justify-content: space-between; font-size: .68em; color: var(--sub, #aab4e0); }
+.sscale .mid { position: absolute; top: 0; transform: translateX(-50%); color: #ffd23f; font-weight: 800; }
+.srange::-webkit-slider-thumb { width: 22px; height: 22px; }

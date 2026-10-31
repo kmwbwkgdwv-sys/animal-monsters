@@ -13,6 +13,7 @@ import { calcStats, adjBase, ivMul, monName, ivTotal, ivRank, expProgress, expTo
 import { $, el, esc, openScreen, toast, ask, confirmBox, inputText, say, fade, hpClass, closeAllScreens } from './ui.js';
 import { portrait, portraitAsync, BLANK } from '../render/portrait.js';
 import { audio } from '../audio.js';
+import { Input } from '../input.js';
 import { STATUS_JA } from '../game/battle.js';
 import { saveSettings } from '../game/save.js';
 import { learnMove, evolveScene } from './battleUI.js';
@@ -895,15 +896,25 @@ export async function openSettings(fromTitle) {
   const s = openScreen('設定');
   const st = G.settings;
   const render = () => {
+    // スライダー（0.3〜2.5倍・ふつう＝1）
+    const slider = (label, key, desc, min = 0.3, max = 2.5) => { const v = st[key] ?? 1; return `<div class="itemrow sens"><div class="grow"><div class="nm">${label} <b class="sv" data-k="${key}">${v.toFixed(1)}倍</b></div><div class="ds">${desc}</div><input type="range" class="srange" data-k="${key}" min="${min}" max="${max}" step="0.1" value="${v}"><div class="sscale"><span>おそい</span><span class="mid" style="left:${((1 - min) / (max - min) * 100).toFixed(1)}%">▲ふつう</span><span>はやい</span></div></div></div>`; };
     const row = (label, key, desc, opts = [['ON', true], ['OFF', false]]) => `<div class="itemrow"><div class="grow"><div class="nm">${label}</div><div class="ds">${desc}</div></div>${opts.map(([t, v]) => `<button class="tog ${st[key] === v ? 'on' : ''}" data-k="${key}" data-v='${JSON.stringify(v)}'>${t}</button>`).join('')}</div>`;
     s.body.innerHTML = row('BGM', 'bgm', 'ゲームの音楽。他のアプリで流している音楽と一緒に聞くこともできます。') +
       row('効果音', 'sfx', 'ボタンやバトルの効果音。') +
       row('軽量モード', 'light', '描画を軽くして、古いスマホでも動きやすくします（切り替え後に再読み込み）。') +
       row('ムービーを自動スキップ', 'autoSkip', 'ストーリーの会話・ムービーを自動で飛ばします（会話中の「スキップ」ボタンでも飛ばせます）。') +
       row('文字の速さ', 'textSpeed', 'メッセージを表示する速さ。', [['おそい', 0], ['ふつう', 1], ['はやい', 2]]) +
-      `<div class="itemrow"><div class="grow"><div class="nm">操作方法</div><div class="ds">PC：移動 WASD/矢印　決定・話す Space/Enter　ダッシュ Shift　メニュー Esc　マップ M　ライド R　ズーム マウスホイール<br>スマホ：左のスティックで移動、A で決定、B でダッシュ切替、2本指でズーム</div></div></div>` +
+      `<h4 class="sethd">🎮 操作の感度</h4>` +
+      slider('視点を回す 速さ（左右）', 'camSens', '画面を なぞる（PCは ドラッグ・Q/E）ときの 回りやすさ。') +
+      slider('視点を回す 速さ（上下）', 'camSensY', '見下ろす角度の 変わりやすさ。') +
+      row('左右を 反転', 'camInvX', 'なぞった方向と 逆に 回します。') +
+      row('上下を 反転', 'camInvY', '上下の 動きを 逆に します。') +
+      (Input.touch ? slider('スティックの 感度', 'stickSens', '高いほど 少し たおすだけで 速く 動きます。', 0.5, 2) : '') +
+      slider('ズームの 速さ', 'zoomSens', '2本指（PCは ホイール）で 拡大・縮小するときの 速さ。', 0.3, 2.5) +
+      `<div class="itemrow"><div class="grow"><div class="nm">感度を もとに もどす</div></div><button class="btn sm resetsens">ふつうに もどす</button></div>` +
+      `<div class="itemrow"><div class="grow"><div class="nm">操作方法</div><div class="ds">PC：移動 WASD/矢印　決定・話す Space/Enter　ダッシュ Shift　メニュー Esc　マップ M　ライド R　視点 ドラッグ・Q/E（C でもとに戻す）　ズーム マウスホイール<br>スマホ：左のスティックで移動、画面をなぞって視点を回す、A で決定、B でダッシュ切替、2本指でズーム</div></div></div>` +
       (fromTitle ? `<div class="itemrow"><div class="grow"><div class="nm" style="color:var(--ng)">セーブデータを消す</div><div class="ds">この端末のセーブデータを削除します。元に戻せません。</div></div><button class="btn sm red del">削除</button></div>` : '') +
-      `<p class="muted">アニマルモンスター ver 1.0</p>`;
+      `<p class="muted">アニマルモンスター ver 1.3</p>`;
     s.body.querySelectorAll('.tog').forEach(b => b.onclick = () => {
       const k = b.dataset.k, v = JSON.parse(b.dataset.v);
       const before = st[k];
@@ -912,6 +923,13 @@ export async function openSettings(fromTitle) {
       if (k === 'light' && before !== v) toast('再読み込み後に 反映されます');
       audio.sfx('select'); render();
     });
+    s.body.querySelectorAll('.srange').forEach(r => {
+      r.oninput = () => { const k = r.dataset.k; st[k] = Math.round(+r.value * 10) / 10; s.body.querySelector(`.sv[data-k="${k}"]`).textContent = st[k].toFixed(1) + '倍'; };
+      r.onchange = () => { saveSettings(st); audio.sfx('select'); };
+      r.onkeydown = (e) => e.stopPropagation();
+    });
+    const rs = s.body.querySelector('.resetsens');
+    if (rs) rs.onclick = () => { Object.assign(st, { camSens: 1, camSensY: 1, camInvX: false, camInvY: false, stickSens: 1, zoomSens: 1 }); saveSettings(st); audio.sfx('select'); toast('感度を ふつうに もどしました'); render(); };
     const del = s.body.querySelector('.del');
     if (del) del.onclick = async () => { if (await confirmBox('本当に セーブデータを 削除しますか？') && await confirmBox('本当の本当に？ 元に戻せません。')) { (await import('../game/save.js')).deleteGame(); location.reload(); } };
   };
