@@ -42,6 +42,7 @@ export function navTarget() {
     const door = OW.trig.find(d => d.kind === 'door' && d.type === 'hall' && d.town === tw?.id);
     p = door ? [door.x, door.z] : tw?.pos; label = '守護者の館';
   }
+  if (p && (t.t === 'reach' || t.t === 'region')) p = openSpot(p);
   if (p) return { x: p[0], z: p[1], label: label || st.obj.replace(/（.*?）/g, '').slice(0, 14), kind: 'story' };
   // ストーリーの行き先がないときは、進行中のサイドストーリー
   const act = activeQuest();
@@ -52,6 +53,17 @@ export function navTarget() {
     if (qp) return { x: qp[0], z: qp[1], label: act.q.name, kind: 'quest' };
   }
   return null;
+}
+// 行き先の 光の柱が 噴水・建物・岩の 中に 立たないよう、近くの 歩ける場所に ずらす
+//  町の 真ん中（噴水）のときは、噴水の 南側の 広場（光る岩との あいだ）
+function openSpot(p) {
+  const tw = TOWNS.find(t => Math.hypot(t.pos[0] - p[0], t.pos[1] - p[1]) < 0.5);
+  if (tw) p = [tw.pos[0], tw.pos[1] + 4.6];
+  const W = G.world; if (!W) return p;
+  const free = (x, z) => !W.blockedByObst(x, z, 1.2) && W.heightAt(x, z) > -0.3;
+  if (free(p[0], p[1])) return p;
+  for (let R = 2; R <= 16; R += 2) for (let k = 0; k < 12; k++) { const a = k / 12 * Math.PI * 2, x = p[0] + Math.sin(a) * R, z = p[1] + Math.cos(a) * R; if (free(x, z)) return [x, z]; }
+  return p;
 }
 function activeQuest() {
   let best = null;
@@ -273,25 +285,46 @@ export async function runStep() {
 // 場所に着くと始まる ストーリーの イベントは、いきなり 始めずに 確認する。
 //  「あとで」を 選んだら、その場所を いったん 離れるまで 始まらない（前の章の やり残しを 先に 終わらせられる）
 //  地域に入るタイプは、境目を かすっただけで 始まらないよう 少し 奥まで 入ったときだけ
-let declined = -1;
+//  「あとで」のあとは、①その地域・場所を いったん 離れて もどる ②光の柱（目的地）に 行く ③ストーリー一覧の「イベントを 始める」 のどれかで 始まる
+let declined = -1, decAt = null, rearmed = false;
 const deepIn = (x, z, region) => [[6, 0], [-6, 0], [0, 6], [0, -6]].every(([dx, dz]) => G.world.regionAt(x + dx, z + dz) === region);
+function posHit(t, x, z, reg) {
+  const near = t.t === 'reach' ? Math.hypot(x - t.pos[0], z - t.pos[1]) : 0;
+  return { near, hit: (t.t === 'reach' && near < t.r) || (t.t === 'region' && reg === t.region && deepIn(x, z, t.region)) };
+}
+// いる場所で 始められる ストーリーの イベントが あるか（ストーリー一覧の ボタン用）
+export function pendingHere() {
+  const t = currentStep().trig, P = OW.player;
+  if (running || !P || !G.world || (t.t !== 'reach' && t.t !== 'region')) return false;
+  return posHit(t, P.x, P.z, G.world.regionAt(P.x, P.z)).hit;
+}
+export async function startPendingHere() {
+  if (!pendingHere()) return false;
+  declined = -1; running = false;
+  await runStep();
+  return true;
+}
 export function checkPosition(x, z, reg) {
   if (running) return;
   const st = currentStep();
   const t = st.trig;
   if (t.t === 'auto') { runFlow(() => runStep()); return; }
-  const near = t.t === 'reach' ? Math.hypot(x - t.pos[0], z - t.pos[1]) : 0;
-  const hit = (t.t === 'reach' && near < t.r) || (t.t === 'region' && reg === t.region && deepIn(x, z, t.region));
+  const { near, hit } = posHit(t, x, z, reg);
   if (declined === G.save.story.step) {
     // 離れたら また 確認するように
     if ((t.t === 'reach' && near > t.r + 12) || (t.t === 'region' && reg !== t.region)) declined = -1;
+    else {
+      // 断った場所から 少し 動いたあと、光の柱（目的地）に 来たら もう一度 確認
+      if (!rearmed && decAt && Math.hypot(x - decAt[0], z - decAt[1]) > 5) rearmed = true;
+      if (rearmed && hit) { const nv = navTarget(); if (nv && nv.kind === 'story' && Math.hypot(x - nv.x, z - nv.z) < 4.5) declined = -1; }
+    }
   } else if (hit) {
     const stepNow = G.save.story.step;
     runFlow(async () => {
       const ch = st.ch <= 11 ? `第${st.ch}章「${CHAPTERS[st.ch]}」` : '';
-      const k = await ask(`📖 ここから ストーリーの イベントが 始まります。${ch}\n目的：${UI.fmt(st.obj)}\n今 進めますか？（「あとで」なら いったん 離れて また 来れば 始まります）`, ['進める', 'あとで']);
+      const k = await ask(`📖 ここから ストーリーの イベントが 始まります。${ch}\n目的：${UI.fmt(st.obj)}\n今 進めますか？（「あとで」でも、光の柱に 行くか 左上の 目的を 押せば いつでも 始められます）`, ['進める', 'あとで']);
       if (k === 0) { running = false; await runStep(); }
-      else { declined = stepNow; toast('準備が できたら また ここに 来よう'); }
+      else { declined = stepNow; decAt = [OW.player.x, OW.player.z]; rearmed = false; toast('準備が できたら 光の柱へ（左上の 目的からも 始められます）', 3500); }
     });
     return;
   }

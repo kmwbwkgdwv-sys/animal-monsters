@@ -96,7 +96,7 @@ export async function openJournal() {
         <div class="jch">${si.end ? 'ストーリー クリア！' : `第${si.ch}章「${esc(si.chName)}」`}</div>
         <div class="jobj"><b>目的</b>${fm(si.obj)}</div>
         ${si.dest ? `<div class="jdest"><b>目的地</b>${esc(si.dest)}${si.dist != null ? `<span class="muted">（ここから ${si.dist}m）</span>` : ''}</div>` : ''}
-        <div class="row" style="gap:.5em;margin-top:.5em">${si.pos ? '<button class="btn sm pri smap">🗺️ 地図で 目的地を 見る</button>' : ''}</div>
+        <div class="row" style="gap:.5em;margin-top:.5em;flex-wrap:wrap">${SE.pendingHere() ? '<button class="btn sm pri gostory">📖 ここで イベントを 始める</button>' : ''}${si.pos ? `<button class="btn sm ${SE.pendingHere() ? '' : 'pri'} smap">🗺️ 地図で 目的地を 見る</button>` : ''}</div>
         <div class="chchips">${chips}</div>
         <div class="crownrow"><span class="${G.save.crowns?.s ? 'got' : ''}">👑 銀の王冠：第6章クリア（4つ目の紋章）${G.save.crowns?.s ? ' ✔' : ''}</span><span class="g ${G.save.crowns?.g ? 'got' : ''}">👑 金の王冠：ストーリー クリア${G.save.crowns?.g ? ' ✔' : ''}</span></div>
       </div>
@@ -109,12 +109,16 @@ export async function openJournal() {
       <div class="row" style="margin-top:.4em"><button class="btn sm errs">🧺 おつかいの 画面を 開く</button></div>`;
     const sm = s.body.querySelector('.smap');
     if (sm) sm.onclick = () => openMap({ x: si.pos[0], z: si.pos[1], label: si.dest, obj: si.obj, title: 'ストーリーの 目的地' });
+    const gs = s.body.querySelector('.gostory');
+    if (gs) gs.onclick = () => { audio.sfx('select'); goStory = true; s.close(); };
     s.body.querySelectorAll('.qmap').forEach(b => b.onclick = () => { const { q, i } = qs[+b.dataset.k]; openMap({ x: i.pos[0], z: i.pos[1], label: q.name, obj: `${q.name}：${i.obj}`, title: 'サイドストーリー' }); });
     s.body.querySelector('.errs').onclick = async () => { await openErrands(); if (!s.closed) render(); };
     s.body.querySelectorAll('.dmap').forEach(b => b.onclick = () => { const d = DUNGEONS[b.dataset.id]; openMap({ x: d.pos[0], z: d.pos[1], label: d.name, obj: `${d.name}（推奨Lv${d.rec}）`, title: 'ダンジョン' }); });
   };
+  let goStory = false;
   render();
   await waitClose(s);
+  if (goStory) { closeAllScreens(); await SE.startPendingHere(); }
 }
 
 // ---------- おつかい ----------
