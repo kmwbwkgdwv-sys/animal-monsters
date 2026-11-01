@@ -8,7 +8,7 @@ import { SPECIES } from '../js/data/species.js';
 import { MOVES, moveEffects } from '../js/data/moves.js';
 import { ITEMS } from '../js/data/items.js';
 import { TYPE_JA, TYPE_COLOR, TYPES } from '../js/data/types.js';
-import { DUNGEON_BOSS, DUNGEONS, SIDE_JA } from '../js/data/world.js';
+import { DUNGEON_BOSS, DUNGEONS, SIDE_JA, habitatName, naturalMetAt } from '../js/data/world.js';
 import { createMon, movesAtLevel, calcStats, expForLevel } from '../js/game/mon.js';
 import { portraitAsync, portrait } from '../js/render/portrait.js';
 
@@ -87,6 +87,7 @@ export function pickSpecies(title = 'アニモンを 選ぶ') {
 // ---------- 1匹を 作る・直す ----------
 //  init: 既存の アニモン（直す）または null（新しく 作る：先に 種類を 選ぶ）
 //  返り値：アニモン（createMon と 同じ 形）または null
+//  o.multi：新しく 作る ときに まとめて 何匹まで 作れるか（同じ 種類を 複数・個体値は 1匹ずつ ランダムも できる）。そのときは 配列で 返す
 export async function editMon(init = null, o = {}) {
   let sp = init ? init.sp : await pickSpecies(o.title || '追加する アニモンを 選ぶ');
   if (!sp) return null;
@@ -97,7 +98,9 @@ export async function editMon(init = null, o = {}) {
       lv: init ? init.lv : (o.lv || 30), shiny: init ? !!init.shiny : false, nick: init ? init.nick || '' : '',
       iv: init ? { ...init.iv } : { hp: 10, atk: 10, def: 10, spe: 10 }, item: init ? init.item || '' : '',
       custom: init ? !!init.customMoves : false, moves: init ? init.moves.map(x => x.id) : [],
+      count: 1, ivRand: false,
     };
+    const multi = !init && o.multi > 1 ? Math.min(30, o.multi) : 0;
     const S = () => SPECIES[sp];
     const learn = () => [...new Set(S().moves.map(x => x.id))];
     const draw = () => {
@@ -113,8 +116,11 @@ export async function editMon(init = null, o = {}) {
         <div class="edr">
           <label>レベル <small>1〜99</small></label><div class="row"><input type="range" class="lvr" min="1" max="99" value="${st.lv}"><input type="number" class="lvn" min="1" max="99" value="${st.lv}" style="width:5em"></div>
           <label>見た目</label><div class="row seg"><button class="sm shn ${!st.shiny ? 'on' : ''}" data-v="0">通常</button><button class="sm shn ${st.shiny ? 'on' : ''}" data-v="1" ${s.legend ? 'disabled title="伝説は 色違いに できません"' : ''}>✨ 色違い</button></div>
-          <label>個体値 <small>1〜15（15が 最高）</small></label>
-          <div class="ivbox">${IVK.map(([k, n]) => `<div class="ivr"><span>${n}</span><input type="range" min="1" max="15" class="iv" data-k="${k}" value="${st.iv[k]}"><b>${st.iv[k]}</b></div>`).join('')}</div>
+          ${multi ? `<div class="multi"><label>まとめて 作る 数 <small>1〜${multi}匹（同じ 種類・同じ レベル・技・持ち物）</small></label>
+            <div class="row"><input type="number" class="cnt" min="1" max="${multi}" value="${st.count}" style="width:5em"><span>匹</span>${[5, 10, 20, 30].filter(n => n <= multi).map(n => `<button class="sm cntq" data-n="${n}">${n}匹</button>`).join('')}</div>
+            <label class="chk"><input type="checkbox" class="ivr2" ${st.ivRand ? 'checked' : ''}> 個体値を 1匹ずつ ランダムに する</label></div>` : ''}
+          <label>個体値 <small>1〜15（15が 最高）${st.ivRand ? '　→ 1匹ずつ ランダム' : ''}</small></label>
+          <div class="ivbox ${st.ivRand ? 'off' : ''}">${IVK.map(([k, n]) => `<div class="ivr"><span>${n}</span><input type="range" min="1" max="15" class="iv" data-k="${k}" value="${st.iv[k]}"><b>${st.iv[k]}</b></div>`).join('')}</div>
           <div class="row" style="margin-top:.3em"><button class="sm ivmax">ぜんぶ 15</button><button class="sm ivrnd">ランダム</button><span class="muted">合計 ${IVK.reduce((a, [k]) => a + st.iv[k], 0)}/60</span></div>
           <label>ニックネーム <small>10文字まで・空なら 種類の 名前</small></label><input type="text" class="nick" maxlength="10" value="${esc(st.nick)}">
           <label>持ち物</label><select class="held"><option value="">なし</option>${heldOpts.map(i => `<option value="${i.id}" ${st.item === i.id ? 'selected' : ''}>${esc(i.name)}</option>`).join('')}</select>
@@ -124,7 +130,7 @@ export async function editMon(init = null, o = {}) {
           <details class="alllearn" ${st.showAll ? 'open' : ''}><summary>この アニモンが 覚えられる 技を 全部 見る（${learn().length}）</summary>
             <div class="mvdet">${learn().map(id => moveCard(id, `<span class="mtag">Lv${s.moves.find(x => x.id === id)?.lv ?? '?'}で 覚える</span>${st.moves.includes(id) ? '<span class="mtag on">選択中</span>' : ''}`)).join('')}</div></details>
           <p class="edmsg ng"></p>
-          <div class="row" style="justify-content:flex-end;margin-top:.6em"><button class="cancel">やめる</button><button class="pri ok">${init ? 'これで 直す' : 'これで 追加'}</button></div>
+          <div class="row" style="justify-content:flex-end;margin-top:.6em"><button class="cancel">やめる</button><button class="pri ok">${init ? 'これで 直す' : st.count > 1 ? `${st.count}匹 追加` : 'これで 追加'}</button></div>
         </div></div>`;
       const q = (s) => m.body.querySelector(s);
       q('.chsp').onclick = async () => { const n = await pickSpecies('種類を 変える'); if (n) { sp = n; st.custom = false; draw(); } };
@@ -138,6 +144,12 @@ export async function editMon(init = null, o = {}) {
       q('.ivmax').onclick = () => { for (const [k] of IVK) st.iv[k] = 15; draw(); };
       q('.ivrnd').onclick = () => { for (const [k] of IVK) st.iv[k] = 1 + Math.floor(Math.random() * 15); draw(); };
       q('.nick').oninput = (e) => { st.nick = e.target.value; };
+      if (multi) {
+        const setCnt = (v) => { st.count = Math.max(1, Math.min(multi, Math.round(+v || 1))); later(); };
+        q('.cnt').onchange = (e) => setCnt(e.target.value);
+        m.body.querySelectorAll('.cntq').forEach(b => b.onclick = () => setCnt(b.dataset.n));
+        q('.ivr2').onchange = (e) => { st.ivRand = e.target.checked; later(); };
+      }
       q('.held').onchange = (e) => { st.item = e.target.value; };
       q('.alllearn').ontoggle = (e) => { st.showAll = e.target.open; };
       q('.cust').onchange = (e) => { st.custom = e.target.checked; if (st.custom && !st.moves.length) st.moves = movesAtLevel(sp, st.lv); later(); };
@@ -152,11 +164,18 @@ export async function editMon(init = null, o = {}) {
       q('.ok').onclick = () => {
         const moves = [...new Set(st.moves.filter(id => MOVES[id]))].slice(0, 4);
         if (!moves.length) { q('.edmsg').textContent = '技を 1つ以上 選んでください'; return; }
-        const mon = createMon(sp, st.lv, { iv: { ...st.iv }, shiny: st.shiny, nick: st.nick.trim().slice(0, 10), moves, item: st.item || null, ot: init?.ot || o.ot || '', metAt: init?.metAt || o.metAt || '' });
-        if (init) { mon.uid = init.uid; mon.caughtAt = init.caughtAt; mon.fav = !!init.fav; mon.gift = !!init.gift; mon.metLv = init.metLv || mon.metLv; }
-        if (st.custom) mon.customMoves = true;
-        mon.exp = expForLevel(st.lv);
-        m.close(mon);
+        const one = () => {
+          const iv = st.ivRand ? Object.fromEntries(IVK.map(([k]) => [k, 1 + Math.floor(Math.random() * 15)])) : { ...st.iv };
+          const mon = createMon(sp, st.lv, { iv, shiny: st.shiny, nick: st.nick.trim().slice(0, 10), moves, item: st.item || null, ot: init?.ot || o.ot || '', metAt: init?.metAt || o.metAt || '' });
+          if (init) { mon.uid = init.uid; mon.caughtAt = init.caughtAt; mon.fav = !!init.fav; mon.gift = !!init.gift; mon.metLv = init.metLv || mon.metLv; }
+          // 出会った 場所は その アニモンが 住む 場所（プレゼントでも ふつうに つかまえた ことに する）
+          if (!init && !mon.metAt) mon.metAt = habitatName(sp, mon.uid); else naturalMetAt(mon);
+          if (st.custom) mon.customMoves = true;
+          mon.exp = expForLevel(st.lv);
+          return mon;
+        };
+        if (multi) m.close(Array.from({ length: st.count }, one));
+        else m.close(one());
       };
     };
     draw();
@@ -188,10 +207,14 @@ export function monList(el, list, o = {}) {
     const add = el.querySelector('.add');
     if (add) add.onclick = async () => {
       if (o.max && list.length >= o.max) { alert(`${o.max}匹までです`); return; }
-      const n = await editMon(null, { ot: o.ot, metAt: o.metAt });
+      const n = await editMon(null, { ot: o.ot, metAt: o.metAt, multi: o.multiAdd ? (o.max ? o.max - list.length : 30) : 0 });
       if (!n) return;
-      if (o.accept && o.accept(n) === false) return;
-      list.push(n); changed();
+      for (const x of Array.isArray(n) ? n : [n]) {
+        if (o.max && list.length >= o.max) break;
+        if (o.accept && o.accept(x) === false) break;
+        list.push(x);
+      }
+      changed();
     };
   };
   const changed = () => { draw(); if (o.onChange) o.onChange(); };
@@ -232,6 +255,7 @@ export function applyDexCatch(S, N, M, pool, rnd = Math.random) {
     const o = info.get(sp);
     const lv0 = o?.lv || [5, 10], lv = Math.max(1, Math.min(99, lv0[0] + Math.floor(rnd() * (lv0[1] - lv0[0] + 1))));
     const m = createMon(sp, lv, { ot: S.name, metAt: o?.where || '' });
+    if (!m.metAt) m.metAt = habitatName(sp, m.uid);
     m.caughtAt = Date.now() - Math.floor(rnd() * Math.max(1, S.playTime || 3600) * 1000);
     m._gen = true;
     return m;

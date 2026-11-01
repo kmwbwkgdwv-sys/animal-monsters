@@ -57,8 +57,8 @@ export function fixPartyDup(moveUid = null) {
 }
 export function monCount() { return (G.save.party?.length || 0) + (G.save.box?.length || 0); }
 export function monFull() { return monCount() >= monCap(); }
-// 逃がせない子（ルル・伝説）
-export function canRelease(m) { const S = G.save.story || {}; return !(m.uid === S.luluUid || m.uid === S.legendUid || SPECIES[m.sp]?.legend); }
+// 逃がせない子（ルル だけ。伝説は 確認の うえで 逃がせる）
+export function canRelease(m) { const S = G.save.story || {}; return m.uid !== S.luluUid; }
 export function save() { if (G.save) { try { if (G.state === 'world') { const mv = fixPartyDup(); if (mv.length && G.onDupFixed) G.onDupFixed(mv); } } catch (e) { /* */ } try { if (G.capturePos) G.capturePos(); } catch (e) { /* */ } if (G.save.pid) G.save.cloudDirty = true; writeGame(G.save); if (G.onSaved) G.onSaved(); } }
 export function itemName(id) { return ITEMS[id]?.name || id; }
 export function speciesName(id) { return SPECIES[id]?.name || '？'; }

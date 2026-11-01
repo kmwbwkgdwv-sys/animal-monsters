@@ -342,6 +342,7 @@ async function startGame(state, isNew) {
   // 「ふしぎなアメ」は 1種類に まとめた（昔の rarecandy → candy）
   if (state.bag && state.bag.rarecandy) { state.bag.candy = (state.bag.candy || 0) + state.bag.rarecandy; delete state.bag.rarecandy; }
   state.errands ||= {}; state.crowns ||= {};
+  { const { naturalMetAt } = await import('./data/world.js'); for (const m of [...(state.party || []), ...(state.box || [])]) naturalMetAt(m); }
   for (const m of [...(state.party || []), ...(state.box || [])]) {
     if (!m.iv) continue;
     // 個体値は 1〜15（古いデータの 0 は 1 に）。能力の計算式が変わったので HP は上限に合わせる

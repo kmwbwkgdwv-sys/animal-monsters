@@ -10,6 +10,7 @@ import { saveSettings, deleteGame, loadGame, hasSave } from '../game/save.js';
 import { firebaseConfig, firebaseReady } from '../firebase-config.js';
 import { $, el, esc, openScreen, toast, confirmBox, say } from './ui.js';
 import { audio } from '../audio.js';
+import { habitatName } from '../data/world.js';
 
 const waitClose = (s) => new Promise(r => { s.onClose = r; });
 
@@ -288,7 +289,8 @@ function cleanGiftMon(raw, S, M, SP, MV, IT) {
   const iv = {}; for (const k of ['atk', 'def', 'hp', 'spe']) iv[k] = Math.max(1, Math.min(15, Math.round(+raw.iv?.[k] || 8)));
   let moves = Array.isArray(raw.moves) ? raw.moves.map(x => (typeof x === 'string' ? x : x?.id)).filter(id => MV.MOVES[id]) : [];
   moves = [...new Set(moves)].slice(0, 4);
-  const m = M.createMon(sp.id, lv, { iv, shiny: !!raw.shiny && !sp.legend, ot: S.name, metAt: '運営からの プレゼント', nick: String(raw.nick || '').slice(0, 10), moves: moves.length ? moves : undefined, item: raw.item && IT.ITEMS[raw.item]?.cat === 'held' ? raw.item : null });
+  const m = M.createMon(sp.id, lv, { iv, shiny: !!raw.shiny && !sp.legend, ot: S.name, metAt: '', nick: String(raw.nick || '').slice(0, 10), moves: moves.length ? moves : undefined, item: raw.item && IT.ITEMS[raw.item]?.cat === 'held' ? raw.item : null });
+  m.metAt = habitatName(sp.id, m.uid);   // ふつうに その アニモンが 住む 場所で つかまえた ことに する
   return m;
 }
 export async function checkGifts() {

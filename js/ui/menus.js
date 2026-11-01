@@ -6,7 +6,7 @@ import { MOVES, moveEffects, moveEffectText } from '../data/moves.js';
 import { ITEMS, CAT_JA, SHOP_FOODS, FOOD_STARS, SHOP_HELD } from '../data/items.js';
 import { ABILITIES } from '../data/abilities.js';
 import { TYPES, TYPE_JA, TYPE_COLOR, typeBadge } from '../data/types.js';
-import { TOWNS, STONES, DUNGEONS, REGIONS, RING, howToGet, hiddenInDex, WORLD, START_POS } from '../data/world.js';
+import { TOWNS, STONES, DUNGEONS, REGIONS, RING, howToGet, hiddenInDex, WORLD, START_POS, naturalMetAt } from '../data/world.js';
 import { CREST_JA } from '../data/story.js';
 import { G, PARTY_MAX, partyHasSpecies, itemCount, addItem, useItem, addMoney, save, healParty, crests, isUnlocked, dexCounts, findMon, monCap, monCount, monFull, canRelease } from '../game/state.js';
 import { calcStats, adjBase, ivMul, monName, ivTotal, ivRank, expProgress, expToNext, healMon, maxHp, addExp, expForLevel, MAX_LV, noEvoHeld } from '../game/mon.js';
@@ -389,7 +389,7 @@ export async function monDetail(m, where, opts = {}) {
     s.head.querySelector('h2').textContent = monName(m);
     s.body.innerHTML = `<div class="detail"><div><img class="bigpic" src="${portrait(m.sp, m.shiny)}">
       <div style="text-align:center;margin-top:.4em">${m.shiny ? '<span class="shiny">✨色違い</span> ' : ''}${m.fav ? '★お気に入り' : ''}</div>
-      <div class="muted" style="text-align:center;font-size:.8em">No.${String(sp.id).padStart(3, '0')} ${esc(sp.name)}<br>おや：${esc(m.ot || G.save.name)}　${esc(m.metAt || '')}</div></div>
+      <div class="muted" style="text-align:center;font-size:.8em">No.${String(sp.id).padStart(3, '0')} ${esc(sp.name)}<br>おや：${esc(m.ot || G.save.name)}　${esc(naturalMetAt(m))}</div></div>
       <div>
         <div class="row"><b style="font-size:1.2em">${esc(monName(m))}</b>${opts.readOnly ? '' : '<button class="btn sm nickbtn" title="ニックネームを 変える">✏️ 名前</button>'}<span class="lv" style="color:var(--acc);font-weight:800">Lv${m.lv}</span>${sp.types.map(typeBadge).join('')}${rideBadge(m.sp)}</div>
         ${sp.ride ? `<div class="ridenote">🐎 この子には ライドできる（${RIDE_JA[sp.ride]}）。メニューの「ライド」か ライドボタンで 乗れます${opts.readOnly ? '' : '（ボックスに いても OK）'}。</div>` : ''}
@@ -428,6 +428,7 @@ export async function monDetail(m, where, opts = {}) {
     }, 'pri');
     btn('持ち物', () => pickHeld(m));
     btn('ニックネーム', () => renameMon(m));
+    if (sp.ride && !opts.readOnly) btn(`📌 ${RIDE_SHORT[sp.ride]}の ライドに 登録`, () => { rideSet()[sp.ride] = m.uid; save(); audio.sfx('item'); toast(`${RIDE_IC[sp.ride]} ${RIDE_SHORT[sp.ride]}の ライドに ${monName(m)} を 登録した！`); });
     if (sp.ride) btn(`${RIDE_IC[sp.ride]} この子に 乗る`, async () => { const ov = await import('../game/overworld.js'); if (ov.OW.dungeon && sp.ride === 'fly') { toast('ダンジョンの中では 空を飛べない！'); return; } closeAllScreens(); ov.startRide(m); });
     if (itemCount('scroll')) btn('巻物で技を覚える', () => scrollLearn(m));
     if (bi >= 0) btn(m.fav ? '★を外す' : '★お気に入り', () => { m.fav = !m.fav; });
@@ -495,18 +496,23 @@ async function scrollLearn(m) {
 
 // ---------- ボックス（しぼりこみ付き） ----------
 // ---------- 逃がす（1匹・まとめて 共通） ----------
-//  ルル・伝説は 逃がせない。パーティーは 最低1匹 残す。持たせていた 道具は バッグに もどる
+//  ルルは 逃がせない（伝説は もう一度 確認）。パーティーは 最低1匹 残す。持たせていた 道具は バッグに もどる
 export async function releaseMons(list) {
   const ok = list.filter(m => canRelease(m));
   const ng = list.length - ok.length;
-  if (!ok.length) { toast('この子は 逃がせない！（ルル・伝説の アニモン）'); return false; }
+  if (!ok.length) { toast('この子は 逃がせない！（ルル）'); return false; }
   const inParty = ok.filter(m => G.save.party.includes(m));
   if (inParty.length && inParty.length >= G.save.party.length) { toast('パーティーが 0匹に なってしまう！'); return false; }
   const shiny = ok.filter(m => m.shiny).length, high = ok.filter(m => ivTotal(m) >= 50).length, fav = ok.filter(m => m.fav).length;
   const warn = [shiny ? `✨色違い ${shiny}匹` : '', high ? `💎個体値の高い子 ${high}匹` : '', fav ? `★お気に入り ${fav}匹` : ''].filter(Boolean).join('・');
   const head = ok.length === 1 ? `${monName(ok[0])}（Lv${ok[0].lv}）を 逃がしますか？` : `${ok.length}匹を まとめて 逃がしますか？`;
-  if (!(await confirmBox(`${head}${warn ? `\n⚠ ${warn} が ふくまれています` : ''}${ng ? `\n（ルル・伝説の ${ng}匹は 逃がせないので 残ります）` : ''}\n逃がした アニモンは もどってきません。`, '逃がす', 'やめる'))) return false;
+  if (!(await confirmBox(`${head}${warn ? `\n⚠ ${warn} が ふくまれています` : ''}${ng ? `\n（ルルは 逃がせないので 残ります）` : ''}\n逃がした アニモンは もどってきません。`, '逃がす', 'やめる'))) return false;
   if (ok.length >= 10 && !(await confirmBox(`ほんとうに ${ok.length}匹を 逃がしますか？`, '逃がす', 'やめる'))) return false;
+  // 伝説は もう 手に 入らないので、もう一度 確認
+  const legs = ok.filter(m => SPECIES[m.sp]?.legend);
+  if (legs.length && !(await confirmBox(`⚠ 伝説の アニモン（${legs.map(m => monName(m)).join('・')}）が ふくまれています。\n逃がすと もう 二度と 手に入りません。\nほんとうに 逃がしますか？`, '逃がす', 'やめる'))) return false;
+  const st = G.save.story || {};
+  if (legs.some(m => m.uid === st.legendUid)) st.legendReleased = true;
   let items = 0;
   for (const m of ok) {
     if (m.item) { addItem(m.item, 1); items++; m.item = null; }
@@ -546,7 +552,7 @@ export async function openBox(opts = {}) {
   const updBar = () => {
     relbar.classList.toggle('on', bulk);
     s.body.querySelector('.bulk').style.display = bulk ? 'none' : '';
-    relbar.querySelector('.t').textContent = `${picked.size}匹 選択中（ルル・伝説は 選べません）`;
+    relbar.querySelector('.t').textContent = `${picked.size}匹 選択中（ルルは 選べません）`;
     relbar.querySelector('.go').disabled = !picked.size;
   };
   s.body.querySelector('.bulk').onclick = () => { audio.sfx('select'); setNick(false); bulk = true; picked.clear(); updBar(); render(); };
@@ -1016,30 +1022,101 @@ export async function toggleRide() {
   if (ov.OW.player.rideM) { if (ov.stopRide()) toast('降りた'); return; }
   return openRide();
 }
-// ライドできる アニモンの 一覧（パーティーと ボックス どちらの 子にも 乗れる・ひんしでも 乗れる）
+// ライドの 登録（陸・水・空 1匹ずつ）：G.save.rideSet = { land: uid, swim: uid, fly: uid }
+//  パーティーと ボックス どちらの 子でも・ひんしでも 乗れる
+export const RIDE_KINDS = ['land', 'swim', 'fly'];
+const RIDE_SHORT = { land: '陸', swim: '水', fly: '空' };
+function rideSet() { const S = G.save; if (!S.rideSet || typeof S.rideSet !== 'object') S.rideSet = {}; return S.rideSet; }
+const rideAll = (kind) => [...G.save.party, ...G.save.box].filter(m => SPECIES[m.sp].ride && (!kind || SPECIES[m.sp].ride === kind));
+export function rideMon(kind) {
+  const uid = rideSet()[kind]; if (!uid) return null;
+  const m = [...G.save.party, ...G.save.box].find(x => x.uid === uid);
+  return m && SPECIES[m.sp].ride === kind ? m : null;   // 逃がした・進化して 乗り方が 変わった ときは 未登録
+}
+const noRideMsg = async () => {
+  const kinds = SPECIES.filter(x => x && x.ride && !x.legend).slice(0, 6).map(x => x.name).join('・');
+  await say(['|ライドできる アニモンを 持っていない……', `|（${kinds} など、図鑑や ボックスで 🐎🌊🕊️ の しるしが ついた アニモンに 乗れます）`]);
+};
+// 大きな カード（ライドの 画面・登録の 画面）
+function rideBigCard(kind, m, sub = '') {
+  const c = el('button', `ridebig ${kind}${m ? '' : ' empty'}`, `<div class="rbk"><span class="rbi">${RIDE_IC[kind]}</span>${RIDE_SHORT[kind]}<small>${RIDE_JA[kind]}</small></div>
+    ${m ? `<img src="${BLANK}"><div class="rbn">${m.shiny ? '<span class="shiny">✨</span>' : ''}${esc(monName(m))}</div><div class="rbl">Lv${m.lv}${m.hp <= 0 ? '・ひんし' : ''}</div>` : `<div class="rbe">＋</div><div class="rbn">未登録</div>`}
+    ${sub ? `<div class="rbs">${sub}</div>` : ''}`);
+  if (m) portraitAsync(m.sp, m.shiny, false, (u) => { const im = c.querySelector('img'); if (im) im.src = u; });
+  return c;
+}
+// 乗る 子を 1匹 選ぶ（登録用・大きく 表示）
+function pickRideMon(kind) {
+  return new Promise(res => {
+    const list = rideAll(kind);
+    const s = openScreen(`${RIDE_IC[kind]} ${RIDE_SHORT[kind]}の ライドに 登録する 子`, { cls: 'ridepick' });
+    let chosen = null;
+    const party = new Set(G.save.party), now = rideSet()[kind];
+    list.sort((a, b) => (party.has(b) - party.has(a)) || b.lv - a.lv);
+    s.body.innerHTML = `<p class="muted" style="margin:.2em 0 .6em">${list.length ? `${RIDE_JA[kind]} ことが できる 子です。押すと 登録します。` : `${RIDE_JA[kind]} ことが できる 子を まだ 持っていない……`}</p><div class="ridegrid"></div>`;
+    const g = s.body.querySelector('.ridegrid');
+    for (const m of list) {
+      const c = el('button', 'ridepc' + (m.uid === now ? ' on' : ''), `<img src="${BLANK}"><div class="rbn">${m.shiny ? '<span class="shiny">✨</span>' : ''}${esc(monName(m))}</div><div class="rbl">Lv${m.lv}・${party.has(m) ? 'パーティー' : 'ボックス'}${m.hp <= 0 ? '・ひんし' : ''}</div>${m.uid === now ? '<div class="rbs">登録中</div>' : ''}`);
+      portraitAsync(m.sp, m.shiny, false, (u) => { const im = c.querySelector('img'); if (im) im.src = u; });
+      c.onclick = () => { audio.sfx('select'); chosen = m; s.close(); };
+      g.appendChild(c);
+    }
+    s.onClose = () => res(chosen);
+  });
+}
+async function registerRide(kind) {
+  const m = await pickRideMon(kind);
+  if (!m) return null;
+  rideSet()[kind] = m.uid; save(); toast(`${RIDE_IC[kind]} ${RIDE_SHORT[kind]}の ライドに ${monName(m)} を 登録した！`);
+  return m;
+}
+// 設定 →「ライドの 登録」
+export async function openRideSettings() {
+  const s = openScreen('ライドの 登録', { cls: 'ridescr' });
+  const render = () => {
+    s.body.innerHTML = `<p class="muted" style="margin:.2em 0 .6em">陸・水・空で 乗る 子を 1匹ずつ 登録します。ライドボタンを 押すと、ここで 登録した 子だけが 大きく 出ます。</p><div class="ride3"></div>`;
+    const box = s.body.querySelector('.ride3');
+    for (const kind of RIDE_KINDS) {
+      const m = rideMon(kind), n = rideAll(kind).length;
+      const wrap = el('div', 'ridecol');
+      const c = rideBigCard(kind, m, n ? (m ? '押して 変える' : '押して 登録') : '乗れる 子が いない');
+      c.onclick = async () => { audio.sfx('select'); if (!n) { toast(`${RIDE_JA[kind]} ことが できる 子を まだ 持っていない`); return; } await registerRide(kind); render(); };
+      wrap.appendChild(c);
+      if (m) { const off = el('button', 'btn sm rideoff', '登録を 外す'); off.onclick = () => { delete rideSet()[kind]; save(); render(); }; wrap.appendChild(off); }
+      box.appendChild(wrap);
+    }
+  };
+  render();
+  await waitClose(s);
+}
+// ライドボタン：登録した 陸・水・空の 3匹だけを 大きく 出す
 export async function openRide() {
   const ov = await import('../game/overworld.js');
   if (ov.OW.player.rideM) { if (ov.stopRide()) toast('降りた'); return; }
-  const all = [...G.save.party, ...G.save.box].filter(m => SPECIES[m.sp].ride);
-  if (!all.length) {
-    const kinds = SPECIES.filter(x => x && x.ride && !x.legend).slice(0, 6).map(x => x.name).join('・');
-    await say(['|ライドできる アニモンを 持っていない……', `|（${kinds} など、図鑑や ボックスで 🐎🌊🕊️ の しるしが ついた アニモンに 乗れます）`]); return;
-  }
-  const s = openScreen('ライド（乗れる アニモン）');
-  let chosen = null;
+  if (!rideAll().length) { await noRideMsg(); return; }
   const inDg = !!ov.OW.dungeon;
-  s.body.innerHTML = `<p class="muted" style="margin:.2em 0 .6em">🐎 陸を走る・🌊 水を泳ぐ・🕊️ 空を飛ぶ。パーティーに いない 子（ボックス）や、ひんしの 子にも 乗れます。${inDg ? '<br>※ ダンジョンの 中では 空は 飛べません。' : ''}</p><div class="ridelist"></div>`;
-  const list = s.body.querySelector('.ridelist');
-  const party = new Set(G.save.party);
-  all.sort((a, b) => (party.has(b) - party.has(a)) || b.lv - a.lv);
-  for (const m of all) {
-    const r = SPECIES[m.sp].ride;
-    const ng = inDg && r === 'fly';
-    const c = el('button', 'mcard ridecard' + (ng ? ' fnt' : ''), `<img src="${BLANK}"><div class="info"><div class="nm">${m.shiny ? '<span class="shiny">✨</span>' : ''}${esc(monName(m))} <span class="lv">Lv${m.lv}</span></div><div class="ridekind ${r}">${RIDE_IC[r]} ${RIDE_JA[r]}</div><div class="muted" style="font-size:.78em">${party.has(m) ? 'パーティー' : 'ボックス'}${m.hp <= 0 ? '・ひんし' : ''}</div></div>`);
-    portraitAsync(m.sp, m.shiny, false, (u) => { const im = c.querySelector('img'); if (im) im.src = u; });
-    c.onclick = () => { if (ng) { toast('ダンジョンの 中では 空を 飛べない！'); return; } audio.sfx('select'); chosen = m; s.close(); };
-    list.appendChild(c);
-  }
+  const s = openScreen('ライド', { cls: 'ridescr' });
+  let chosen = null;
+  const render = () => {
+    const any = RIDE_KINDS.some(k => rideMon(k));
+    s.body.innerHTML = `<p class="muted" style="margin:.2em 0 .6em">${any ? '乗る 子を 押してください。' : 'まだ ライドの 登録が ありません。押して 陸・水・空の 子を 登録しよう！'}${inDg ? '<br>※ ダンジョンの 中では 空は 飛べません。' : ''}</p><div class="ride3"></div>
+      <div class="row" style="justify-content:center;margin-top:.7em"><button class="btn rideset">⚙ ライドの 登録を 変える</button></div>`;
+    const box = s.body.querySelector('.ride3');
+    for (const kind of RIDE_KINDS) {
+      const m = rideMon(kind), n = rideAll(kind).length;
+      const ng = inDg && kind === 'fly';
+      const c = rideBigCard(kind, m, ng ? 'ダンジョンでは 飛べない' : m ? '' : n ? '押して 登録' : '乗れる 子が いない');
+      if (ng || (!m && !n)) c.classList.add('fnt');
+      c.onclick = async () => {
+        if (ng) { toast('ダンジョンの 中では 空を 飛べない！'); return; }
+        if (!m) { if (!n) { toast(`${RIDE_JA[kind]} ことが できる 子を まだ 持っていない`); return; } if (await registerRide(kind)) render(); return; }
+        audio.sfx('select'); chosen = m; s.close();
+      };
+      box.appendChild(c);
+    }
+    s.body.querySelector('.rideset').onclick = async () => { audio.sfx('select'); await openRideSettings(); render(); };
+  };
+  render();
   await waitClose(s);
   if (chosen) ov.startRide(chosen);
 }
@@ -1215,6 +1292,8 @@ export async function openSettings(fromTitle) {
       (Input.touch ? slider('スティックの 感度', 'stickSens', '高いほど 少し たおすだけで 速く 動きます。', 0.5, 2) : '') +
       slider('ズームの 速さ', 'zoomSens', '2本指（PCは ホイール）で 拡大・縮小するときの 速さ。', 0.3, 2.5) +
       `<div class="itemrow"><div class="grow"><div class="nm">感度を もとに もどす</div></div><button class="btn sm resetsens">ふつうに もどす</button></div>` +
+      (G.save && !fromTitle ? `<div class="itemrow"><div class="grow"><div class="nm">🐎 ライドの 登録</div><div class="ds">陸・水・空で 乗る 子を 1匹ずつ 登録します。ライドボタンを 押すと その 3匹だけが 大きく 出ます。（${RIDE_KINDS.map(k => { const m = rideMon(k); return `${RIDE_IC[k]}${m ? esc(monName(m)) : '未登録'}`; }).join('　')}）</div></div><button class="btn sm pri rideset">登録する</button></div>` : '') +
+      `<div class="itemrow"><div class="grow"><div class="nm">📖 アニモン図鑑 まとめサイト</div><div class="ds">アニモンの 種類・入手場所・技・タイプ相性・道具を 画像つきで まとめた ページを 開きます（べつの タブ）。</div></div><a class="btn sm" href="wiki/" target="_blank" rel="noopener">開く</a></div>` +
       `<div class="itemrow"><div class="grow"><div class="nm">🎮 ボタンの 配置・大きさ</div><div class="ds">スティック・A・B（ダッシュ）・ライドの ボタンを、ドラッグで 好きな 位置に 動かしたり、大きさを 変えたり できます（スマホ・タブレット）。${st.touchLayout ? '<b style="color:var(--acc)">（変更中）</b>' : ''}</div></div><button class="btn sm pri tlayout">調整する</button></div>` +
       `<div class="itemrow"><div class="grow"><div class="nm">操作方法</div><div class="ds">PC：移動 WASD/矢印　決定・話す Space/Enter　ダッシュ Shift　メニュー Esc　マップ M　ライド R　視点 ドラッグ・Q/E（C でもとに戻す）　ズーム マウスホイール<br>スマホ：左のスティックで移動、画面をなぞって視点を回す、A で決定、B でダッシュ切替、2本指でズーム</div></div></div>` +
       (fromTitle ? `<div class="itemrow"><div class="grow"><div class="nm" style="color:var(--ng)">セーブデータを消す</div><div class="ds">この端末のセーブデータを削除します。元に戻せません。</div></div><button class="btn sm red del">削除</button></div>` : '') +
@@ -1235,6 +1314,7 @@ export async function openSettings(fromTitle) {
     });
     const rs = s.body.querySelector('.resetsens');
     if (rs) rs.onclick = () => { Object.assign(st, { camSens: 1, camSensY: 1, camInvX: false, camInvY: false, stickSens: 1, zoomSens: 1 }); saveSettings(st); audio.sfx('select'); toast('感度を ふつうに もどしました'); render(); };
+    const rsb = s.body.querySelector('.rideset'); if (rsb) rsb.onclick = async () => { audio.sfx('select'); await openRideSettings(); render(); };
     s.body.querySelector('.tlayout').onclick = async () => { audio.sfx('select'); const { openTouchEditor } = await import('./extras.js'); await openTouchEditor(); render(); };
     s.body.querySelector('.delacct').onclick = async () => { audio.sfx('select'); const { deleteAccountFlow } = await import('./extras.js'); await deleteAccountFlow(); };
     const del = s.body.querySelector('.del');

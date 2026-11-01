@@ -248,5 +248,33 @@ export function howToGet(s) {
   if (s.starter && !s.evoFrom) out.push('最初の相棒として選ぶ');
   return out.length ? out : ['？？？'];
 }
+// その アニモンが 住んでいる 場所の 名前（運営からの プレゼントなども ふつうに つかまえた ことに する）
+//  同じ 種類でも 子ごとに ちがう 場所に なるよう seed（uid など）で えらぶ
+const SIDE_REGION = { caravan: 'desert', mine: 'canyon', swampboss: 'swamp' };
+const _habCache = {};
+export function habitatPlaces(spId) {
+  if (_habCache[spId]) return _habCache[spId];
+  const s = SPECIES[spId]; if (!s) return [];
+  let out = [];
+  if (s.legend) out = [REGIONS.sanctuary.name];
+  else {
+    for (let b = s; b && !out.length; b = b.evoFrom ? SPECIES[b.evoFrom] : null) {
+      for (const rid of ORDER) if (encounterTable(rid).some(e => e.sp === b.id) || encounterTable(rid, true).some(e => e.sp === b.id)) out.push(REGIONS[rid].name);
+      for (const did of Object.keys(DUNGEONS)) if (encounterTable(did).some(e => e.sp === b.id) || DUNGEON_BOSS[did]?.[0] === b.name) out.push(DUNGEONS[did].name);
+      if (!out.length && encounterTable('sea', true).some(e => e.sp === b.id)) out.push(REGIONS.sea.name);
+      if (!out.length && b.side) out.push(REGIONS[SIDE_REGION[b.side]].name);
+    }
+    if (!out.length && s.story) out = [REGIONS.forest.name];
+    if (!out.length) out = ['はじまりの町'];
+  }
+  return (_habCache[spId] = [...new Set(out)]);
+}
+export function habitatName(spId, seed = '') {
+  const L = habitatPlaces(spId); let h = 0; for (const ch of String(seed)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return L[h % L.length] || '';
+}
+// 出会った 場所の 記録を ふつうに する（「運営からの プレゼント」や、管理サイトで 作った 子の「はじまりの町」→ 住んでいる 場所）
+export function unnaturalMet(m) { const t = String(m?.metAt || ''); return /運営|プレゼント/.test(t) || (t === 'はじまりの町' && !habitatPlaces(m.sp).includes('はじまりの町')); }
+export function naturalMetAt(m) { if (m && unnaturalMet(m)) m.metAt = habitatName(m.sp, m.uid); return m?.metAt || ''; }
 export function hiddenInDex(s) { return s.legend || !!s.side || (s.rare && (s.hab.includes('inner') || s.hab.includes('abyss'))); }
 export { BY_NAME };

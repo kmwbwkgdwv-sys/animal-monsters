@@ -238,7 +238,7 @@ export function applyProgress(S, cleared, opts = {}) {
   }
   if (!S.party.length && S.box.length) S.party.push(S.box.shift());
   // 伝説（全クリアで まだ 持っていない とき）
-  if (R.legend && !(st.legendUid && all().some(m => m.uid === st.legendUid))) {
+  if (R.legend && !st.legendReleased && !(st.legendUid && all().some(m => m.uid === st.legendUid))) {
     const sp = opts.legend === 200 ? 200 : opts.legend === 199 ? 199 : (st.legend || 199);
     const iv = st.legendIv || legendIv();
     const m = createMon(sp, 80, { ot: S.name, metAt: 'さいはての聖域', iv: { ...iv } });

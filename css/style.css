@@ -853,3 +853,30 @@ b, strong { font-weight: 800; }
 .learnov .lbox { -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
 .learnov .lhead { position: sticky; top: -.7em; z-index: 3; display: flex; align-items: center; gap: .6em; margin: -.7em -.9em .4em; padding: .6em .9em .5em; background: linear-gradient(var(--bg2), rgba(30, 44, 100, .96)); border-bottom: 1px solid rgba(255, 255, 255, .2); border-radius: 15px 15px 0 0; }
 .learnov .lhead .btn { flex: 0 0 auto; }
+
+/* ライド：登録した 陸・水・空の 3匹を 大きく */
+.ride3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .7em; }
+@media (max-width: 560px) and (orientation: portrait) { .ride3 { grid-template-columns: 1fr; } .ridebig img { width: 7.5em; height: 7.5em; } }
+.ridecol { display: flex; flex-direction: column; gap: .35em; }
+.ridebig { display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: .15em; padding: .6em .4em .8em; border-radius: 18px; min-height: 15em; border: 3px solid rgba(255, 255, 255, .25); background: linear-gradient(170deg, rgba(255, 255, 255, .14), rgba(255, 255, 255, .03)); color: #fff; font: inherit; cursor: pointer; }
+.ridebig.land { border-color: #ffb45a; background: linear-gradient(170deg, rgba(255, 170, 70, .32), rgba(120, 70, 20, .18)); }
+.ridebig.swim { border-color: #5ab8ff; background: linear-gradient(170deg, rgba(70, 160, 255, .32), rgba(20, 60, 120, .18)); }
+.ridebig.fly { border-color: #6fffe0; background: linear-gradient(170deg, rgba(90, 255, 220, .28), rgba(20, 110, 100, .18)); }
+.ridebig:active { transform: scale(.97); }
+.ridebig.empty { border-style: dashed; }
+.ridebig.fnt { opacity: .45; }
+.rbk { font-size: 1.35em; font-weight: 900; display: flex; flex-direction: column; align-items: center; line-height: 1.1; }
+.rbk .rbi { font-size: 1.5em; }
+.rbk small { font-size: .5em; font-weight: 700; opacity: .85; margin-top: .15em; }
+.ridebig img { width: 9.5em; height: 9.5em; max-width: 100%; object-fit: contain; filter: drop-shadow(0 4px 6px rgba(0, 0, 0, .5)); }
+.ridebig .rbn { font-size: 1.3em; font-weight: 900; text-align: center; }
+.ridebig .rbl { font-size: 1em; font-weight: 800; color: var(--acc); }
+.ridebig .rbe { font-size: 4.5em; font-weight: 900; opacity: .5; line-height: 1.6; }
+.ridebig .rbs, .ridepc .rbs { font-size: .8em; font-weight: 800; color: #ffe9a8; margin-top: .2em; }
+.rideoff { align-self: center; }
+.ridegrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(9.5em, 1fr)); gap: .55em; }
+.ridepc { display: flex; flex-direction: column; align-items: center; padding: .5em .3em; border-radius: 14px; border: 2px solid rgba(160, 185, 255, .45); background: rgba(255, 255, 255, .07); color: #fff; font: inherit; cursor: pointer; }
+.ridepc.on { border-color: var(--acc); background: rgba(255, 200, 80, .15); }
+.ridepc img { width: 6.5em; height: 6.5em; object-fit: contain; }
+.ridepc .rbn { font-weight: 900; font-size: 1.05em; }
+.ridepc .rbl { font-size: .8em; color: var(--acc); font-weight: 800; }

@@ -203,12 +203,12 @@ function showDraft() {
   const S = draft, st = S.story;
   const lock = (m) => { if (m.uid === st.luluUid || m.uid === st.legendUid) { alert('ルルと 伝説は ストーリーで 使うので 外せません（✏️ で 直すことは できます）'); return false; } return true; };
   const sameSp = (list, m, skipUid) => list.some(x => x.sp === m.sp && x.uid !== skipUid);
-  const common = { ot: S.name, metAt: 'はじまりの町', canRemove: lock, onChange: updDexNote };
+  const common = { ot: S.name, metAt: '', canRemove: lock, onChange: updDexNote };
   let partyL = null, boxL = null;
   partyL = ME.monList($('.dparty'), S.party, { ...common, title: '🐾 手持ち（6匹まで・同じ 種類は 1匹）', max: 6,
     accept: (m) => { if (sameSp(S.party, m)) { alert('同じ 種類は 手持ちに 1匹までです（ボックスに 追加してください）'); return false; } },
     other: { label: '📦へ', move: (m) => { if (S.party.length <= 1) { alert('手持ちは 1匹 以上 必要です'); return false; } S.box.unshift(m); boxL.redraw(); } } });
-  boxL = ME.monList($('.dbox'), S.box, { ...common, title: '📦 ボックス', max: 600,
+  boxL = ME.monList($('.dbox'), S.box, { ...common, title: '📦 ボックス', max: 600, multiAdd: true,
     other: { label: '🐾へ', move: (m) => { if (S.party.length >= 6) { alert('手持ちが いっぱいです'); return false; } if (sameSp(S.party, m)) { alert('同じ 種類が もう 手持ちに います'); return false; } S.party.push(m); partyL.redraw(); } } });
   updDexNote();
 }
@@ -274,7 +274,7 @@ const itemText = (it) => Object.entries(it || {}).filter(([, n]) => +n).map(([id
 const gmode = () => (document.querySelector('input[name="gmode"]:checked') || {}).value || 'one';
 function ensureGiftList() {
   if (giftL) { giftL.redraw(); return; }
-  loadME().then(ME2 => { giftL = ME2.monList($('.glist'), giftMons, { title: '🎁 送る アニモン', max: 30, ot: '', metAt: '運営からの プレゼント' }); });
+  loadME().then(ME2 => { giftL = ME2.monList($('.glist'), giftMons, { title: '🎁 送る アニモン', max: 30, ot: '', metAt: '', multiAdd: true }); });
 }
 { const d = new Date(Date.now() + 30 * 86400000), p2 = (n) => String(n).padStart(2, '0'); $('.guntil').value = `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`; }
 function onMode() {
