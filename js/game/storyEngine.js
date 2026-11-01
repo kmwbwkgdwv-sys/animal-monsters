@@ -179,6 +179,8 @@ async function doAction(c) {
     case 'give': addItem(c.item, c.n || 1); audio.sfx('item'); break;
     case 'unlock': if (!G.save.unlocked.includes(c.region)) G.save.unlocked.push(c.region); buildBarriers(); refreshActors(); audio.sfx('warp'); break;
     case 'giveLulu': {
+      // もう ルルが いる（管理サイトで 進み具合を もどした ときなど）なら 2匹目は 出さない
+      if (S.luluUid && ([...G.save.party, ...G.save.box].some(m => m.uid === S.luluUid) || S.lulu)) break;
       const mon = createMon(BY_NAME['ルミナ'].id, 10, { nick: 'ルル', gift: true, ot: G.save.name, metAt: 'こもれびの森' });
       const where = giveMon(mon); S.luluUid = mon.uid; audio.sfx('catch');
       if (where === 'box') toast('ルルは ボックスに 送られた');
@@ -227,6 +229,8 @@ async function doAction(c) {
       break;
     }
     case 'giveLegend': {
+      // もう 伝説を 持っているなら 2匹目は 出さない（進み具合を もどして もう一度 見た ときなど）
+      if (S.legendUid && [...G.save.party, ...G.save.box].some(m => m.uid === S.legendUid)) break;
       // 個体値は1回だけ決めてセーブに記録（読み込み直しても変わらない）
       if (!S.legendIv) { S.legendIv = legendIv(); save(); }
       const mon = createMon(S.legend, 80, { ot: G.save.name, metAt: 'さいはての聖域', iv: { ...S.legendIv } });
@@ -249,6 +253,8 @@ async function doAction(c) {
       break;
     }
     case 'giveOtherStarters': {
+      if (S.othersGiven) break;
+      S.othersGiven = true;
       for (const sp of [1, 4, 7]) { if (sp === [1, 4, 7][S.starter]) continue; giveMon(createMon(sp, 5, { ot: G.save.name, metAt: 'はじまりの町' }), true); }
       break;
     }

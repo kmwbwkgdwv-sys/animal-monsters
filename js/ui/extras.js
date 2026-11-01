@@ -323,10 +323,26 @@ export async function checkGifts() {
           lines.push(`|${m.shiny ? '✨' : ''}${M.monName(m)}（Lv${m.lv}）が なかまに 加わった！${where === 'box' ? '（ボックスへ）' : ''}`);
         }
         for (const [id0, n0] of Object.entries(g.items || {})) { const id = id0 === 'rarecandy' ? 'candy' : id0; const n = Math.max(0, Math.min(99, Math.round(+n0 || 0))); if (!IT.ITEMS[id] || !n) continue; ST.addItem(id, n); lines.push(`|${IT.ITEMS[id].icon ? IT.ITEMS[id].icon + ' ' : ''}${IT.ITEMS[id].name} ×${n} を 受け取った！`); }
+        // ストーリーの 進み具合を 直す（自分あての プレゼント だけ）
+        let storyFix = null;
+        if (g.story && !g.all && +g.story.cleared >= 1) {
+          const DS = await import('../game/devsave.js');
+          DS.applyProgress(G.save, +g.story.cleared, { legend: +g.story.legend || null });
+          G.capturePos = null;   // 移動先（次の 章の 町）を 今いる 場所で 上書きしない（このあと 読みこみなおす）
+          storyFix = DS.progressText(G.save);
+          lines.push(`|📖 ストーリーの 進み具合が 直された！\n${storyFix}`);
+        }
         got[g.id] = Date.now();
         save();
         audio.sfx('kiran');
         await say(lines);
+        if (storyFix) {
+          try { await ON.removeGift(g.id); } catch (e) { /* 次に 消す */ }
+          await say(['|世界を 読みこみなおします……']);
+          save();
+          location.reload();
+          return;
+        }
         if (!g.all) { try { await ON.removeGift(g.id); } catch (e) { /* 次に 消す */ } }
       }
       // 受け取りの しるし：まだ サーバーに ある 分は ずっと 残す（2回 もらわない）。ほかは 新しい 100件まで

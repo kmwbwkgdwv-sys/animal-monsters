@@ -147,7 +147,7 @@ export function buildStorySave(name = 'nekojita', cleared = 4, opts = {}) {
     const rl = REGIONS[reg]?.lv || [5, 10];
     for (const e of tbl.slice(0, 2)) box.push(meet(e.sp, rl[0] + 1, REGIONS[reg].name));
   }
-  if (R.others) for (const sp of [1, 4, 7]) if (sp !== [1, 4, 7][starter]) box.push(meet(sp, 5, 'はじまりの町'));
+  if (R.others) { for (const sp of [1, 4, 7]) if (sp !== [1, 4, 7][starter]) box.push(meet(sp, 5, 'はじまりの町')); S.story.othersGiven = true; }
   // 伝説（全クリア）
   let legendMon = null;
   if (R.legend) {
@@ -208,3 +208,60 @@ export function buildStorySave(name = 'nekojita', cleared = 4, opts = {}) {
 }
 // 選択肢の 文字（管理サイト用）
 export const CLEAR_JA = (n) => n >= 11 ? `第11章「${CHAPTERS[11]}」クリア（ストーリー 全クリア）` : `第${n}章「${CHAPTERS[n]}」クリア まで（第${n + 1}章「${CHAPTERS[n + 1]}」が 始まる ところ）`;
+
+// =============================================================
+//  今ある セーブの ストーリーの 進み具合を「第N章まで クリア」に そろえる（管理サイトの プレゼントで 使う）
+//   ・アニモンは 消さない（ルルは さらわれ中／いっしょ を その章に 合わせる、いなければ 作る）
+//   ・紋章・行ける 地域・倒した ストーリーの 相手・クリア後 を その章に 合わせる
+//   ・次の 章が 始まる 町へ 移動（行けない 地域に 取り残されないように）
+// =============================================================
+export function applyProgress(S, cleared, opts = {}) {
+  cleared = Math.max(1, Math.min(11, Math.round(+cleared || 1)));
+  const R = simulate(cleared);
+  const st = S.story;
+  const storyTr = new Set(STEPS.filter(x => x.battle).map(x => x.battle));
+  for (const t of storyTr) delete S.defeated[t];
+  for (let n = 1; n <= 8; n++) delete S.defeated['g' + n];
+  Object.assign(S.defeated, R.defeated);
+  st.step = R.step; st.crests = R.crests; st.flags = {};
+  S.unlocked = R.unlocked.slice();
+  S.postGame = R.postGame;
+  const all = () => [...S.party, ...S.box];
+  const avg = Math.max(5, Math.round(S.party.reduce((a, m) => a + m.lv, 0) / Math.max(1, S.party.length)));
+  // ルル
+  let lulu = st.luluUid ? (all().find(m => m.uid === st.luluUid) || st.lulu || null) : null;
+  if (!lulu && R.lulu !== 'none') { lulu = createMon(id('ルミナ'), Math.min(99, Math.max(10, avg)), { nick: 'ルル', gift: true, ot: S.name, metAt: 'こもれびの森' }); st.luluUid = lulu.uid; }
+  if (lulu) {
+    const pi = S.party.indexOf(lulu), bi = S.box.indexOf(lulu);
+    if (R.lulu === 'taken') { if (pi >= 0) S.party.splice(pi, 1); if (bi >= 0) S.box.splice(bi, 1); st.lulu = lulu; }
+    else { st.lulu = null; if (pi < 0 && bi < 0) { if (S.party.length < 6 && !S.party.some(m => m.sp === lulu.sp)) S.party.push(lulu); else S.box.unshift(lulu); } }
+  }
+  if (!S.party.length && S.box.length) S.party.push(S.box.shift());
+  // 伝説（全クリアで まだ 持っていない とき）
+  if (R.legend && !(st.legendUid && all().some(m => m.uid === st.legendUid))) {
+    const sp = opts.legend === 200 ? 200 : opts.legend === 199 ? 199 : (st.legend || 199);
+    const iv = st.legendIv || legendIv();
+    const m = createMon(sp, 80, { ot: S.name, metAt: 'さいはての聖域', iv: { ...iv } });
+    st.legend = sp; st.legendIv = iv; st.legendUid = m.uid;
+    if (S.party.length < 6) S.party.push(m); else S.box.unshift(m);
+    S.dex.seen[199] = S.dex.seen[200] = true;
+  }
+  // 全クリアの ごほうび：ほかの 最初の 相棒 2匹
+  if (R.others && !st.othersGiven) {
+    st.othersGiven = true;
+    for (const sp of [1, 4, 7]) if (sp !== [1, 4, 7][st.starter ?? 0]) S.box.push(createMon(sp, 5, { ot: S.name, metAt: 'はじまりの町' }));
+  }
+  for (const m of [...all(), ...(st.lulu ? [st.lulu] : [])]) { S.dex.caught[m.sp] = true; S.dex.seen[m.sp] = true; }
+  // 次の 章が 始まる 町へ
+  const home = TOWN_AT[cleared];
+  S.lastHospital = home; S.stones = S.stones || {}; S.stones[home] = true;
+  const stone = STONES.find(x => x.id === home);
+  if (stone) { S.pos = [stone.pos[0], stone.pos[1] + 4]; S.ry = 0; }
+  return { step: R.step, crests: R.crests, lulu: R.lulu, legend: R.legend, postGame: R.postGame };
+}
+// セーブから「いま 何章か」（管理サイトの 表示用）
+export function progressText(S) {
+  const step = STEPS[S?.story?.step ?? 0];
+  if (!step) return '？';
+  return step.ch > 11 ? 'ストーリー クリア後' : `第${step.ch}章「${CHAPTERS[step.ch]}」：${step.obj}`;
+}

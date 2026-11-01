@@ -302,6 +302,8 @@ async function startGame(state, isNew) {
   G.save = state;
   // 旧データ互換
   state.cleared ||= {}; state.quests ||= {}; state.items ||= {};
+  // パーティーに 同じ アニモンが 2匹 いる（前の 版で 進化して 重なった）ときは 片方を ボックスへ
+  { const { fixPartyDup } = await import('./game/state.js'); const mv = fixPartyDup(); if (mv.length) setTimeout(() => toast(`パーティーに 同じ アニモンが いたので ${mv.map(x => x.nick || SPECIES[x.sp]?.name || '').join('・')} を ボックスに 送りました`, 4200), 3000); }
   // 「ふしぎなアメ」は 1種類に まとめた（昔の rarecandy → candy）
   if (state.bag && state.bag.rarecandy) { state.bag.candy = (state.bag.candy || 0) + state.bag.rarecandy; delete state.bag.rarecandy; }
   state.errands ||= {}; state.crowns ||= {};

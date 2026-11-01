@@ -279,11 +279,12 @@ function ensureGiftList() {
 { const d = new Date(Date.now() + 30 * 86400000), p2 = (n) => String(n).padStart(2, '0'); $('.guntil').value = `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`; }
 function onMode() {
   const all = gmode() === 'all';
-  $('.gone').classList.toggle('hidden', all); $('.gall').classList.toggle('hidden', !all);
+  $('.gone').classList.toggle('hidden', all); $('.gall').classList.toggle('hidden', !all); $('.gstory').classList.toggle('hidden', all);
   $('.gform').classList.toggle('hidden', !(all || giftPid));
   if (all || giftPid) { ensureGiftList(); loadPending(); }
 }
 document.querySelectorAll('input[name="gmode"]').forEach(r => r.onchange = onMode);
+$('.gch').onchange = () => $('.glg').classList.toggle('hidden', $('.gch').value !== '11');
 const fmtDay = (t) => { const d = new Date(+t); return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`; };
 async function loadPending() {
   const el = $('.gpend');
@@ -300,7 +301,7 @@ async function loadPending() {
       const g = v[id]; let n = 0; try { n = JSON.parse(g.mons || '[]').length; } catch (e) { /* */ }
       const end = +g.until && Date.now() > +g.until;
       const row = document.createElement('div'); row.className = 'gpitem';
-      row.innerHTML = `<span class="grow">${g.money ? '¥' + (+g.money).toLocaleString() + ' ' : ''}${itemText(g.items)}${n ? 'アニモン ' + n + '匹 ' : ''}${g.note ? '「' + esc(g.note) + '」' : ''}${all ? `<br><small class="muted">${g.at ? fmtDay(g.at) + ' 送信' : ''}${+g.until ? '・' + fmtDay(g.until) + ' まで' : ''}${g.newOk === false ? '・送った 時点の プレイヤーだけ' : ''}${end ? '・<b class="ng">期限切れ</b>' : ''}</small>` : ''}</span><button class="sm red">${all ? '終わらせる' : '取り消す'}</button>`;
+      row.innerHTML = `<span class="grow">${g.money ? '¥' + (+g.money).toLocaleString() + ' ' : ''}${itemText(g.items)}${n ? 'アニモン ' + n + '匹 ' : ''}${g.story ? `📖第${g.story.cleared}章まで クリアに 直す ` : ''}${g.note ? '「' + esc(g.note) + '」' : ''}${all ? `<br><small class="muted">${g.at ? fmtDay(g.at) + ' 送信' : ''}${+g.until ? '・' + fmtDay(g.until) + ' まで' : ''}${g.newOk === false ? '・送った 時点の プレイヤーだけ' : ''}${end ? '・<b class="ng">期限切れ</b>' : ''}</small>` : ''}</span><button class="sm red">${all ? '終わらせる' : '取り消す'}</button>`;
       row.querySelector('button').onclick = async () => {
         if (!confirm(all ? 'この プレゼントを 終わらせますか？（まだ 受け取っていない 人は 受け取れなく なります）' : 'この プレゼントを 取り消しますか？')) return;
         await D.remove(D.ref(db, `${path}/${id}`)); toast(all ? '終わらせました' : '取り消しました'); loadPending();
@@ -321,6 +322,9 @@ $('.gfind').onclick = async () => {
     try { const sv = await D.get(D.ref(db, 'saves/' + pid)); if (sv.exists()) { const v = sv.val(); sum = `図鑑 ${v.dex ?? '?'}・紋章 ${v.crests ?? '?'}・プレイ ${Math.floor((v.playTime || 0) / 3600)}時間${Math.floor((v.playTime || 0) / 60) % 60}分`; } } catch (e) { sum = '（セーブの 中身は ルールを 公開すると 見られます）'; }
     giftPid = pid; giftName = pl.name || '';
     w.innerHTML = `<span class="okc">✅ 見つかりました：${esc(giftName || '（なまえ なし）')}</span> <span class="muted">${esc(sum)}</span>`;
+    // いまの ストーリーの 進み具合
+    $('.gnow').textContent = '';
+    try { const sv = await D.get(D.ref(db, 'saves/' + pid)); if (sv.exists() && sv.val().data) { const S = JSON.parse(sv.val().data); const { progressText } = await import('../js/game/devsave.js'); $('.gnow').textContent = 'いま：' + progressText(S) + `（紋章 ${S.story?.crests ?? 0}個${S.story?.lulu ? '・ルルは さらわれ中' : ''}）`; } } catch (e) { $('.gnow').textContent = '（いまの 進み具合は 新しい ルールを 公開すると 見られます）'; }
     onMode();
   } catch (e) { w.innerHTML = `<span class="ng">${esc(errText(e))}</span>`; }
 };
@@ -329,15 +333,16 @@ $('.gsend').onclick = async () => {
   const all = gmode() === 'all';
   if (!all && !giftPid) return;
   const money = Math.round(+$('.gmoney').value || 0), note = $('.gnote').value.trim().slice(0, 200), toBox = $('.gtobox').checked;
+  const storyCh = all ? 0 : +$('.gch').value || 0;
   const items = {}; document.querySelectorAll('.gi').forEach(i => { const n = Math.max(0, Math.min(99, Math.round(+i.value || 0))); if (n) items[i.dataset.id] = n; });
-  if (!money && !giftMons.length && !Object.keys(items).length) { alert('お金・道具・アニモンの どれかを 入れてください'); return; }
+  if (!money && !giftMons.length && !Object.keys(items).length && !storyCh) { alert('お金・道具・アニモン・ストーリーの 進み具合の どれかを 入れてください'); return; }
   let until = 0;
   if (all) {
     const v = $('.guntil').value;
     until = v ? new Date(v + 'T23:59:59').getTime() : 0;
     if (until && until < Date.now()) { alert('期限が もう すぎています'); return; }
   }
-  const what = `${money ? '¥' + money.toLocaleString() + ' ' : ''}${itemText(items)}${giftMons.length ? 'アニモン ' + giftMons.length + '匹 ' : ''}`;
+  const what = `${money ? '¥' + money.toLocaleString() + ' ' : ''}${itemText(items)}${giftMons.length ? 'アニモン ' + giftMons.length + '匹 ' : ''}${storyCh ? `ストーリーを 第${storyCh}章まで クリアに 直す ` : ''}`;
   if (!confirm(all ? `【全員】すべての プレイヤーに ${what}を 送りますか？${until ? `\n（${fmtDay(until)} まで 受け取れます）` : ''}` : `${giftName || 'この人'} に ${what}を 送りますか？`)) return;
   $('.gsend').disabled = true;
   try {
@@ -345,10 +350,11 @@ $('.gsend').onclick = async () => {
     const mons = giftMons.map(m => ({ sp: m.sp, lv: m.lv, iv: m.iv, shiny: !!m.shiny, nick: m.nick || '', moves: m.moves.map(x => x.id), item: m.item || null, toBox }));
     const data = { at: D.serverTimestamp(), by: user.uid, money, note, mons: JSON.stringify(mons) };
     if (Object.keys(items).length) data.items = items;
+    if (storyCh) data.story = { cleared: storyCh, legend: +$('.glg').value || 199 };
     if (all) { if (until) data.until = until; data.newOk = $('.gnew').checked; }
     await D.set(D.ref(db, all ? `giftsAll/${gid}` : `gifts/${giftPid}/${gid}`), data);
     toast(all ? '🎁 全員に 送りました！ ゲームを 開いた 人から 順に 届きます' : '🎁 送りました！ その人が ゲームを 開くと 届きます');
-    giftMons.length = 0; giftL && giftL.redraw(); $('.gmoney').value = 0; $('.gnote').value = ''; document.querySelectorAll('.gi').forEach(i => { i.value = 0; });
+    giftMons.length = 0; giftL && giftL.redraw(); $('.gmoney').value = 0; $('.gnote').value = ''; document.querySelectorAll('.gi').forEach(i => { i.value = 0; }); $('.gch').value = ''; $('.glg').classList.add('hidden');
     loadPending();
   } catch (e) { alert('送れませんでした：' + errText(e) + '\n（新しい ルールを 公開してください）'); }
   $('.gsend').disabled = false;

@@ -39,6 +39,22 @@ export function crests() { return G.save.story.crests || 0; }
 // アニモンを 持てる数：はじめは 100匹。紋章 1つごとに +75、ストーリー クリアで 800匹
 export const MON_CAP_BASE = 100, MON_CAP_STEP = 75, MON_CAP_MAX = 800;
 export function monCap() { if (!G.save) return MON_CAP_BASE; return G.save.postGame ? MON_CAP_MAX : Math.min(MON_CAP_MAX, MON_CAP_BASE + crests() * MON_CAP_STEP); }
+// パーティーに 同じ アニモンが 2匹 以上 いたら（進化で 同じ 姿に なった ときなど）、1匹だけ 残して ボックスへ
+//  moveUid：その 子が 重なりの 中に いれば その子を 動かす（進化したばかりの 子）。いなければ うしろの 子を 動かす
+export function fixPartyDup(moveUid = null) {
+  const P = G.save?.party; if (!P) return [];
+  const moved = [];
+  const bySp = new Map();
+  for (const m of P) { if (!bySp.has(m.sp)) bySp.set(m.sp, []); bySp.get(m.sp).push(m); }
+  for (const list of bySp.values()) {
+    if (list.length < 2) continue;
+    let keep = list[0];
+    if (moveUid && list[0].uid === moveUid) keep = list.find(m => m.uid !== moveUid) || list[0];
+    for (const m of list) if (m !== keep) moved.push(m);
+  }
+  for (const m of moved) { const i = P.indexOf(m); if (i >= 0 && P.length > 1) { P.splice(i, 1); G.save.box.unshift(m); } }
+  return moved;
+}
 export function monCount() { return (G.save.party?.length || 0) + (G.save.box?.length || 0); }
 export function monFull() { return monCount() >= monCap(); }
 // 逃がせない子（ルル・伝説）

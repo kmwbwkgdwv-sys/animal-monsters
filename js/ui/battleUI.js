@@ -9,7 +9,7 @@ import { ITEMS } from '../data/items.js';
 import { TRAINERS, rivalTeam, DUNGEONS, REGIONS } from '../data/world.js';
 import { typeBadge, TYPE_COLOR, TYPE_JA, typeEff } from '../data/types.js';
 import { createMon, monName, calcStats, evolveMon, healMon, cloneMon, canEvolve, noEvoHeld } from '../game/mon.js';
-import { G, giveMon, registerDex, itemCount, useItem, addMoney, save, healParty, findMon, monFull, monCount, monCap } from '../game/state.js';
+import { G, giveMon, registerDex, itemCount, useItem, addMoney, save, healParty, findMon, monFull, monCount, monCap, fixPartyDup } from '../game/state.js';
 import { $, el, esc, UI, toast, say, ask, confirmBox, inputText, fade, flash, hpClass, hideDialog, letterbox, glintAt } from './ui.js';
 import { audio } from '../audio.js';
 import { portrait } from '../render/portrait.js';
@@ -729,6 +729,11 @@ export async function evolveScene(m) {
     $('#screens').style.display = ''; $('#labels').style.display = '';
     $('#hud').classList.remove('hidden'); if (Input.touch) $('#touch').classList.remove('hidden');
     hideDialog();
+    // 進化して パーティーに 同じ アニモンが 2匹に なったら、進化した 子を ボックスへ
+    if (m.sp !== oldSp) {
+      const moved = fixPartyDup(m.uid);
+      if (moved.length) { toast(`パーティーに ${SPECIES[m.sp].name} が 2匹に なったので、${moved.map(x => monName(x)).join('・')}（Lv${moved[0].lv}）を ボックスに 送った`, 4200); try { (await import('../game/overworld.js')).refreshFollower(); } catch (e) { /* */ } }
+    }
     save();
   }
 }
