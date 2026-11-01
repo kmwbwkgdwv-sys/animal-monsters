@@ -1,6 +1,6 @@
 // フレンド・トレード・対戦・引き継ぎの画面
 import * as ON from '../online.js';
-import { G, save, giveMon, registerDex } from '../game/state.js';
+import { G, save, giveMon, registerDex, itemCount } from '../game/state.js';
 import { SPECIES } from '../data/species.js';
 import { CHAPTERS } from '../data/story.js';
 import { typeBadge } from '../data/types.js';
@@ -9,7 +9,7 @@ import { MOVES } from '../data/moves.js';
 import { ITEMS } from '../data/items.js';
 import { $, el, esc, openScreen, toast, ask, confirmBox, inputText, say } from './ui.js';
 import { portrait } from '../render/portrait.js';
-import { pickFromAll, monDetail, presets, presetMons, openPresets } from './menus.js';
+import { pickFromAll, monDetail, presets, presetMons, openPresets, presetWant } from './menus.js';
 import { startPvpBattle } from './battleUI.js';
 import { audio } from '../audio.js';
 import { writeGame } from '../game/save.js';
@@ -110,8 +110,15 @@ function waitingScreen(title, text) {
   s.body.innerHTML = `<div class="card" style="margin:2em auto;max-width:30em;text-align:center"><p class="st2">${esc(text)}</p><p class="muted">⏳</p></div>`;
   return s;
 }
-function teamPayload(mons) {
-  return mons.map(m => { const c = cloneMon(m); healMon(c); return c; });
+export function teamPayload(mons, preset = null) {
+  const out = mons.map(m => { const c = cloneMon(m); healMon(c); return c; });
+  // 保存した パーティーから 選んだ ときは、その パーティーの 持ち物で 出る（持っている 数まで。本当の 持ち物は 変えない）
+  if (preset && preset.items) {
+    const all = [...G.save.party, ...G.save.box], pool = {};
+    const left = (id) => (pool[id] ??= itemCount(id) + all.filter(x => x.item === id).length);
+    out.forEach((c, i) => { const w = presetWant(preset, mons[i]); c.item = null; if (w && left(w) > 0) { pool[w]--; c.item = w; } });
+  }
+  return out;
 }
 
 // ---------- 対戦ルーム ----------
@@ -133,16 +140,16 @@ async function battleRoom(id, role) {
     const uniq = new Set(all.map(m => m.sp));
     if (uniq.size < set.count) { await say([`|${set.count}種類 以上の アニモンが 必要です。${set.noLegend ? '（伝説なしの 対戦です）' : ''}`]); ON.closeRoom(id, 'abandoned'); w.close(); return; }
     // 保存した パーティーが あれば、そこから 選べる（選んだ あと 出す 子を 確認・変更 できる）
-    let pre = [];
+    let pre = [], preP = null;
     if (presets().some(p => presetMons(p).length)) {
       const how = await ask(`チームの 選び方（${set.count}匹）`, ['💾 保存した パーティーから', '1匹ずつ 選ぶ', 'やめる']);
       if (how === 2) { ON.closeRoom(id, 'abandoned'); w.close(); return; }
-      if (how === 0) { const p = await openPresets({ pick: true }); if (p) pre = presetMons(p); }
+      if (how === 0) { const p = await openPresets({ pick: true }); if (p) { pre = presetMons(p); preP = p; } }
     }
     const team = await pickFromAll(`対戦に 出す ${set.count}匹を 選ぶ${set.noLegend ? '（伝説なし）' : ''}`, okMon, set.count, pre.filter(okMon));
     if (team && set.noLegend && team.some(m => SPECIES[m.sp]?.legend)) { ON.closeRoom(id, 'abandoned'); w.close(); return; }
     if (!team) { ON.closeRoom(id, 'abandoned'); w.close(); return; }
-    await ON.updateRoom(id, { [role + 'Team']: JSON.stringify(teamPayload(team)) });
+    await ON.updateRoom(id, { [role + 'Team']: JSON.stringify(teamPayload(team, preP)) });
     w.body.querySelector('.st2').textContent = '相手の チーム選びを 待っています……';
     if (!await until(r => r.hostTeam && r.guestTeam)) { if (!leave) { w.close(); await say(['|対戦が 中止されました。']); } return; }
     w.onClose = null; w.close();

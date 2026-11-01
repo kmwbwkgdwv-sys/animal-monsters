@@ -650,18 +650,41 @@ export function presets() {
   return S.presets;
 }
 export function presetMons(p) { const all = [...G.save.party, ...G.save.box]; return (p?.uids || []).map(u => all.find(m => m.uid === u)).filter(Boolean); }
+// 保存した パーティーごとの 持ち物：p.items = { uid: 道具の id（なしは ''） }（保存した ときの 持ち物）
+//  古い 保存（p.items が ない）や、あとから 入れた 子は 今の 持ち物の まま
+export function presetWant(p, m) {
+  if (!p || !p.items || !Object.prototype.hasOwnProperty.call(p.items, m.uid)) return m.item || null;
+  const w = p.items[m.uid]; return w && ITEMS[w] ? w : null;
+}
+const presetItemsMatch = (p, mons) => mons.every(m => (m.item || null) === presetWant(p, m));
+// 呼び出す ときに 持ち物も 入れかえる：①ちがう 物を 持っている 子は バッグへ もどす ②バッグから 持たせる
+//  バッグに なければ、パーティーから 外れる 子・ボックスの 子が 持っている ものを 外して 持たせる
+function applyPresetItems(p, team) {
+  const r = { missing: [], took: [] };
+  if (!p.items) return r;
+  for (const m of team) { const w = presetWant(p, m); if (m.item && m.item !== w) { addItem(m.item, 1); m.item = null; } }
+  for (const m of team) {
+    const w = presetWant(p, m); if (!w || m.item === w) continue;
+    if (itemCount(w) > 0) { useItem(w); m.item = w; continue; }
+    const donor = [...G.save.party, ...G.save.box].find(x => !team.includes(x) && x.item === w);
+    if (donor) { donor.item = null; m.item = w; r.took.push(`${monName(donor)}の ${ITEMS[w].name}`); continue; }
+    r.missing.push(`${monName(m)}の ${ITEMS[w].name}`);
+  }
+  return r;
+}
 function loadPreset(p) {
   const team = [], seen = new Set();
   // いまの パーティーの 子だけで できる（並べかえ・預ける）なら いつでも OK。ボックスの 子が 入るなら 病院で
   if (!atHospital && presetMons(p).some(m => G.save.box.includes(m))) { toast(NEED_HOSPITAL, 3600); return false; }
   for (const m of presetMons(p)) { if (team.length >= PARTY_MAX || seen.has(m.sp)) continue; seen.add(m.sp); team.push(m); }
   if (!team.length) { toast('この パーティーの アニモンが もう いません'); return false; }
+  const items = applyPresetItems(p, team);
   const out = G.save.party.filter(m => !team.includes(m));
   G.save.box = G.save.box.filter(m => !team.includes(m));
   G.save.party = team;
   G.save.box.unshift(...out);
   save();
-  return true;
+  return items;
 }
 // opts.pick：フレンド対戦用（パーティーを 1つ 選んで 返す）
 export function openPresets(opts = {}) {
@@ -670,23 +693,31 @@ export function openPresets(opts = {}) {
     let picked = null;
     const render = () => {
       const ps = presets();
-      s.body.innerHTML = `<p class="muted" style="margin:.1em 0 .5em">${opts.pick ? '対戦に 使う パーティーを 選んでください（このあと 出す 子を 確認・変更 できます）' : '「保存」で いまの パーティーを 記録、「呼び出す」で その メンバーに 入れかえ（ほかの 子は ボックスへ）。✏️ で 名前を 変えられます。'}</p><div class="pslist"></div>`;
+      s.body.innerHTML = `<p class="muted" style="margin:.1em 0 .5em">${opts.pick ? '対戦に 使う パーティーを 選んでください（このあと 出す 子を 確認・変更 できます。持ち物は 保存した ときの もので 出ます）' : '「保存」で いまの パーティーと 持ち物を 記録、「呼び出す」で その メンバー・持ち物に 入れかえ（ほかの 子は ボックスへ）。持ち物を 変えたら もう一度「保存」で 上書きしてください。✏️ で 名前を 変えられます。'}</p><div class="pslist"></div>`;
       const list = s.body.querySelector('.pslist');
       ps.forEach((p, i) => {
         const mons = presetMons(p), lost = p.uids.length - mons.length;
-        const isNow = mons.length && mons.length === G.save.party.length && mons.every((m, k) => G.save.party[k] === m);
-        const row = el('div', 'psrow' + (isNow ? ' now' : ''), `<div class="psno">${i + 1}</div><div class="psmain"><div class="psname"><b>${esc(p.name)}</b>${opts.pick ? '' : '<button class="btn sm rn" title="名前を 変える">✏️</button>'}${isNow ? '<span class="pstag">いまの パーティー</span>' : ''}</div>
-          <div class="psmons">${mons.length ? mons.map(m => `<span class="psm" title="${esc(monName(m))} Lv${m.lv}"><img src="${portrait(m.sp, m.shiny)}"><small>Lv${m.lv}</small></span>`).join('') : '<span class="muted">（まだ 保存していない）</span>'}${lost > 0 ? `<span class="muted" style="font-size:.75em">　いない子 ${lost}匹</span>` : ''}</div></div><div class="psbtns"></div>`);
+        const sameMembers = mons.length && mons.length === G.save.party.length && mons.every((m, k) => G.save.party[k] === m);
+        const isNow = sameMembers && presetItemsMatch(p, mons);
+        const itemTag = (m) => { const w = presetWant(p, m), it = w && ITEMS[w]; return it ? `<i class="psi" title="${esc(it.name)}">${it.icon || '🎁'}</i><em class="psin">${esc(it.name)}</em>` : '<em class="psin none">―</em>'; };
+        const row = el('div', 'psrow' + (isNow ? ' now' : ''), `<div class="psno">${i + 1}</div><div class="psmain"><div class="psname"><b>${esc(p.name)}</b>${opts.pick ? '' : '<button class="btn sm rn" title="名前を 変える">✏️</button>'}${isNow ? '<span class="pstag">いまの パーティー</span>' : sameMembers && !opts.pick ? '<span class="pstag diff">持ち物が ちがう</span>' : ''}</div>
+          <div class="psmons">${mons.length ? mons.map(m => `<span class="psm" title="${esc(monName(m))} Lv${m.lv}">${itemTag(m)}<img src="${portrait(m.sp, m.shiny)}"><small>Lv${m.lv}</small></span>`).join('') : '<span class="muted">（まだ 保存していない）</span>'}${lost > 0 ? `<span class="muted" style="font-size:.75em">　いない子 ${lost}匹</span>` : ''}</div></div><div class="psbtns"></div>`);
         const bt = row.querySelector('.psbtns');
         const add = (label, cls, fn, dis = false) => { const b = el('button', 'btn sm ' + cls, label); b.disabled = dis; b.onclick = async () => { if (b.__busy) return; b.__busy = true; try { await fn(); } finally { b.__busy = false; } }; bt.appendChild(b); };
         if (opts.pick) add('このパーティーで 出る', 'pri', () => { picked = p; s.onClose = null; s.close(); res(p); }, !mons.length);
         else {
           add('💾 保存', 'pri', async () => {
-            if (p.uids.length && !(await confirmBox(`「${p.name}」に 上書きして 保存しますか？`))) return;
-            p.uids = G.save.party.map(m => m.uid); save(); audio.sfx('item'); toast(`いまの パーティーを「${p.name}」に 保存した！`); render();
+            if (p.uids.length && !(await confirmBox(`「${p.name}」に いまの パーティーと 持ち物を 上書きして 保存しますか？`))) return;
+            p.uids = G.save.party.map(m => m.uid); p.items = Object.fromEntries(G.save.party.map(m => [m.uid, m.item || ''])); save(); audio.sfx('item'); toast(`いまの パーティーと 持ち物を「${p.name}」に 保存した！`); render();
           });
-          add('呼び出す', '', async () => { if (loadPreset(p)) { audio.sfx('item'); toast(`「${p.name}」に 入れかえた！`); render(); } }, !mons.length || isNow);
-          add('消す', 'red', async () => { if (await confirmBox(`「${p.name}」の 保存を 消しますか？（アニモンは 消えません）`)) { p.uids = []; save(); render(); } }, !p.uids.length);
+          add('呼び出す', '', async () => {
+            const r = loadPreset(p); if (!r) return;
+            audio.sfx('item'); toast(`「${p.name}」に 入れかえた！`);
+            if (r.took.length) toast(`持ち物を 移した：${r.took.join('、')}`, 4200);
+            if (r.missing.length) toast(`道具が 足りず 持たせられなかった：${r.missing.join('、')}`, 5000);
+            render();
+          }, !mons.length || isNow);
+          add('消す', 'red', async () => { if (await confirmBox(`「${p.name}」の 保存を 消しますか？（アニモンは 消えません）`)) { p.uids = []; delete p.items; save(); render(); } }, !p.uids.length);
           row.querySelector('.rn').onclick = async () => { const nm = await inputText('パーティーの 名前（12文字まで）', p.name, 12); if (nm && nm.trim()) { p.name = nm.trim().slice(0, 12); save(); render(); } };
         }
         list.appendChild(row);
