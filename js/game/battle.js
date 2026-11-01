@@ -11,6 +11,9 @@ import { calcStats, monName, addExp } from './mon.js';
 import { mulberry32 } from '../engine/util.js';
 
 const STAT_JA = { atk: '攻撃', def: '防御', spe: '素早さ', acc: '命中率' };
+// 伝説の 特性の 強さ（調整用）
+//  （ver1.4：強い 通常の アニモンでも 1対1で 3割くらい 勝てるように 弱めた。もとは 0.8 / 1.2 / 1/10）
+export const TUNE = { haouGuard: 0.95, haouFire: 1.1, sotenRegen: 20 };
 const STATUS_JA = { brn: 'やけど', psn: 'どく', par: 'まひ', slp: 'ねむり', frz: 'こおり' };
 const STRUGGLE = { id: 'struggle', name: 'わるあがき', type: 'normal', power: 50, acc: null, pp: 1, tier: 1, pri: 0, e: [], crit: 0, drain: 0, recoil: 0.25, heal: 0 };
 const BITE = new Set(['burnfang', 'shockfang', 'frostfang', 'bite', 'crunch']);
@@ -397,7 +400,7 @@ export class Battle {
     if (ab === 'strongjaw' && BITE.has(mv.id)) power *= 1.5;
     if (ab && ab.startsWith('soul_') && ab === 'soul_' + mv.type && b.m.hp <= b.maxhp / 3) power *= 1.5;
     if (b.flash && mv.type === 'fire') power *= 1.5;
-    if (ab === 'haou' && mv.type === 'fire') power *= 1.2;
+    if (ab === 'haou' && mv.type === 'fire') power *= TUNE.haouFire;
     if (b.helped) { power *= 1.5; b.helped = false; }
     const ally = this.allyOf(b);
     if (ally && ally.ab === 'powerspot') power *= 1.3;
@@ -433,7 +436,7 @@ export class Battle {
     if (ta === 'multiscale' && t.m.hp === t.maxhp) d *= 0.5;
     if (ta === 'solidshell' && eff > 1) d *= 0.75;
     if (ta === 'thickfat' && (mv.type === 'fire' || mv.type === 'ice')) d *= 0.5;
-    if (ta === 'haou') d *= 0.8;
+    if (ta === 'haou') d *= TUNE.haouGuard;
     const tAlly = this.allyOf(t);
     if (tAlly && tAlly.ab === 'friendguard') d *= 0.75;
     return { dmg: Math.max(1, Math.floor(d)), crit };
@@ -552,7 +555,7 @@ export class Battle {
       if (!b.alive) continue;
       if (b.item === 'h_bread') this._healAmt(b, Math.max(1, Math.floor(b.maxhp / 16)), `${this.nm(b)} は めぐみのパンで 少し 回復した。`);
       if (b.ab === 'sunbask') this._healAmt(b, Math.max(1, Math.floor(b.maxhp / 16)), `${this.nm(b)} は ひなたぼっこで 少し 回復した。`);
-      if (b.ab === 'soten') this._healAmt(b, Math.max(1, Math.floor(b.maxhp / 10)), `${this.nm(b)} は 蒼天の守護で 回復した。`);
+      if (b.ab === 'soten') this._healAmt(b, Math.max(1, Math.floor(b.maxhp / TUNE.sotenRegen)), `${this.nm(b)} は 蒼天の守護で 回復した。`);
       if (b.ab === 'speedboost') this._stat(b, 'spe', 1, b);
       if (b.ab === 'shedskin' && b.m.status && this.r() < 0.3) { b.m.status = null; this.msg(`${this.nm(b)} は だっぴして 状態異常が 治った！`); this.emit({ t: 'status', side: b.side, slot: b.slot, status: null }); }
       if (b.alive && b.item === 'h_berry' && b.m.hp <= b.maxhp / 2) { b.m.item = null; this._healAmt(b, Math.floor(b.maxhp / 4), `${this.nm(b)} は ふっかつの実を 食べて 回復した！`); }

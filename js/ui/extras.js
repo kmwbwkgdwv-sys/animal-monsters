@@ -322,7 +322,7 @@ export async function checkGifts() {
           const where = ST.giveMon(m, !!raw.toBox);
           lines.push(`|${m.shiny ? '✨' : ''}${M.monName(m)}（Lv${m.lv}）が なかまに 加わった！${where === 'box' ? '（ボックスへ）' : ''}`);
         }
-        for (const [id, n] of Object.entries(g.items || {})) if (IT.ITEMS[id] && +n) { ST.addItem(id, Math.round(+n)); lines.push(`|${IT.ITEMS[id].name} ×${Math.round(+n)} を 受け取った！`); }
+        for (const [id, n0] of Object.entries(g.items || {})) { const n = Math.max(0, Math.min(99, Math.round(+n0 || 0))); if (!IT.ITEMS[id] || !n) continue; ST.addItem(id, n); lines.push(`|${IT.ITEMS[id].icon ? IT.ITEMS[id].icon + ' ' : ''}${IT.ITEMS[id].name} ×${n} を 受け取った！`); }
         got[g.id] = Date.now();
         save();
         audio.sfx('kiran');

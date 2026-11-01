@@ -204,7 +204,8 @@ function makeNpc(def, look) {
 }
 export function refreshActors() {
   if (OW.dungeon) return;
-  for (const n of OW.npcs) { OW.scene.root.remove(n.H ? n.H.root : n.M.root); if (n.shadow) OW.scene.root.remove(n.shadow); if (n.marker) OW.scene.root.remove(n.marker); }
+  // 人（H）・アニモン（M）・光る しるしだけ（marker：サイドストーリーの 探しもの）の どれでも 片付けられるように
+  for (const n of OW.npcs) { const r = n.H ? n.H.root : n.M ? n.M.root : null; if (r) OW.scene.root.remove(r); if (n.shadow) OW.scene.root.remove(n.shadow); if (n.marker) OW.scene.root.remove(n.marker); }
   OW.npcs = [];
   const si = G.save.story.step;
   const idx = (id) => id === null || id === undefined ? null : STEPS.findIndex(s => s.id === id);
@@ -501,7 +502,7 @@ function updateCandy(dt) {
     const d = Math.hypot(P.x - CANDY.x, P.z - CANDY.z);
     if (CANDY.life <= 0 || d > 130) { removeCandy(); return; }
     // 近づくと 自動で 拾う（乗っていても OK）
-    if (d < 1.8 && !G.busy && G.state === 'world') pickCandy();
+    if (d < 1.8 && !G.busy && G.state === 'world' && OW.mode !== 'fly') pickCandy();
     return;
   }
   if (OW.inTown || G.busy || OW.mode === 'fly') return;
@@ -865,6 +866,8 @@ function onRegionChange(reg, town) {
 function nearest() {
   const P = OW.player;
   let best = null, bd = 1e9;
+  // 空を 飛んでいる あいだは 地面の もの（木・岩・しげみ・人・落とし物・入口）には さわれない（おりてから）
+  if (OW.mode === 'fly') return null;
   if (OW.dungeon) {
     for (const t of OW.dtrig) { const d = Math.hypot(t.x - P.x, t.z - P.z); if (d < t.r && d < bd) { bd = d; best = t; } }
     return best;

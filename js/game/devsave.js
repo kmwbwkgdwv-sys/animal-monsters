@@ -66,12 +66,26 @@ export function chapterPool(cleared, starter = 0) {
   cleared = Math.max(1, Math.min(11, Math.round(+cleared || 4)));
   const R = simulate(cleared);
   const catchable = new Set(), seen = new Set();
+  // info：種類ごとの 出やすさ（w：その場所で 出会う 確率の 合計）・レベルの はんい・場所
+  const info = new Map();
+  const note = (sp, w, lv, minLv, where) => {
+    const o = info.get(sp) || { w: 0, lv: null, where: '', best: -1 };
+    o.w += w;
+    if (w > o.best) { o.best = w; o.lv = [Math.max(lv[0], minLv || 1), Math.max(lv[1], minLv || 1)]; o.where = where; }
+    info.set(sp, o); catchable.add(sp);
+  };
   const regs = ['start', ...visitedRegions(cleared)];
-  for (const reg of regs) for (const w of [false, true]) { try { for (const e of encounterTable(reg, w)) catchable.add(e.sp); } catch (e) { /* 水辺なし */ } }
+  for (const reg of regs) for (const water of [false, true]) {
+    let tbl = []; try { tbl = encounterTable(reg, water); } catch (e) { /* 水辺なし */ }
+    if (water && tbl === encounterTable('sea', true)) tbl = [];   // その地域の 水辺の 子が いない（海の 子は のぞく）
+    const tot = tbl.reduce((a, e) => a + e.w, 0) || 1;
+    for (const e of tbl) note(e.sp, e.w / tot * (water ? 0.35 : 1), REGIONS[reg].lv, e.minLv, REGIONS[reg].name);
+  }
   for (const [d, D] of Object.entries(DUNGEONS)) {
     if (!regs.includes(D.region) || D.post) continue;   // クリア後の ダンジョン（深淵の迷宮）は まだ 行っていない
-    for (const e of encounterTable(d)) catchable.add(e.sp);
-    const b = SPECIES.find(s => s && s.name === DUNGEON_BOSS[d]?.[0]); if (b) catchable.add(b.id);
+    const tbl = encounterTable(d), tot = tbl.reduce((a, e) => a + e.w, 0) || 1;
+    for (const e of tbl) note(e.sp, e.w / tot * 0.5, D.lv, e.minLv, D.name);
+    const b = SPECIES.find(s => s && s.name === DUNGEON_BOSS[d]?.[0]); if (b) note(b.id, 0.02, [DUNGEON_BOSS[d][1], DUNGEON_BOSS[d][1]], 1, D.name + 'の主');
   }
   for (const id of catchable) seen.add(id);
   for (const tid of Object.keys(R.defeated)) {
@@ -80,9 +94,9 @@ export function chapterPool(cleared, starter = 0) {
     for (const [nm] of team) if (id(nm)) seen.add(id(nm));
   }
   for (const sp of [1, 4, 7]) seen.add(sp);
-  if (R.lulu !== 'none') { seen.add(id('ルミナ')); catchable.add(id('ルミナ')); }
+  if (R.lulu !== 'none') seen.add(id('ルミナ'));
   if (R.legend) { seen.add(199); seen.add(200); }
-  return { catchable, seen };
+  return { catchable, seen, info };
 }
 
 // opts: { starter: 0|1|2, legend: 199|200, look }

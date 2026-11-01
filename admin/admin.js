@@ -171,19 +171,32 @@ async function buildDraft() {
   draft = buildStorySave(name, ch, { starter: +$('.mkst').value, legend: +$('.mklg').value });
   draftPool = chapterPool(ch, +$('.mkst').value);
   $('.dmoney').value = draft.money;
-  $('.dseen').value = Object.keys(draft.dex.seen).length;
-  $('.dcaught').value = Object.keys(draft.dex.caught).length;
+  const L = ME.dexLimits(draft, draftPool);
+  $('.dreg').value = L.min; $('.dcatch').value = L.ownCount;
+  draftApplied = L.min + '/' + L.ownCount;
+  ME.applyDexCatch(draft, L.min, L.ownCount, draftPool);
   showDraft();
 }
-let draftPool = null;
+let draftPool = null, draftApplied = '';
+const regV = () => +$('.dreg').value || 0, catchV = () => +$('.dcatch').value || 0;
 function updDexNote() {
   const L = ME.dexLimits(draft, draftPool);
-  $('.dcaught').min = L.min; $('.dcaught').max = L.caughtMax; $('.dseen').max = L.seenMax;
-  if (+$('.dcaught').value < L.min) $('.dcaught').value = L.min;
-  if (+$('.dcaught').value > L.caughtMax) $('.dcaught').value = L.caughtMax;
-  if (+$('.dseen').value > L.seenMax) $('.dseen').value = L.seenMax;
-  if (+$('.dseen').value < +$('.dcaught').value) $('.dseen').value = $('.dcaught').value;
-  $('.ddex').innerHTML = `<b>図鑑登録数</b>＝図鑑に のっている（見たことが ある）種類の 数、<b>捕まえた数</b>＝なかまに したことが ある 種類の 数です。<br>この章までに 出会える アニモンの 中から ランダムに 選びます（捕まえた数 ${L.min}〜${L.caughtMax}・図鑑登録数 〜${L.seenMax}）。持っている アニモン（${L.min}種類）は かならず 捕まえた ことに なります。`;
+  if (regV() < L.min) $('.dreg').value = L.min;
+  if (regV() > L.regMax) $('.dreg').value = L.regMax;
+  const cmin = ME.catchMin(L, regV());
+  if (catchV() < cmin) $('.dcatch').value = cmin;
+  if (catchV() > L.cap) $('.dcatch').value = L.cap;
+  $('.dreg').min = L.min; $('.dreg').max = L.regMax; $('.dcatch').min = cmin; $('.dcatch').max = L.cap;
+  const pending = draftApplied !== regV() + '/' + catchV();
+  $('.ddex').innerHTML = `<b>図鑑登録数</b>＝捕まえた ことが ある 種類の 数（${L.min}〜${L.regMax}）。<b>捕まえた数</b>＝捕まえた アニモンの 匹数で、同じ 種類を 何匹も 捕まえる ことも あるので 図鑑登録数 以上に なります（${cmin}〜${L.cap}匹・持てる数まで）。<br>
+    足りない 種類は この章までに 出会える アニモンから、捕まえた 子は 図鑑登録した 種類の 中から、<b>出やすい アニモンほど 多く</b> ランダムに 選んで ボックスに 入れます（レベルは 出会う 場所に 合わせます）。${pending ? '<br><b style="color:var(--acc)">「🎲 この数で 図鑑と ボックスに 入れる」を 押すと 反映します（押さなくても 作るときに 反映されます）。</b>' : ''}`;
+}
+function applyDex() {
+  const r = ME.applyDexCatch(draft, regV(), catchV(), draftPool);
+  $('.dreg').value = r.N; $('.dcatch').value = r.M;
+  draftApplied = r.N + '/' + r.M;
+  showDraft();
+  return r;
 }
 function showDraft() {
   $('.drafted').classList.remove('hidden');
@@ -200,7 +213,8 @@ function showDraft() {
   updDexNote();
 }
 $('.draft').onclick = async () => { $('.draft').disabled = true; try { await buildDraft(); toast('中身を 作りました。下で 調整してください'); } catch (e) { console.error(e); toast('作れませんでした：' + e.message); } $('.draft').disabled = false; };
-$('.dcaught').onchange = updDexNote; $('.dseen').onchange = updDexNote;
+$('.dreg').onchange = updDexNote; $('.dcatch').onchange = updDexNote;
+$('.dapply').onclick = () => { if (!draft) return; const r = applyDex(); toast(`図鑑登録 ${r.N}種類・捕まえた ${r.M}匹（ボックスに ${r.added}匹 追加）`); };
 
 
 $('.domake').onclick = async () => {
@@ -220,7 +234,8 @@ $('.domake').onclick = async () => {
       draft.name = name;
       for (const m of [...draft.party, ...draft.box, ...(draft.story.lulu ? [draft.story.lulu] : [])]) if (!m.ot || m.ot === old) m.ot = name;
       draft.money = Math.max(0, Math.min(9999999, Math.round(+$('.dmoney').value || 0)));
-      (await loadME()).setDexCounts(draft, +$('.dseen').value, +$('.dcaught').value, draftPool);
+      if (draftApplied !== regV() + '/' + catchV()) applyDex();
+      ME.stripGen(draft);
       draft.created = Date.now() - 86400000; draft.saved = Date.now();
       G.save = JSON.parse(JSON.stringify(draft));
     } else G.save = buildStorySave(name, ch, { starter: +$('.mkst').value, legend: +$('.mklg').value });
@@ -254,6 +269,8 @@ async function findAccount(raw) {
   if (al.length === 12) { const code = al.slice(0, 4) + '-' + al.slice(4, 8) + '-' + al.slice(8); const s = await D.get(D.ref(db, 'transfers/' + code)); return s.exists() ? s.val().pid : null; }
   throw new Error('コードの 形が ちがいます（引き継ぎコードは 12文字、フレンドコードは 数字8けた）');
 }
+const ITEM_JA = { crown_g: '金の王冠', crown_s: '銀の王冠', rarecandy: 'ふしぎなアメ' };
+const itemText = (it) => Object.entries(it || {}).filter(([, n]) => +n).map(([id, n]) => `${ITEM_JA[id] || id}×${n} `).join('');
 const gmode = () => (document.querySelector('input[name="gmode"]:checked') || {}).value || 'one';
 function ensureGiftList() {
   if (giftL) { giftL.redraw(); return; }
@@ -283,7 +300,7 @@ async function loadPending() {
       const g = v[id]; let n = 0; try { n = JSON.parse(g.mons || '[]').length; } catch (e) { /* */ }
       const end = +g.until && Date.now() > +g.until;
       const row = document.createElement('div'); row.className = 'gpitem';
-      row.innerHTML = `<span class="grow">${g.money ? '¥' + (+g.money).toLocaleString() + ' ' : ''}${n ? 'アニモン ' + n + '匹 ' : ''}${g.note ? '「' + esc(g.note) + '」' : ''}${all ? `<br><small class="muted">${g.at ? fmtDay(g.at) + ' 送信' : ''}${+g.until ? '・' + fmtDay(g.until) + ' まで' : ''}${g.newOk === false ? '・送った 時点の プレイヤーだけ' : ''}${end ? '・<b class="ng">期限切れ</b>' : ''}</small>` : ''}</span><button class="sm red">${all ? '終わらせる' : '取り消す'}</button>`;
+      row.innerHTML = `<span class="grow">${g.money ? '¥' + (+g.money).toLocaleString() + ' ' : ''}${itemText(g.items)}${n ? 'アニモン ' + n + '匹 ' : ''}${g.note ? '「' + esc(g.note) + '」' : ''}${all ? `<br><small class="muted">${g.at ? fmtDay(g.at) + ' 送信' : ''}${+g.until ? '・' + fmtDay(g.until) + ' まで' : ''}${g.newOk === false ? '・送った 時点の プレイヤーだけ' : ''}${end ? '・<b class="ng">期限切れ</b>' : ''}</small>` : ''}</span><button class="sm red">${all ? '終わらせる' : '取り消す'}</button>`;
       row.querySelector('button').onclick = async () => {
         if (!confirm(all ? 'この プレゼントを 終わらせますか？（まだ 受け取っていない 人は 受け取れなく なります）' : 'この プレゼントを 取り消しますか？')) return;
         await D.remove(D.ref(db, `${path}/${id}`)); toast(all ? '終わらせました' : '取り消しました'); loadPending();
@@ -312,24 +329,26 @@ $('.gsend').onclick = async () => {
   const all = gmode() === 'all';
   if (!all && !giftPid) return;
   const money = Math.round(+$('.gmoney').value || 0), note = $('.gnote').value.trim().slice(0, 200), toBox = $('.gtobox').checked;
-  if (!money && !giftMons.length) { alert('お金か アニモンを 入れてください'); return; }
+  const items = {}; document.querySelectorAll('.gi').forEach(i => { const n = Math.max(0, Math.min(99, Math.round(+i.value || 0))); if (n) items[i.dataset.id] = n; });
+  if (!money && !giftMons.length && !Object.keys(items).length) { alert('お金・道具・アニモンの どれかを 入れてください'); return; }
   let until = 0;
   if (all) {
     const v = $('.guntil').value;
     until = v ? new Date(v + 'T23:59:59').getTime() : 0;
     if (until && until < Date.now()) { alert('期限が もう すぎています'); return; }
   }
-  const what = `${money ? '¥' + money.toLocaleString() + ' ' : ''}${giftMons.length ? 'アニモン ' + giftMons.length + '匹 ' : ''}`;
+  const what = `${money ? '¥' + money.toLocaleString() + ' ' : ''}${itemText(items)}${giftMons.length ? 'アニモン ' + giftMons.length + '匹 ' : ''}`;
   if (!confirm(all ? `【全員】すべての プレイヤーに ${what}を 送りますか？${until ? `\n（${fmtDay(until)} まで 受け取れます）` : ''}` : `${giftName || 'この人'} に ${what}を 送りますか？`)) return;
   $('.gsend').disabled = true;
   try {
     const gid = 'g' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
     const mons = giftMons.map(m => ({ sp: m.sp, lv: m.lv, iv: m.iv, shiny: !!m.shiny, nick: m.nick || '', moves: m.moves.map(x => x.id), item: m.item || null, toBox }));
     const data = { at: D.serverTimestamp(), by: user.uid, money, note, mons: JSON.stringify(mons) };
+    if (Object.keys(items).length) data.items = items;
     if (all) { if (until) data.until = until; data.newOk = $('.gnew').checked; }
     await D.set(D.ref(db, all ? `giftsAll/${gid}` : `gifts/${giftPid}/${gid}`), data);
     toast(all ? '🎁 全員に 送りました！ ゲームを 開いた 人から 順に 届きます' : '🎁 送りました！ その人が ゲームを 開くと 届きます');
-    giftMons.length = 0; giftL && giftL.redraw(); $('.gmoney').value = 0; $('.gnote').value = '';
+    giftMons.length = 0; giftL && giftL.redraw(); $('.gmoney').value = 0; $('.gnote').value = ''; document.querySelectorAll('.gi').forEach(i => { i.value = 0; });
     loadPending();
   } catch (e) { alert('送れませんでした：' + errText(e) + '\n（新しい ルールを 公開してください）'); }
   $('.gsend').disabled = false;

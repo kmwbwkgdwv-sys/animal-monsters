@@ -5,7 +5,7 @@
 //   monList(el, list, o) … 手持ち・ボックスの 一覧（編集・移動・削除）
 // =============================================================
 import { SPECIES } from '../js/data/species.js';
-import { MOVES } from '../js/data/moves.js';
+import { MOVES, moveEffects } from '../js/data/moves.js';
 import { ITEMS } from '../js/data/items.js';
 import { TYPE_JA, TYPE_COLOR, TYPES } from '../js/data/types.js';
 import { DUNGEON_BOSS, DUNGEONS, SIDE_JA } from '../js/data/world.js';
@@ -16,6 +16,15 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<'
 const h = (tag, cls, html = '') => { const e = document.createElement(tag); if (cls) e.className = cls; e.innerHTML = html; return e; };
 const IVK = [['hp', 'HP'], ['atk', '攻撃'], ['def', '防御'], ['spe', '素早さ']];
 const tb = (t) => `<span class="tb" style="background:${TYPE_COLOR[t]}">${TYPE_JA[t]}</span>`;
+// 技の くわしい 説明（タイプ・威力・命中・PP・優先度・説明・追加効果）
+export function moveCard(id, extra = '') {
+  const mv = MOVES[id]; if (!mv) return '';
+  const fx = moveEffects(mv);
+  const pri = mv.pri > 0 ? `<span class="mtag">先制+${mv.pri}</span>` : mv.pri < 0 ? '<span class="mtag">後攻</span>' : '';
+  return `<div class="mcard2" style="--tc:${TYPE_COLOR[mv.type]}"><div class="mch"><b>${esc(mv.name)}</b>${tb(mv.type)}${mv.sig ? '<span class="mtag sig">特別技</span>' : ''}${pri}${extra}</div>
+    <div class="mcs"><span>${mv.power ? `威力 <b>${mv.power}</b>` : '<b>変化技</b>'}</span><span>命中 <b>${mv.acc ? mv.acc : '必中'}</b></span><span>PP <b>${mv.pp}</b></span></div>
+    ${mv.desc ? `<div class="mcd">${esc(mv.desc)}</div>` : ''}<div class="mcf">${fx.length ? '効果：' + esc(fx.join('・')) : (mv.power ? '効果：追加効果なし' : '')}</div></div>`;
+}
 
 // 種類の 札（伝説・ダンジョンの主・サイドの主・最初の相棒 など）
 const BOSS_OF = {};
@@ -111,7 +120,9 @@ export async function editMon(init = null, o = {}) {
           <label>持ち物</label><select class="held"><option value="">なし</option>${heldOpts.map(i => `<option value="${i.id}" ${st.item === i.id ? 'selected' : ''}>${esc(i.name)}</option>`).join('')}</select>
           <label class="chk"><input type="checkbox" class="cust" ${st.custom ? 'checked' : ''}> 技構成を 自分で 決める <small>（オフ：レベルで 自動）</small></label>
           <div class="mvs">${[0, 1, 2, 3].map(i => `<select class="mv" data-i="${i}" ${st.custom ? '' : 'disabled'}><option value="">（なし）</option>${learn().map(id => { const mv = MOVES[id]; const lvL = s.moves.find(x => x.id === id)?.lv; return `<option value="${id}" ${st.moves[i] === id ? 'selected' : ''}>${esc(mv.name)}（${TYPE_JA[mv.type]}・${mv.power ? '威力' + mv.power : '変化'}・Lv${lvL}）</option>`; }).join('')}</select>`).join('')}</div>
-          <div class="mvview">${st.moves.filter(Boolean).map(id => MOVES[id]).filter(Boolean).map(mv => `<span class="mvc" style="background:${TYPE_COLOR[mv.type]}">${esc(mv.name)}<small>${TYPE_JA[mv.type]}・${mv.power ? '威力' + mv.power : '変化'}</small></span>`).join('')}</div>
+          <div class="mvdet">${st.moves.filter(id => MOVES[id]).map(id => moveCard(id)).join('')}</div>
+          <details class="alllearn" ${st.showAll ? 'open' : ''}><summary>この アニモンが 覚えられる 技を 全部 見る（${learn().length}）</summary>
+            <div class="mvdet">${learn().map(id => moveCard(id, `<span class="mtag">Lv${s.moves.find(x => x.id === id)?.lv ?? '?'}で 覚える</span>${st.moves.includes(id) ? '<span class="mtag on">選択中</span>' : ''}`)).join('')}</div></details>
           <p class="edmsg ng"></p>
           <div class="row" style="justify-content:flex-end;margin-top:.6em"><button class="cancel">やめる</button><button class="pri ok">${init ? 'これで 直す' : 'これで 追加'}</button></div>
         </div></div>`;
@@ -128,6 +139,7 @@ export async function editMon(init = null, o = {}) {
       q('.ivrnd').onclick = () => { for (const [k] of IVK) st.iv[k] = 1 + Math.floor(Math.random() * 15); draw(); };
       q('.nick').oninput = (e) => { st.nick = e.target.value; };
       q('.held').onchange = (e) => { st.item = e.target.value; };
+      q('.alllearn').ontoggle = (e) => { st.showAll = e.target.open; };
       q('.cust').onchange = (e) => { st.custom = e.target.checked; if (st.custom && !st.moves.length) st.moves = movesAtLevel(sp, st.lv); later(); };
       m.body.querySelectorAll('.mv').forEach(sel => sel.onchange = () => {
         // 同じ 技を 2つ 選んだら、もう一方と 入れかえる
@@ -187,29 +199,49 @@ export function monList(el, list, o = {}) {
   return { redraw: draw };
 }
 
-// 図鑑の 数を そろえる：捕まえた 数・図鑑登録数（持っている 子の 種類は 必ず 捕まえた ことに なる）
-//  pool：{ catchable:Set, seen:Set } … その章までに 出会える 種類（足りない ぶんは ここから ランダムに 選ぶ）
+// ---------- 図鑑登録数・捕まえた数 ----------
+//  図鑑登録数 N ＝ 捕まえた ことの ある 種類の 数（図鑑に のる）
+//  捕まえた数 M ＝ 捕まえた アニモンの 数（同じ 種類を 何匹も 捕まえることも ある ので N 以上）
+//  ・N に 足りない 種類は、その章で 出会える アニモンから 出やすい 子ほど 選ばれやすく ランダムに
+//  ・登録した 種類は 1匹ずつ 必ず 持っていて、残りは 登録した 種類の 中から 出やすい 子ほど 多く 入手（ボックスへ）
+export const ownedMons = (S) => [...S.party, ...S.box.filter(m => !m._gen), ...(S.story?.lulu ? [S.story.lulu] : [])];
+export function monCapOf(S) { return S.postGame ? 800 : Math.min(800, 100 + (S.story?.crests || 0) * 75); }
 export function dexLimits(S, pool) {
-  const owned = new Set([...S.party, ...S.box, ...(S.story?.lulu ? [S.story.lulu] : [])].map(m => m.sp));
-  const caughtMax = new Set([...owned, ...(pool ? pool.catchable : SPECIES.filter(Boolean).map(s => s.id))]).size;
-  const seenMax = new Set([...owned, ...(pool ? [...pool.catchable, ...pool.seen] : SPECIES.filter(Boolean).map(s => s.id))]).size;
-  return { min: owned.size, caughtMax, seenMax, owned };
+  const own = ownedMons(S), owned = new Set(own.map(m => m.sp));
+  const regMax = new Set([...owned, ...(pool ? pool.catchable : SPECIES.filter(Boolean).map(s => s.id))]).size;
+  return { min: owned.size, regMax, owned, ownCount: own.length, cap: monCapOf(S) };
 }
-const shuffle = (a) => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
-export function setDexCounts(S, seenN, caughtN, pool = null) {
+export const catchMin = (L, N) => L.ownCount + Math.max(0, N - L.min);
+function pickW(list, wOf, rnd) { let tot = 0; for (const x of list) tot += wOf(x); let r = rnd() * tot; for (const x of list) { r -= wOf(x); if (r <= 0) return x; } return list[list.length - 1]; }
+export function applyDexCatch(S, N, M, pool, rnd = Math.random) {
+  S.box = S.box.filter(m => !m._gen);          // 前に 作った ぶんは 作りなおす
   const L = dexLimits(S, pool);
-  caughtN = Math.max(L.min, Math.min(L.caughtMax, Math.round(+caughtN || 0)));
-  seenN = Math.max(caughtN, Math.min(L.seenMax, Math.round(+seenN || 0)));
-  const allIds = SPECIES.filter(Boolean).map(s => s.id);
-  const catchPool = pool ? [...pool.catchable] : allIds, seenPool = pool ? [...pool.catchable, ...pool.seen] : allIds;
-  const caught = {}, seen = {};
-  for (const id of L.owned) caught[id] = true;
-  // 今の 記録（その章の 範囲の もの）を 先に 使い、足りない ぶんは その章で 出会える 種類から ランダムに
-  const keepC = Object.keys(S.dex.caught).map(Number).filter(id => catchPool.includes(id));
-  for (const id of [...shuffle(keepC), ...shuffle(catchPool.slice())]) { if (Object.keys(caught).length >= caughtN) break; if (SPECIES[id]) caught[id] = true; }
-  for (const id of Object.keys(caught)) seen[id] = true;
-  const keepS = Object.keys(S.dex.seen).map(Number).filter(id => seenPool.includes(id));
-  for (const id of [...shuffle(keepS), ...shuffle([...new Set(seenPool)])]) { if (Object.keys(seen).length >= seenN) break; if (SPECIES[id]) seen[id] = true; }
+  N = Math.max(L.min, Math.min(L.regMax, Math.round(+N || 0)));
+  M = Math.max(catchMin(L, N), Math.min(L.cap, Math.round(+M || 0)));
+  const info = pool?.info || new Map();
+  const wOf = (sp) => (info.get(sp)?.w || 0.002);
+  // 図鑑に 登録する 種類
+  const reg = new Set(L.owned);
+  const cand = [...(pool ? pool.catchable : SPECIES.filter(Boolean).map(s => s.id))].filter(sp => !reg.has(sp) && SPECIES[sp]);
+  while (reg.size < N && cand.length) { const sp = pickW(cand, wOf, rnd); reg.add(sp); cand.splice(cand.indexOf(sp), 1); }
+  const seen = { ...(S.dex.seen || {}) }, caught = {};
+  for (const sp of reg) { caught[sp] = true; seen[sp] = true; }
   S.dex = { seen, caught };
-  return { seen: Object.keys(seen).length, caught: Object.keys(caught).length, min: L.min };
+  // 実際に 持つ アニモン
+  const mk = (sp) => {
+    const o = info.get(sp);
+    const lv0 = o?.lv || [5, 10], lv = Math.max(1, Math.min(99, lv0[0] + Math.floor(rnd() * (lv0[1] - lv0[0] + 1))));
+    const m = createMon(sp, lv, { ot: S.name, metAt: o?.where || '' });
+    m.caughtAt = Date.now() - Math.floor(rnd() * Math.max(1, S.playTime || 3600) * 1000);
+    m._gen = true;
+    return m;
+  };
+  const add = [];
+  for (const sp of reg) if (!L.owned.has(sp)) add.push(mk(sp));
+  const regList = [...reg];
+  while (L.ownCount + add.length < M) add.push(mk(pickW(regList, wOf, rnd)));
+  add.sort((a, b) => b.caughtAt - a.caughtAt);
+  S.box.push(...add);
+  return { N, M, added: add.length };
 }
+export function stripGen(S) { for (const m of S.box) delete m._gen; }
