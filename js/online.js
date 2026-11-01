@@ -249,6 +249,8 @@ export async function deleteAccount() {
 // ---------------- ランキング（図鑑登録数） ----------------
 //  rankings/{pid} に公開してよい成績だけを置く（セーブ本体は送らない）
 const IVK = ['hp', 'atk', 'def', 'spe'];
+// パーティーに 同じ アニモンは 1匹まで（前の 版で 進化して 重なった 記録も 見せる ときに 1匹に する）
+const uniqParty = (list) => { const seen = new Set(); return (list || []).filter(m => m && !seen.has(m.sp) && seen.add(m.sp)); };
 export function profileSummary() {
   const S = G.save;
   const all = [...(S.party || []), ...(S.box || [])];
@@ -264,7 +266,7 @@ export function profileSummary() {
     // ストーリーの 進み具合（第何章か。12 = クリア）
     ch: S.postGame ? 12 : (STEPS[Math.min(S.story?.step || 0, STEPS.length - 1)]?.ch || 1),
     hours: Math.floor((S.playTime || 0) / 3600),
-    party: (S.party || []).slice(0, 6).map(m => ({ sp: m.sp, lv: m.lv, shiny: !!m.shiny, nick: String(m.nick || '').slice(0, 12), iv: IVK.reduce((a, k) => a + (m.iv?.[k] || 0), 0) })),
+    party: uniqParty(S.party).slice(0, 6).map(m => ({ sp: m.sp, lv: m.lv, shiny: !!m.shiny, nick: String(m.nick || '').slice(0, 12), iv: IVK.reduce((a, k) => a + (m.iv?.[k] || 0), 0) })),
   };
 }
 let lastRank = 0, lastRankKey = '';
@@ -283,7 +285,7 @@ export async function fetchRanking(n = 50) {
   await publishRanking(true);
   const snap = await R.get(R.query(ref('rankings'), R.orderByChild('dex'), R.limitToLast(n)));
   const rows = [];
-  snap.forEach(c => { const v = c.val() || {}; rows.push({ pid: c.key, ...v, dex: +v.dex || 0, party: arr(v.party) }); });
+  snap.forEach(c => { const v = c.val() || {}; rows.push({ pid: c.key, ...v, dex: +v.dex || 0, party: uniqParty(arr(v.party)) }); });
   rows.sort((a, b) => (b.dex || 0) - (a.dex || 0));
   let prev = -1, rank = 0;
   rows.forEach((r, i) => { if (r.dex !== prev) { rank = i + 1; prev = r.dex; } r.rank = rank; });
@@ -297,7 +299,7 @@ export async function fetchRanking(n = 50) {
 export async function fetchProfile(pid) {
   await ensurePlayer();
   const v = await val('rankings', pid);
-  return v ? { pid, ...v, party: arr(v.party) } : null;
+  return v ? { pid, ...v, party: uniqParty(arr(v.party)) } : null;
 }
 
 // ---------------- フレンド ----------------

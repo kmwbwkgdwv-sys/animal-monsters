@@ -21,6 +21,7 @@ import { initCoop, updateCoop, startInviteWatch } from './game/coop.js';
 import * as SE from './game/storyEngine.js';
 import * as MENU from './ui/menus.js';
 import { SPECIES } from './data/species.js';
+import { BUILD } from './version.js';
 import * as BATTLE from './ui/battleUI.js';
 import { createMon, maxHp } from './game/mon.js';
 
@@ -91,7 +92,12 @@ async function boot() {
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) { hiddenAt = Date.now(); if (G.save && G.state === 'world') { save(); import('./online.js').then(m => m.pushSave(true)); } return; }
     if (Date.now() - hiddenAt > 3000) cloudResume();
+    checkUpdate();
   });
+  // 新しい 版が 公開されたら、遊んでいる 人の 画面も 更新する（3分ごと・アプリに 戻ってきたとき）
+  setInterval(checkUpdate, 180000);
+  setTimeout(checkUpdate, 20000);
+  G.onDupFixed = (mv) => toast(`パーティーに 同じ アニモンが いたので ${mv.map(x => x.nick || SPECIES[x.sp]?.name || '').join('・')} を ボックスに 送りました`, 4200);
   G.onSaved = () => { import('./online.js').then(m => { m.scheduleCloudSave(); m.publishRanking(); }); };
   import('./online.js').then(m => { m.Online.onConflict = () => cloudResume(); });
   // タイトルの3D（風景とアニモン）を読み込み画面のあいだに作る
@@ -103,6 +109,35 @@ async function boot() {
   startWatchdog();
   // ほかの端末のデータを読み込んで再起動したときは、そのまま続きから
   try { if (sessionStorage.getItem('animon_autocont')) { sessionStorage.removeItem('animon_autocont'); setTimeout(() => $('#title .cont')?.click(), 900); } } catch (e) { /* */ }
+}
+
+// ---------- 新しい 版の 確認 ----------
+//  version.json の 番号が この 画面の 番号（js/version.js）と ちがえば、セーブして 読みこみ なおす
+let updBusy = false;
+async function checkUpdate() {
+  if (updBusy || document.hidden) return;
+  updBusy = true;
+  try {
+    const r = await fetch('version.json?t=' + Date.now(), { cache: 'no-store' });
+    if (!r.ok) return;
+    const v = await r.json();
+    if (!v || !v.build || v.build === BUILD) return;
+    // 一度 読みこみ なおしても 古い まま（ブラウザの キャッシュ）なら くり返さない
+    let tried = ''; try { tried = sessionStorage.getItem('animon_upd') || ''; } catch (e) { /* */ }
+    if (tried === v.build) return;
+    const reload = async (cont) => {
+      try { sessionStorage.setItem('animon_upd', v.build); if (cont) sessionStorage.setItem('animon_autocont', '1'); } catch (e) { /* */ }
+      location.reload();
+    };
+    if (G.state === 'title' && !topScreen()) { toast('新しい バージョンに 更新します'); setTimeout(() => reload(false), 1200); return; }
+    if (G.state !== 'world' || G.busy || topScreen() || !G.save) return;   // バトル中・メニュー中は あとで
+    runFlow(async () => {
+      await say(['|📢 ゲームが 新しい バージョンに なりました。', '|データを 保存して 更新します。']);
+      save();
+      try { const ON = await import('./online.js'); if (ON.isConfigured() && G.save.pid) await Promise.race([ON.pushSave(true), new Promise(res => setTimeout(res, 5000))]); } catch (e) { /* */ }
+      await reload(true);
+    });
+  } catch (e) { /* オフラインなど */ } finally { updBusy = false; }
 }
 
 // ---------- クラウドセーブ（スマホ・パソコンで同じデータ） ----------
@@ -303,7 +338,7 @@ async function startGame(state, isNew) {
   // 旧データ互換
   state.cleared ||= {}; state.quests ||= {}; state.items ||= {};
   // パーティーに 同じ アニモンが 2匹 いる（前の 版で 進化して 重なった）ときは 片方を ボックスへ
-  { const { fixPartyDup } = await import('./game/state.js'); const mv = fixPartyDup(); if (mv.length) setTimeout(() => toast(`パーティーに 同じ アニモンが いたので ${mv.map(x => x.nick || SPECIES[x.sp]?.name || '').join('・')} を ボックスに 送りました`, 4200), 3000); }
+  { const { fixPartyDup } = await import('./game/state.js'); const mv = fixPartyDup(); if (mv.length) setTimeout(() => G.onDupFixed(mv), 3000); }
   // 「ふしぎなアメ」は 1種類に まとめた（昔の rarecandy → candy）
   if (state.bag && state.bag.rarecandy) { state.bag.candy = (state.bag.candy || 0) + state.bag.rarecandy; delete state.bag.rarecandy; }
   state.errands ||= {}; state.crowns ||= {};
