@@ -511,7 +511,12 @@ function chooseCommand(b, slot, pvp, already, setAuto) {
         const hint = p >= 0.6 ? 'なつきそう！' : p >= 0.3 ? 'まあまあ' : p >= 0.08 ? 'むずかしい' : 'ほぼ無理';
         const bt = el('button', 'cmd catch', `${f.icon || ''} ${esc(f.name)} ×${itemCount(f.id)}<small>${'★'.repeat(f.rank || 1)}　${hint}</small>`);
         bt.style.textAlign = 'left';
-        bt.onclick = () => { audio.sfx('select'); useItem(f.id); done({ type: 'catch', item: f.id }); };
+        bt.onclick = async () => {
+          audio.sfx('select');
+          // まぼろしのエサ（どんな 子でも 必ず なつく・とても 貴重）は 必ず 確認する
+          if (f.mult >= 999 && !(await confirmBox(`${f.name}を 使いますか？\n（どんな アニモンでも 必ず なつく 貴重な エサです。のこり ${itemCount(f.id)}個）`, '使う', 'やめる'))) { catchCmd(); return; }
+          useItem(f.id); done({ type: 'catch', item: f.id });
+        };
         box.appendChild(bt);
       }
       backBtn(() => { audio.sfx('cancel'); main(); });

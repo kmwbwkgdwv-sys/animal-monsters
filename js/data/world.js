@@ -105,7 +105,7 @@ export const ITEM_BALLS = [
   ['ib20', 'b_poison', polar(335, 620)], ['ib21', 'b_ghost', polar(325, 360)], ['ib22', 'h_spike', polar(340, 520)],
   ['ib23', 'b_flying', polar(15, 640)], ['ib24', 'b_fairy', polar(5, 330)], ['ib25', 'h_glass', polar(18, 540)],
   ['ib26', 'b_fire', polar(60, 650)], ['ib27', 'b_dragon', polar(45, 420)], ['ib28', 'h_orb', polar(62, 330)],
-  ['ib29', 'maxrevive', polar(90, 150)], ['ib30', 'ppspring', polar(200, 150)], ['ib31', 'candy', polar(300, 150)],
+  ['ib29', 'maxrevive', polar(90, 150)], ['ib30', 'ppspring', polar(200, 150)], ['ib31', 'maxrevive', polar(300, 150)],
   ['ib32', 'b_psychic', [-20, -20]], ['ib33', 'b_dark', [40, 10]], ['ib34', 'h_band', [-10, 50]],
   // 海の上（泳いで取りに行く）
   ['ib35', 'b_steel', polar(120, 745)], ['ib36', 'b_electric', polar(190, 750)], ['ib37', 'h_shoes', polar(320, 748)], ['ib38', 'h_charm', polar(30, 750)],

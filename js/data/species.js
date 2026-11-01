@@ -329,7 +329,7 @@ const LEGENDS = [
   { n: ['エンテイオウ'], t: [['fire', 'dragon']], a: ['custom'], stats: [106, 113, 101, 59], p: 'dragon', legend: true, scale: 2.4,
     f: { horn: 3, back: 'wings', tail: 'flame', extra: ['crown', 'armor', 'mane'] }, ab: 'haou', ride: ['fly'], sig: 'sig_haou', c: ['#c42a1a', '#ffc040'],
     d: ['大地の炎をつかさどる伝説の覇王。その炎は大陸を生んだといわれる。耐久力と攻撃力はあらゆるアニモンを上回るが、動きは重い。'] },
-  { n: ['ナルメクシア'], t: [['water', 'flying']], a: ['custom'], stats: [83, 108, 74, 103], p: 'leviathan', legend: true, scale: 2.4,
+  { n: ['ナルメクシア'], t: [['water', 'flying']], a: ['custom'], stats: [83, 108, 74, 108], p: 'leviathan', legend: true, scale: 2.4,
     f: { back: 'wings', tail: 'fin', horn: 2, extra: ['crown', 'whiskers'] }, ab: 'soten', ride: ['fly'], sig: 'sig_tenkai', c: ['#2a70e0', '#e8f8ff'],
     d: ['天と海をつかさどる伝説の女王。嵐の中を誰よりも速く飛ぶ。攻撃と素早さに優れるが、耐久力はやや低い。'] },
 ];

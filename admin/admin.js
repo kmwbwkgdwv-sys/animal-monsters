@@ -269,7 +269,7 @@ async function findAccount(raw) {
   if (al.length === 12) { const code = al.slice(0, 4) + '-' + al.slice(4, 8) + '-' + al.slice(8); const s = await D.get(D.ref(db, 'transfers/' + code)); return s.exists() ? s.val().pid : null; }
   throw new Error('コードの 形が ちがいます（引き継ぎコードは 12文字、フレンドコードは 数字8けた）');
 }
-const ITEM_JA = { crown_g: '金の王冠', crown_s: '銀の王冠', rarecandy: 'ふしぎなアメ' };
+const ITEM_JA = { crown_g: '金の王冠', crown_s: '銀の王冠', candy: 'ふしぎなアメ', rarecandy: 'ふしぎなアメ', scroll: 'おもいだしの巻物' };
 const itemText = (it) => Object.entries(it || {}).filter(([, n]) => +n).map(([id, n]) => `${ITEM_JA[id] || id}×${n} `).join('');
 const gmode = () => (document.querySelector('input[name="gmode"]:checked') || {}).value || 'one';
 function ensureGiftList() {

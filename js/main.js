@@ -302,6 +302,8 @@ async function startGame(state, isNew) {
   G.save = state;
   // 旧データ互換
   state.cleared ||= {}; state.quests ||= {}; state.items ||= {};
+  // 「ふしぎなアメ」は 1種類に まとめた（昔の rarecandy → candy）
+  if (state.bag && state.bag.rarecandy) { state.bag.candy = (state.bag.candy || 0) + state.bag.rarecandy; delete state.bag.rarecandy; }
   state.errands ||= {}; state.crowns ||= {};
   for (const m of [...(state.party || []), ...(state.box || [])]) {
     if (!m.iv) continue;

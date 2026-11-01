@@ -532,7 +532,7 @@ function updateCandy(dt) {
 function removeCandy() { if (CANDY.node) { CANDY.node.parent?.remove(CANDY.node); CANDY.node = null; } if (CANDY.beam) { CANDY.beam.parent?.remove(CANDY.beam); CANDY.beam = null; } }
 function pickCandy() {
   removeCandy();
-  addItem('rarecandy', 1); audio.sfx('item');
+  addItem('candy', 1); audio.sfx('item');
   toast('✨ 光っていた ふしぎなアメ を 拾った！（バッグの「どうぐ」から アニモンに 使える）', 3600);
   save();
 }
@@ -922,7 +922,8 @@ export function interact() {
     else if (t.kind === 'chest') {
       if (OW.dungeon.opened.has(t.i)) { await say(['|からっぽだ。']); return; }
       OW.dungeon.opened.add(t.i); audio.sfx('item');
-      const pool = ['superherb', 'revive', 'ppdrop', 'fullmed', 'food3', 'food4', 'h_berry', 'h_clear', 'candy', 'h_bread', 'h_claw', 'h_belt', 'h_spike', 'h_glass'];
+      // ふしぎなアメは 大陸に 光って 落ちている もの だけ（宝箱からは 出ない）
+      const pool = ['superherb', 'revive', 'ppdrop', 'fullmed', 'food3', 'food4', 'h_berry', 'h_clear', 'ppspring', 'h_bread', 'h_claw', 'h_belt', 'h_spike', 'h_glass'];
       const it = pool[(t.i * 5 + OW.dungeon.id.length * 3 + Math.floor(Math.random() * 3)) % pool.length];
       addItem(it, 1); t.node.setColor([0.55, 0.5, 0.48]);
       await say([`|宝箱を 開けた！ ${itemName(it)} を 手に入れた！`]); save();
@@ -1034,7 +1035,7 @@ async function dungeonEnter(id) {
 }
 // 周回の ごほうび（周回するほど 良い 道具が 出やすい）
 function runReward(runs) {
-  const tiers = [['superherb', 'revive', 'ppdrop', 'food3'], ['fullmed', 'food4', 'candy', 'h_berry', 'h_clear'], ['candy', 'candy', 'h_claw', 'h_belt', 'h_glass', 'h_spike', 'h_bread'], ['scroll', 'candy', 'h_orb', 'h_band', 'h_shoes', 'h_vest', 'h_charm']];
+  const tiers = [['superherb', 'revive', 'ppdrop', 'food3'], ['fullmed', 'food4', 'ppspring', 'h_berry', 'h_clear'], ['maxrevive', 'ppspring', 'h_claw', 'h_belt', 'h_glass', 'h_spike', 'h_bread'], ['scroll', 'maxrevive', 'h_orb', 'h_band', 'h_shoes', 'h_vest', 'h_charm']];
   const t = Math.min(tiers.length - 1, Math.floor(Math.random() * Math.min(tiers.length, 1 + Math.floor(runs / 2))));
   const pool = tiers[t];
   return pool[Math.floor(Math.random() * pool.length)];

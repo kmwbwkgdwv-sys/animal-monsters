@@ -789,16 +789,32 @@ async function useCandy(it) {
   while (itemCount(it.id) > 0) {
     const m = await pickFromAll(`${it.name}を だれに 使う？（のこり ${itemCount(it.id)}個）`, (x) => x.lv < MAX_LV);
     if (!m) return;
-    useItem(it.id);
-    const r = addExp(m, expForLevel(m.lv + 1) - m.exp);
+    // 何個 使うか（1・3・5・10・Lv99まで）
+    const have = itemCount(it.id), room = MAX_LV - m.lv;
+    const opts = [...new Set([1, 3, 5, 10, Math.min(have, room)])].filter(n => n >= 1 && n <= have && n <= room).sort((a, b) => a - b);
+    const k = opts.length === 1 ? 0 : await ask(`${monName(m)}（Lv${m.lv}）に ${it.name}を いくつ 使う？（のこり ${have}個）`, [...opts.map(n => `${n}個（Lv${m.lv + n}まで）${n === room ? '・最大' : n === have ? '・ぜんぶ' : ''}`), 'やめる']);
+    if (k >= opts.length) continue;
+    const n = opts[k], lv0 = m.lv;
+    const learned = [], pending = [];
+    let evolve = false, stopped = false;
+    for (let i = 0; i < n && m.lv < MAX_LV; i++) {
+      if (!useItem(it.id)) break;
+      const r = addExp(m, expForLevel(m.lv + 1) - m.exp);
+      learned.push(...r.learned); pending.push(...r.pending);
+      if (r.evolve) evolve = true; if (r.evoStopped) stopped = true;
+    }
     audio.sfx('lvup');
-    await say([`|${monName(m)} は レベル ${m.lv} に 上がった！`]);
-    for (const id of r.learned) await say([`|${monName(m)} は ${MOVES[id].name} を 覚えた！`]);
-    for (const id of r.pending) await learnMove(m, id);
     save();
-    await evoStopMsg({ ...r, m });
-    if (r.evolve) { await evolveScene(m); save(); }
-    if (!itemCount(it.id) || !(await confirmBox(`${it.name}を もう1つ 使いますか？（のこり ${itemCount(it.id)}個）`))) return;
+    await say([`|${monName(m)} は レベル ${m.lv} に 上がった！${m.lv - lv0 > 1 ? `（Lv${lv0} → Lv${m.lv}・${it.name} ${m.lv - lv0}個）` : ''}`]);
+    for (const id of learned) await say([`|${monName(m)} は ${MOVES[id].name} を 覚えた！`]);
+    for (const id of pending) { await learnMove(m, id); save(); }
+    if (stopped) await evoStopMsg({ evoStopped: true, m });
+    // 進化（まとめて 上げて 2段階 進化できる ときも 順に）
+    for (let t = 0; t < 2 && evolve && !noEvoHeld(m); t++) {
+      const sp = SPECIES[m.sp]; if (!sp.evoTo || m.lv < sp.evoLv) break;
+      await evolveScene(m); save();
+    }
+    if (!itemCount(it.id) || !(await confirmBox(`${it.name}を ほかの 子にも 使いますか？（のこり ${itemCount(it.id)}個）`))) return;
   }
 }
 // 王冠：銀＝個体値を 1つ 最大に／金＝4つとも 最大に（ボックスの子にも 使える）
