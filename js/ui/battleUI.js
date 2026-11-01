@@ -643,7 +643,7 @@ export function moveCardHtml(mv, pp = null, extra = '') {
 function chooseForget(m, mv) {
   return new Promise(res => {
     const ov = el('div', 'learnov');
-    ov.innerHTML = `<div class="lbox"><div class="lttl">${esc(monName(m))} は 新しい技を 覚えたい！ <span class="muted">（技は 4つまで）</span></div>
+    ov.innerHTML = `<div class="lbox"><div class="lttl lhead"><span class="grow">${esc(monName(m))} は 新しい技を 覚えたい！ <span class="muted">（技は 4つまで）</span></span><button class="btn sm skip2">${esc(mv.name)} を 覚えない</button></div>
       <div class="lmcard new">${moveCardHtml(mv, null, '<span class="mvtag newtag">NEW</span>')}</div>
       <div class="lq">代わりに どの技を 忘れさせる？</div>
       <div class="lmlist"></div>
@@ -656,7 +656,8 @@ function chooseForget(m, mv) {
       b.onclick = (e) => { e.stopPropagation(); audio.sfx('select'); ov.remove(); res(i); };
       c.appendChild(b); list.appendChild(c);
     });
-    ov.querySelector('.skip').onclick = (e) => { e.stopPropagation(); audio.sfx('cancel'); ov.remove(); res(-1); };
+    const skip = (e) => { if (e) e.stopPropagation(); audio.sfx('cancel'); ov.remove(); res(-1); };
+    ov.querySelector('.skip').onclick = skip; ov.querySelector('.skip2').onclick = skip;
     // #screens が 隠れている（進化・バトルの あと）ときも 見えるように #ui に 直接 置く
     $('#ui').appendChild(ov);
   });

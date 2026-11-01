@@ -469,7 +469,7 @@ async function scrollLearn(m) {
   // 技の くわしい 説明（タイプ・威力・命中・PP・説明・効果）を カードで 全部 見せて 選ぶ
   const id = await new Promise(res => {
     const ov = el('div', 'learnov scrollov');
-    ov.innerHTML = `<div class="lbox"><div class="lttl">📜 おもいだしの巻物：${esc(monName(m))} に どの技を 覚えさせる？</div>
+    ov.innerHTML = `<div class="lbox"><div class="lttl lhead"><span class="grow">📜 おもいだしの巻物：${esc(monName(m))} に どの技を 覚えさせる？</span><button class="btn sm red cancel2">✕ もどる</button></div>
       <div class="lq">覚えられる 技（${cand.length}）</div><div class="lmlist cand"></div>
       <div class="lq" style="color:#cfe0ff">いま 覚えている 技</div><div class="lmlist now"></div>
       <div class="row lbtns"><button class="btn cancel">やめる</button></div></div>`;
@@ -482,7 +482,10 @@ async function scrollLearn(m) {
       c.appendChild(b); lc.appendChild(c);
     }
     for (const x of m.moves) ln.appendChild(el('div', 'lmcard cur', moveCardHtml(MOVES[x.id], x.pp)));
-    ov.querySelector('.cancel').onclick = (e) => { e.stopPropagation(); audio.sfx('cancel'); ov.remove(); res(null); };
+    const cancel = (e) => { if (e) e.stopPropagation(); audio.sfx('cancel'); ov.remove(); window.removeEventListener('keydown', onKey, true); res(null); };
+    const onKey = (e) => { if (e.key === 'Escape' || e.key === 'Backspace') { e.preventDefault(); cancel(); } };
+    ov.querySelector('.cancel').onclick = cancel; ov.querySelector('.cancel2').onclick = cancel;
+    window.addEventListener('keydown', onKey, true);
     $('#ui').appendChild(ov);
   });
   if (!id) return;

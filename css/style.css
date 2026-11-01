@@ -845,3 +845,7 @@ b, strong { font-weight: 800; }
 .bcell.picked2 { border-color: var(--acc) !important; box-shadow: 0 0 0 2px rgba(255, 210, 63, .5), 0 3px 0 rgba(0, 0, 0, .28); }
 @media (max-height: 520px) { .psbtns { flex-direction: row; flex-wrap: wrap; justify-content: flex-end; max-width: 13em; } .psm img { width: 2.2em; height: 2.2em; } }
 .pthint .hosp { color: #ffd98a; }
+/* 技の 画面（巻物・技を 忘れる）：上の 見出しと もどるボタンは いつも 見える。中は 指で スクロール */
+.learnov .lbox { -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
+.learnov .lhead { position: sticky; top: -.7em; z-index: 3; display: flex; align-items: center; gap: .6em; margin: -.7em -.9em .4em; padding: .6em .9em .5em; background: linear-gradient(var(--bg2), rgba(30, 44, 100, .96)); border-bottom: 1px solid rgba(255, 255, 255, .2); border-radius: 15px 15px 0 0; }
+.learnov .lhead .btn { flex: 0 0 auto; }

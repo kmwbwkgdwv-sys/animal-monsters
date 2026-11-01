@@ -135,7 +135,7 @@ export function initInput() {
 // 連打（ダブルタップ）やピンチでブラウザごと拡大されないようにする
 function guardZoom() {
   const isField = (t) => t && t.closest && t.closest('input, textarea, select');
-  const isScroll = (t) => t && t.closest && t.closest('.screen, .body, .dexreg, .scrolly, .cmds, .tgt, #dialog .choices');
+  const isScroll = (t) => t && t.closest && t.closest('.screen, .body, .dexreg, .scrolly, .cmds, .tgt, #dialog .choices, .learnov .lbox');
   const zoomed = () => window.visualViewport && window.visualViewport.scale > 1.01;
   let lastEnd = 0, lastX = 0, lastY = 0;
   document.addEventListener('touchend', (e) => {
