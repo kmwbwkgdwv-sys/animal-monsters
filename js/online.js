@@ -42,7 +42,7 @@ export async function initOnline() {
     const base = `https://www.gstatic.com/firebasejs/${FIREBASE_SDK_VERSION}`;
     const [mApp, mAuth, mDb] = await Promise.all([import(`${base}/firebase-app.js`), import(`${base}/firebase-auth.js`), import(`${base}/firebase-database.js`)]);
     A = mAuth; R = mDb;
-    app = mApp.getApps().length ? mApp.getApp() : mApp.initializeApp(firebaseConfig);
+    app = mApp.getApps().find(a => a.name === '[DEFAULT]') || mApp.initializeApp(firebaseConfig);
     auth = A.getAuth(app);
     db = R.getDatabase(app, firebaseConfig.databaseURL);
     if (!auth.currentUser) await A.signInAnonymously(auth);

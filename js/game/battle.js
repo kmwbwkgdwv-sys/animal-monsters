@@ -510,6 +510,7 @@ export class Battle {
   // ---------- 経験値 ----------
   //  ・たおした相手：全部　・なつかせた（つかまえた）相手：4分の1
   //  ・バトルの 途中では もらえない。バトルが 終わってから まとめて 手持ち全員に 入る（applyExp）
+  //  ・負けたときは、それまでに たおした ぶんの 5分の1 だけ（applyExp(0.2)）
   expFor(foe) {
     const mult = (this.kind === 'trainer' ? 1.5 : 1) * (this.cfg.postGame ? 2 : 1);
     return Math.max(1, Math.floor(foe.sp.baseExp * foe.lv / 7 * mult));
@@ -520,11 +521,11 @@ export class Battle {
     const full = this.expFor(foe);
     this.expQ.push({ b: foe, sp: foe.m.sp, lv: foe.lv, frac, amount: Math.max(1, Math.floor(full * frac)) });
   }
-  expTotal() { return this.expQ.reduce((a, q) => a + q.amount, 0); }
+  expTotal(mult = 1) { const t = this.expQ.reduce((a, q) => a + q.amount, 0); return t > 0 ? Math.max(1, Math.floor(t * mult)) : 0; }
   // バトルの あとで 呼ぶ：手持ち全員に 経験値を 入れる。返り値：[{ m, amount, lvups, learned, pending, evolve }]
-  applyExp() {
+  applyExp(mult = 1) {
     const ps = this.sides.find(s => s.ai === 'player');
-    const total = this.expTotal();
+    const total = this.expTotal(mult);
     if (!ps || !total || this.expApplied) return [];
     this.expApplied = true;
     const out = [];

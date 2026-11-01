@@ -164,8 +164,10 @@ async function afterBattle(cfg, result, caught) {
     if (cfg.reward) addMoney(cfg.reward);
     if (cfg.defeatId) G.save.defeated[cfg.defeatId] = true;
   }
-  const expTotal = B ? B.expTotal() : 0, caughtOnly = B && B.expQ.length && B.expQ.every(q => q.frac < 1);
-  const expRes = B ? B.applyExp() : [];
+  // 経験値：勝ち・逃げ＝たおした ぶん全部（なつかせた子は 4分の1）、負け＝5分の1
+  const expMul = result === 'lose' ? 0.2 : 1;
+  const expTotal = B ? B.expTotal(expMul) : 0, caughtOnly = B && B.expQ.length && B.expQ.every(q => q.frac < 1);
+  const expRes = B ? B.applyExp(expMul) : [];
   const evos = [...new Set(expRes.filter(r => r.evolve).map(r => r.m.uid))];
   const pendingMoves = expRes.flatMap(r => r.pending.map(id => ({ uid: r.m.uid, move: id })));
   if (result === 'lose' && cfg.allowLose) healParty();
@@ -174,8 +176,12 @@ async function afterBattle(cfg, result, caught) {
   try {
     audio.playBgm(OW.dungeon ? 'dungeon' : (OW.inTown ? 'town' : 'field'));
     if (result === 'lose' && !cfg.allowLose) {
-      if (expTotal) await say([`|手持ちの アニモン全員が ${expTotal} の 経験値を もらった。`]);
+      if (expTotal) await say([`|手持ちの アニモン全員が ${expTotal} の 経験値を もらった。（負けたので 5分の1）`]);
+      for (const r of expRes) if (r.lvups.length) await say([`|${monName(r.m)} は レベル ${r.m.lv} に 上がった！`]);
       await blackout();
+      // 負けても 上がった レベルの 技・進化は 病院で 回復したあとに
+      for (const pm of pendingMoves) { const m = findMon(pm.uid); if (m) { await learnMove(m, pm.move); save(); } }
+      for (const uid of evos) { const m = findMon(uid); if (m && SPECIES[m.sp].evoTo && m.lv >= SPECIES[m.sp].evoLv) { await evolveScene(m); save(); } }
       return 'lose';
     }
     // おつかい：野生のアニモンを たおした／つかまえた
@@ -188,8 +194,8 @@ async function afterBattle(cfg, result, caught) {
     }
     if (result === 'run' && cfg.kind === 'trainer') await say([`|${cfg.trainerName} との 勝負から 逃げだした……（勝ったことには ならない）`]);
     // 経験値（バトルが 終わってから まとめて）
-    if (expTotal && result !== 'lose') {
-      await say([`|手持ちの アニモン全員が ${expTotal} の 経験値を もらった！${caughtOnly ? '（なつかせた ときは 4分の1）' : ''}`]);
+    if (expTotal) {
+      await say([`|手持ちの アニモン全員が ${expTotal} の 経験値を もらった！${result === 'lose' ? '（負けたので 5分の1）' : caughtOnly ? '（なつかせた ときは 4分の1）' : ''}`]);
     }
     for (const r of expRes) {
       if (r.lvups.length) { audio.sfx('lvup'); await say([`|${monName(r.m)} は レベル ${r.m.lv} に 上がった！`]); }

@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>アニモン お知らせ管理</title>
+<link rel="icon" type="image/png" href="../icons/favicon-48.png">
+<style>
+:root { --bg1: #121b44; --bg2: #263b82; --line: #7f98ff; --txt: #f6f8ff; --sub: #b9c5ec; --acc: #ffd23f; --ng: #ff5a72; --ok: #33dd8a; }
+* { box-sizing: border-box; }
+html { background: var(--bg1); }
+body { margin: 0; min-height: 100vh; font-family: 'Hiragino Maru Gothic ProN', 'Hiragino Sans', 'Noto Sans JP', 'Meiryo', sans-serif; color: var(--txt); background: linear-gradient(160deg, var(--bg2), var(--bg1)); line-height: 1.6; }
+header { display: flex; flex-wrap: wrap; align-items: center; gap: .3em .8em; padding: .7em 1em; background: rgba(14, 20, 56, .96); border-bottom: 2px solid rgba(255, 255, 255, .15); position: sticky; top: 0; z-index: 5; }
+header h1 { font-size: 1.1em; margin: 0; flex: 1; white-space: nowrap; }
+header .who { font-size: .8em; color: var(--sub); }
+@media (max-width: 600px) { header .who { order: 3; flex-basis: 100%; } }
+main { max-width: 880px; margin: 0 auto; padding: 1em; }
+.card { background: rgba(255, 255, 255, .07); border: 2px solid rgba(160, 185, 255, .4); border-radius: 14px; padding: 1em 1.1em; margin-bottom: 1em; }
+.card h2 { font-size: 1.05em; margin: 0 0 .6em; }
+label { display: block; font-weight: 700; margin: .6em 0 .25em; font-size: .9em; }
+label small { font-weight: 400; color: var(--sub); margin-left: .5em; }
+input[type=text], input[type=email], input[type=password], textarea { width: 100%; font-size: 16px; padding: .55em .7em; border-radius: 10px; border: 2px solid rgba(160, 185, 255, .5); background: rgba(5, 10, 40, .55); color: var(--txt); font-family: inherit; }
+textarea { min-height: 9em; resize: vertical; line-height: 1.6; }
+input:focus, textarea:focus { outline: none; border-color: var(--acc); }
+.row { display: flex; gap: .6em; align-items: center; flex-wrap: wrap; }
+.grow { flex: 1; }
+button { font: inherit; font-weight: 800; cursor: pointer; border-radius: 12px; border: 2px solid #fff; padding: .55em 1.1em; background: rgba(255, 255, 255, .14); color: #fff; }
+button.pri { background: linear-gradient(#fff09a, #ffd23f 50%, #ffaa1f); color: #4a2400; }
+button.red { background: linear-gradient(#ff8a9a, #ff4766); }
+button.sm { padding: .3em .75em; font-size: .85em; border-radius: 10px; }
+button:disabled { opacity: .45; cursor: default; }
+.muted { color: var(--sub); font-size: .88em; }
+.ng { color: var(--ng); font-weight: 700; }
+.okc { color: var(--ok); font-weight: 700; }
+.cnt { font-size: .78em; color: var(--sub); text-align: right; }
+.uid { font-family: ui-monospace, Menlo, Consolas, monospace; background: rgba(0, 0, 0, .35); padding: .2em .5em; border-radius: 6px; user-select: all; word-break: break-all; }
+ol { padding-left: 1.3em; margin: .4em 0; }
+ol li { margin: .25em 0; }
+/* ゲームと 同じ 見た目の プレビュー */
+.newsitem { background: linear-gradient(160deg, rgba(255, 255, 255, .12), rgba(255, 255, 255, .04)); border: 2px solid rgba(160, 185, 255, .45); border-radius: 14px; padding: .6em .85em; }
+.newsitem.new { border-color: var(--acc); }
+.newsitem .nh { display: flex; align-items: baseline; gap: .5em; flex-wrap: wrap; }
+.newsitem .nh b { font-size: 1.08em; }
+.newsitem .nd { margin-left: auto; font-size: .8em; color: var(--sub); }
+.newsitem .nb { margin-top: .35em; line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
+.newtag { display: inline-block; font-size: .7em; font-weight: 900; padding: .05em .5em; border-radius: 99px; background: #ff4d68; color: #fff; }
+.item { margin-bottom: .7em; }
+.item.hid .newsitem { opacity: .5; border-style: dashed; }
+.item .ops { display: flex; gap: .4em; flex-wrap: wrap; margin-top: .4em; align-items: center; }
+.state { font-size: .78em; font-weight: 800; padding: .1em .55em; border-radius: 99px; }
+.state.on { background: rgba(51, 221, 138, .25); color: var(--ok); }
+.state.off { background: rgba(255, 255, 255, .12); color: var(--sub); }
+.key { font-size: .72em; color: var(--sub); font-family: ui-monospace, Menlo, Consolas, monospace; }
+#toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); display: flex; flex-direction: column; gap: .4em; z-index: 10; }
+#toast div { background: rgba(10, 16, 46, .95); border: 2px solid var(--acc); border-radius: 14px; padding: .45em 1.2em; font-weight: 700; width: max-content; max-width: 92vw; text-align: center; }
+.editing { border-color: var(--acc); }
+.hidden { display: none !important; }
+</style></head>
+<body>
+<header><h1>📢 アニモン お知らせ管理</h1><span class="who"></span><button class="sm logout hidden">ログアウト</button></header>
+<main>
+  <div class="card loading"><p class="muted">読み込み中……</p></div>
+
+  <!-- ログイン -->
+  <div class="card login hidden">
+    <h2>🔑 管理者ログイン</h2>
+    <p class="muted">Firebase の「Authentication」に登録した 管理者の メールアドレスと パスワードで ログインします。</p>
+    <label>メールアドレス</label><input type="email" class="email" autocomplete="username">
+    <label>パスワード</label><input type="password" class="pass" autocomplete="current-password">
+    <div class="row" style="margin-top:.8em"><button class="pri dologin">ログイン</button><span class="lmsg ng"></span></div>
+  </div>
+
+  <!-- 管理者の 登録が まだ -->
+  <div class="card notadmin hidden">
+    <h2>⚠ この アカウントは まだ 管理者に 登録されていません</h2>
+    <p>あなたの UID：<span class="uid myuid"></span> <button class="sm copyuid">コピー</button></p>
+    <ol>
+      <li>Firebase コンソール →「Realtime Database」→「データ」タブを 開く</li>
+      <li>いちばん上（ルート）の「＋」で、名前 <b>admins</b> を 作る</li>
+      <li>admins の「＋」で、名前に 上の <b>UID</b>、値に <b>true</b> を 入れて 追加</li>
+      <li>このページを 再読み込み</li>
+    </ol>
+    <p class="muted">※ データベースの ルール（database.rules.json）も 新しいものを 公開しておいてください。</p>
+  </div>
+
+  <!-- 送信フォーム -->
+  <div class="card compose hidden">
+    <h2 class="ctitle">✏️ 新しい お知らせを 送る</h2>
+    <label>タイトル <small>60文字まで</small></label><input type="text" class="title" maxlength="60" placeholder="例：ver1.4 を 公開しました">
+    <label>本文 <small>3000文字まで・改行も そのまま 表示されます</small></label><textarea class="body" maxlength="3000" placeholder="例：むしよけスプレーが ショップに 並びました！"></textarea>
+    <div class="cnt"><span class="bcount">0</span> / 3000</div>
+    <label>表示する 日付 <small>空欄なら 日付なし</small></label><input type="text" class="date" placeholder="2026/11/01" style="max-width:12em">
+    <label>プレビュー <small>ゲームの 中では このように 見えます</small></label>
+    <div class="newsitem new preview"><div class="nh"><span class="newtag">NEW</span><b class="pt">タイトル</b><span class="nd pd"></span></div><div class="nb pb"></div></div>
+    <div class="row" style="margin-top:.9em"><button class="pri send">📢 送信する</button><button class="cancel hidden">編集を やめる</button><span class="smsg"></span></div>
+    <p class="muted send-note">送信すると、次に アプリを 開いた人に 1回だけ 表示されます（その後は 📢 お知らせ ボタンで いつでも 見られます）。</p>
+  </div>
+
+  <!-- 一覧 -->
+  <div class="card listcard hidden">
+    <div class="row"><h2 class="grow" style="margin:0">📋 これまでの お知らせ <span class="muted lcount"></span></h2><button class="sm reload">🔄 更新</button></div>
+    <p class="muted">「非表示」に すると ゲームの 一覧からも 消えます（データは 残ります）。「もう一度 全員に 表示」は 新しい お知らせとして 送りなおすので、見た人にも もう一度 表示されます。</p>
+    <div class="list"></div>
+  </div>
+
+  <!-- テスト用アカウント -->
+  <div class="card makeacct hidden">
+    <h2>🔧 ストーリーの 途中から 始まる アカウントを 作る（テスト用）</h2>
+    <p class="muted">ストーリーを 何章まで クリアした ところから 始めるか 選んで アカウントを 作り、<b>引き継ぎコード</b>を 出します。スマホからでも 使えます。</p>
+    <label>なまえ <small>8文字まで</small></label><input type="text" class="mkname" maxlength="8" value="nekojita" style="max-width:14em">
+    <label>どこまで クリア？ <small>1〜11</small></label>
+    <select class="mkch" style="font-size:16px;padding:.45em;border-radius:10px;background:rgba(5,10,40,.55);color:#fff;border:2px solid rgba(160,185,255,.5);max-width:100%"><option value="1">第1章「はじまりの朝」まで クリア</option><option value="2">第2章「そよかぜの道」まで クリア</option><option value="3">第3章「森のささやき」まで クリア</option><option value="4" selected>第4章「みなとの風」まで クリア</option><option value="5">第5章「砂に眠る記憶」まで クリア</option><option value="6">第6章「岩の試練」まで クリア</option><option value="7">第7章「凍てつく約束」まで クリア</option><option value="8">第8章「霧の向こう」まで クリア</option><option value="9">第9章「天空へ」まで クリア</option><option value="10">第10章「紅蓮の山」まで クリア</option><option value="11">第11章「さいはての聖域」まで クリア</option></select>
+    <p class="mkinfo muted" style="margin:.4em 0 0"></p>
+    <label>最初の 相棒</label>
+    <select class="mkst" style="font-size:16px;padding:.45em;border-radius:10px;background:rgba(5,10,40,.55);color:#fff;border:2px solid rgba(160,185,255,.5);max-width:100%"><option value="0">炎の セリック</option><option value="1">水の シドー</option><option value="2">草の モーラ</option></select>
+    <div class="mklgrow hidden"><label>選んだ 伝説 <small>第11章クリア のときだけ</small></label>
+    <select class="mklg" style="font-size:16px;padding:.45em;border-radius:10px;background:rgba(5,10,40,.55);color:#fff;border:2px solid rgba(160,185,255,.5);max-width:100%"><option value="199">エンテイオウ（炎・ドラゴン）</option><option value="200">ナルメクシア（水・ひこう）</option></select></div>
+    <div class="row" style="margin-top:.9em"><button class="pri domake">アカウントを 作って 引き継ぎコードを 出す</button></div>
+    <div class="mkout" style="margin-top:.6em"></div>
+  </div>
+</main>
+<div id="toast"></div>
+<script type="module" src="admin.js"></script>
+</body></html>

@@ -18,7 +18,7 @@ pre { white-space: pre-wrap; background: rgba(0,0,0,.3); padding: .6em; border-r
 <h1>🔧 開発用：ストーリーの途中から始まるアカウントを作る</h1>
 <p class="muted">Firebase に新しいアカウントを作り、<b>引き継ぎコード（データ連携コード）</b>を表示します。<br>スマホのタイトル画面 →「🔑 引き継ぎコードの発行・アカウント引き継ぎ」→「コードを入力して連携する」に入力すると、そのデータで遊べます。</p>
 <label>なまえ</label><input id="nm" value="nekojita" maxlength="8">
-<label>はじまる場所</label><select id="ch"><option value="5">第5章「砂に眠る記憶」が始まったところ（紋章2個・オアシスタウンへ向かう）</option></select>
+<label>どこまで クリア？（1〜11）</label><select id="ch"><option value="1">第1章「はじまりの朝」まで クリア</option><option value="2">第2章「そよかぜの道」まで クリア</option><option value="3">第3章「森のささやき」まで クリア</option><option value="4" selected>第4章「みなとの風」まで クリア</option><option value="5">第5章「砂に眠る記憶」まで クリア</option><option value="6">第6章「岩の試練」まで クリア</option><option value="7">第7章「凍てつく約束」まで クリア</option><option value="8">第8章「霧の向こう」まで クリア</option><option value="9">第9章「天空へ」まで クリア</option><option value="10">第10章「紅蓮の山」まで クリア</option><option value="11">第11章「さいはての聖域」まで クリア</option></select>
 <label>最初の相棒</label><select id="st"><option value="0">炎のセリック（→セリオン）</option><option value="1">水のシドー（→シドール）</option><option value="2">草のモーラ（→モーラン）</option></select>
 <button id="go">アカウントを作って 引き継ぎコードを出す</button>
 <div id="out"></div>
@@ -41,12 +41,12 @@ $('#go').onclick = async () => {
   try {
     if (!ON.isConfigured()) throw new Error('js/firebase-config.js の設定が ありません');
     G.settings = loadSettings();
-    G.save = buildStorySave(name, +$('#ch').value, { starter: +$('#st').value });
+    G.save = buildStorySave(name, +$('#ch').value, { starter: +$('#st').value, legend: 199 });
     const code = await ON.issueTransferCode();     // プレイヤー登録 → クラウドに保存 → 連携コード
     await ON.publishRanking(true);
     const S = G.save;
     out.innerHTML = `<p>✅ アカウント「${esc(S.name)}」を作りました。</p><p>引き継ぎコード：</p><div class="code">${esc(code)}</div>
-      <p class="muted">第${$('#ch').value}章のはじめ／パーティー ${S.party.length}匹・ボックス ${S.box.length}匹・所持金 ¥${S.money.toLocaleString()}<br>pid：${esc(S.pid)}　フレンドコード：${esc(S.friendCode || '')}</p>
+      <p class="muted">第${$('#ch').value}章まで クリア／パーティー ${S.party.length}匹・ボックス ${S.box.length}匹・所持金 ¥${S.money.toLocaleString()}<br>pid：${esc(S.pid)}　フレンドコード：${esc(S.friendCode || '')}</p>
       <p class="muted">このコードを知っている人は このデータで遊べます。他の人には教えないでください。</p>`;
   } catch (e) {
     console.error(e);
