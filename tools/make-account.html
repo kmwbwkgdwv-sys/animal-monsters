@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>開発用：ストーリー途中のアカウントを作る</title>
+<style>
+body { font-family: 'Hiragino Sans', 'Noto Sans JP', sans-serif; background: #14213d; color: #f6f8ff; margin: 0; padding: 24px; line-height: 1.7; }
+.box { max-width: 640px; margin: 0 auto; background: #263b82; border: 2px solid #7f98ff; border-radius: 16px; padding: 18px 22px; }
+h1 { font-size: 1.25em; margin: 0 0 .4em; }
+label { display: block; margin: .6em 0 .2em; font-weight: 700; }
+input, select { font-size: 16px; padding: .35em .6em; border-radius: 8px; border: 1px solid #aab; width: 100%; box-sizing: border-box; }
+button { margin-top: 1em; font-size: 1.05em; font-weight: 800; padding: .6em 1.2em; border-radius: 12px; border: 2px solid #fff; background: #ffd23f; color: #4a2400; cursor: pointer; }
+button:disabled { opacity: .5; }
+.code { font-size: 2em; font-weight: 900; letter-spacing: .12em; color: #ffd23f; user-select: all; margin: .3em 0; }
+.muted { color: #b9c5ec; font-size: .9em; }
+.ng { color: #ff7a8a; font-weight: 700; }
+pre { white-space: pre-wrap; background: rgba(0,0,0,.3); padding: .6em; border-radius: 8px; font-size: .85em; }
+</style></head>
+<body><div class="box">
+<h1>🔧 開発用：ストーリーの途中から始まるアカウントを作る</h1>
+<p class="muted">Firebase に新しいアカウントを作り、<b>引き継ぎコード（データ連携コード）</b>を表示します。<br>スマホのタイトル画面 →「🔑 引き継ぎコードの発行・アカウント引き継ぎ」→「コードを入力して連携する」に入力すると、そのデータで遊べます。</p>
+<label>なまえ</label><input id="nm" value="nekojita" maxlength="8">
+<label>はじまる場所</label><select id="ch"><option value="5">第5章「砂に眠る記憶」が始まったところ（紋章2個・オアシスタウンへ向かう）</option></select>
+<label>最初の相棒</label><select id="st"><option value="0">炎のセリック（→セリオン）</option><option value="1">水のシドー（→シドール）</option><option value="2">草のモーラ（→モーラン）</option></select>
+<button id="go">アカウントを作って 引き継ぎコードを出す</button>
+<div id="out"></div>
+<p class="muted">※ このページは開発用です（firebase.json の設定で公開サイトには含まれません）。<br>ローカルで <code>npx serve .</code> などを動かし、<code>http://localhost:3000/tools/make-account.html</code> を開いて使います（Firebase の承認済みドメインに localhost が入っている必要があります。初期設定で入っています）。<br>この端末のセーブデータは 変わりません。</p>
+</div>
+<script type="module">
+import { G } from '../js/game/state.js';
+import { loadSettings } from '../js/game/save.js';
+import { buildStorySave } from '../js/game/devsave.js';
+import * as ON from '../js/online.js';
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+$('#go').onclick = async () => {
+  const name = $('#nm').value.trim() || 'nekojita';
+  const out = $('#out');
+  $('#go').disabled = true;
+  out.innerHTML = '<p>作成中……（サーバーに接続しています）</p>';
+  // この端末のセーブは さわらない（作業のあと もとに もどす）
+  const KEY = 'animon_save_v1', keep = localStorage.getItem(KEY);
+  try {
+    if (!ON.isConfigured()) throw new Error('js/firebase-config.js の設定が ありません');
+    G.settings = loadSettings();
+    G.save = buildStorySave(name, +$('#ch').value, { starter: +$('#st').value });
+    const code = await ON.issueTransferCode();     // プレイヤー登録 → クラウドに保存 → 連携コード
+    await ON.publishRanking(true);
+    const S = G.save;
+    out.innerHTML = `<p>✅ アカウント「${esc(S.name)}」を作りました。</p><p>引き継ぎコード：</p><div class="code">${esc(code)}</div>
+      <p class="muted">第${$('#ch').value}章のはじめ／パーティー ${S.party.length}匹・ボックス ${S.box.length}匹・所持金 ¥${S.money.toLocaleString()}<br>pid：${esc(S.pid)}　フレンドコード：${esc(S.friendCode || '')}</p>
+      <p class="muted">このコードを知っている人は このデータで遊べます。他の人には教えないでください。</p>`;
+  } catch (e) {
+    console.error(e);
+    out.innerHTML = `<p class="ng">作れませんでした：${esc(e.message || e)}</p><pre>${esc(ON.Online.error || '')}</pre>`;
+  } finally {
+    if (keep === null) localStorage.removeItem(KEY); else localStorage.setItem(KEY, keep);
+    $('#go').disabled = false;
+  }
+};
+</script>
+</body></html>
