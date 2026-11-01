@@ -1,6 +1,7 @@
 // アニモン個体（能力値計算・経験値・技・進化）
 import { SPECIES } from '../data/species.js';
 import { MOVES } from '../data/moves.js';
+import { ITEMS } from '../data/items.js';
 import { uid } from '../engine/util.js';
 
 export const MAX_LV = 99;
@@ -81,9 +82,15 @@ export function healMon(mon) {
 }
 
 // 経験値を加算。レベルアップ・新技・進化を返す
+// 呪いのお守り（進化しない 持ち物）を 持っているか
+export const noEvoHeld = (mon) => !!(mon && mon.item && ITEMS[mon.item]?.noEvo);
+// いま 進化できるか（レベルが 足りていて、呪いのお守りを 持っていない）
+export function canEvolve(mon) { const s = mon && SPECIES[mon.sp]; return !!(s && s.evoTo && mon.lv >= s.evoLv && !noEvoHeld(mon)); }
 export function addExp(mon, amount) {
-  const res = { lvups: [], learned: [], pending: [], evolve: null };
+  // evoStopped：この レベルアップで 進化する はずだったが、呪いのお守りで 止まった
+  const res = { lvups: [], learned: [], pending: [], evolve: null, evoStopped: false };
   if (mon.lv >= MAX_LV) return res;
+  const lv0 = mon.lv;
   mon.exp += amount;
   while (mon.lv < MAX_LV && mon.exp >= expForLevel(mon.lv + 1)) {
     const before = maxHp(mon);
@@ -100,13 +107,16 @@ export function addExp(mon, amount) {
   }
   if (mon.lv >= MAX_LV) mon.exp = expForLevel(MAX_LV);
   const s = SPECIES[mon.sp];
-  if (s.evoTo && mon.lv >= s.evoLv) res.evolve = s.evoTo;
+  if (s.evoTo && mon.lv >= s.evoLv) {
+    if (!noEvoHeld(mon)) res.evolve = s.evoTo;
+    else if (lv0 < s.evoLv) res.evoStopped = true;
+  }
   return res;
 }
 
 export function evolveMon(mon) {
   const s = SPECIES[mon.sp];
-  if (!s.evoTo) return null;
+  if (!s.evoTo || noEvoHeld(mon)) return null;
   const before = maxHp(mon);
   mon.sp = s.evoTo;
   const after = maxHp(mon);

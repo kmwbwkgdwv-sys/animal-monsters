@@ -8,7 +8,7 @@ import { MOVES, moveEffectText, moveEffects } from '../data/moves.js';
 import { ITEMS } from '../data/items.js';
 import { TRAINERS, rivalTeam, DUNGEONS, REGIONS } from '../data/world.js';
 import { typeBadge, TYPE_COLOR, TYPE_JA, typeEff } from '../data/types.js';
-import { createMon, monName, calcStats, evolveMon, healMon, cloneMon } from '../game/mon.js';
+import { createMon, monName, calcStats, evolveMon, healMon, cloneMon, canEvolve, noEvoHeld } from '../game/mon.js';
 import { G, giveMon, registerDex, itemCount, useItem, addMoney, save, healParty, findMon, monFull, monCount, monCap } from '../game/state.js';
 import { $, el, esc, UI, toast, say, ask, confirmBox, inputText, fade, flash, hpClass, hideDialog, letterbox, glintAt } from './ui.js';
 import { audio } from '../audio.js';
@@ -177,11 +177,11 @@ async function afterBattle(cfg, result, caught) {
     audio.playBgm(OW.dungeon ? 'dungeon' : (OW.inTown ? 'town' : 'field'));
     if (result === 'lose' && !cfg.allowLose) {
       if (expTotal) await say([`|手持ちの アニモン全員が ${expTotal} の 経験値を もらった。（負けたので 5分の1）`]);
-      for (const r of expRes) if (r.lvups.length) await say([`|${monName(r.m)} は レベル ${r.m.lv} に 上がった！`]);
+      for (const r of expRes) { if (r.lvups.length) await say([`|${monName(r.m)} は レベル ${r.m.lv} に 上がった！`]); await evoStopMsg(r); }
       await blackout();
       // 負けても 上がった レベルの 技・進化は 病院で 回復したあとに
       for (const pm of pendingMoves) { const m = findMon(pm.uid); if (m) { await learnMove(m, pm.move); save(); } }
-      for (const uid of evos) { const m = findMon(uid); if (m && SPECIES[m.sp].evoTo && m.lv >= SPECIES[m.sp].evoLv) { await evolveScene(m); save(); } }
+      for (const uid of evos) { const m = findMon(uid); if (m && canEvolve(m)) { await evolveScene(m); save(); } }
       return 'lose';
     }
     // おつかい：野生のアニモンを たおした／つかまえた
@@ -200,6 +200,7 @@ async function afterBattle(cfg, result, caught) {
     for (const r of expRes) {
       if (r.lvups.length) { audio.sfx('lvup'); await say([`|${monName(r.m)} は レベル ${r.m.lv} に 上がった！`]); }
       for (const id of r.learned) await say([`|${monName(r.m)} は ${MOVES[id].name} を 覚えた！`]);
+      await evoStopMsg(r);
     }
     if (caught) {
       audio.jingle('victory');
@@ -216,7 +217,7 @@ async function afterBattle(cfg, result, caught) {
     // 技を覚える
     for (const pm of pendingMoves) { const m = findMon(pm.uid); if (m) { await learnMove(m, pm.move); save(); } }
     // 進化
-    for (const uid of evos) { const m = findMon(uid); if (m && SPECIES[m.sp].evoTo && m.lv >= SPECIES[m.sp].evoLv) { await evolveScene(m); save(); } }
+    for (const uid of evos) { const m = findMon(uid); if (m && canEvolve(m)) { await evolveScene(m); save(); } }
   } catch (e) {
     console.error(e);
   } finally {
@@ -650,7 +651,7 @@ export async function learnMove(m, moveId) {
 export async function evolveScene(m) {
   const prev = G.state === 'battle' ? 'world' : G.state;
   const fromName = monName(m), oldSp = m.sp;
-  if (!SPECIES[oldSp].evoTo) return;
+  if (!SPECIES[oldSp].evoTo || noEvoHeld(m)) return;   // 呪いのお守りを 持っていると 進化しない
   let v = null, res = null;
   try {
     try { resetInput(); } catch (e) { /* */ }
@@ -723,4 +724,10 @@ export function dexRegister(m) {
     function key(e) { if (['Space', 'Enter', 'KeyZ', 'Escape', 'KeyX'].includes(e.code)) { e.preventDefault(); e.stopPropagation(); close(); } }
     setTimeout(() => { if (!fin) window.addEventListener('keydown', key, true); }, 400);
   });
+}
+
+// 呪いのお守りで 進化が 止まったことを 知らせる（進化する レベルに なった ときだけ）
+export async function evoStopMsg(r) {
+  if (!r || !r.evoStopped || !r.m) return;
+  await say([`|${monName(r.m)} は ${ITEMS[r.m.item]?.name || '呪いのお守り'}の 力で 進化しなかった……`]);
 }

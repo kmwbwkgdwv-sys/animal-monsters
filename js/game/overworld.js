@@ -30,8 +30,10 @@ export const OW = {
   scene: null, cam: new Camera(42), player: null, npcs: [], wilds: [], trig: [], labels: [], spawned: {},
   region: null, inTown: null, mode: 'walk', dungeon: null, encCool: 0, zoom: 0.95, lastToast: 0, follower: null, trail: [],
   skyCur: null, t: 0, camOverride: null,
+  trCool: {},   // 逃げた トレーナー（離れるまで 目が合わない）
 };
 const SPEED = { walk: 7, run: 11.5, land: 17, swim: 13, fly: 24 };
+const TR_SIGHT = 7, TR_AWAY = 13;   // トレーナーの 視線（m）・逃げたあと また 目が合うように なる 距離
 const RIDE_HIP = 0.6;   // 人の 足もとから おしりまでの 高さ（乗っている ときの すわる 位置）
 
 // ---------- 構築 ----------
@@ -733,10 +735,12 @@ export function updateOverworld(dt) {
     updateWilds(dt);
     try { updateCandy(dt); } catch (e) { console.warn(e); }
     // トレーナーの視線
+    //  逃げた（勝たなかった）トレーナーは、いちど 視線の外（TR_AWAY m 以上）に 離れるまで 勝負を 挑んでこない
     if (!G.busy) for (const n of OW.npcs) {
       if ((n.kind !== 'trainer') || G.save.defeated[n.id]) continue;
       const d = Math.hypot(n.x - P.x, n.z - P.z);
-      if (d < 7 && OW.mode !== 'fly') { runFlow(() => trainerSpotted(n)); break; }
+      if (OW.trCool[n.id]) { if (d > TR_AWAY) delete OW.trCool[n.id]; continue; }
+      if (d < TR_SIGHT && OW.mode !== 'fly') { runFlow(() => trainerSpotted(n)); break; }
     }
     // ストーリー・クエストの位置トリガー
     if (!G.busy) SE.checkPosition(P.x, P.z, reg);
@@ -932,7 +936,10 @@ async function trainerSpotted(n) {
   await say([`${n.name}|目が合ったら 勝負だ！`]);
   const res = await startTrainerBattle(n.tr.id, { route: n.tr });
   if (res === 'win') { await say([`${n.name}|まいった！ きみ 強いね！`]); }
+  else trainerCalm(n.id);
 }
+// 逃げた トレーナーは、少し 離れるまで もう一度 勝負を 挑んでこない（話しかければ いつでも 再戦できる）
+export function trainerCalm(id) { OW.trCool[id] = true; }
 
 async function doorAction(t) {
   if (t.type === 'hospital') return MENU.openHospital(t.town);

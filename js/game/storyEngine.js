@@ -378,7 +378,9 @@ export async function talkNpc(n) {
   if (n.kind === 'trainer') {
     if (G.save.defeated[n.id]) return say([`${n.name}|また いつか 勝負しようね！`]);
     await say([`${n.name}|勝負だ！`]);
-    return startTrainerBattle(n.tr.id, { route: n.tr });
+    const res = await startTrainerBattle(n.tr.id, { route: n.tr });
+    if (res !== 'win') OW.trCool[n.id] = true;   // 逃げたら 少し 離れるまで 目が合わない
+    return res;
   }
   if (n.kind === 'errand') return ER.talkErrand(n);
   if (n.kind === 'giver') return giverTalk(n.quest);

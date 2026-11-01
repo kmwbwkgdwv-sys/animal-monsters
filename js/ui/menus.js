@@ -9,14 +9,14 @@ import { TYPES, TYPE_JA, TYPE_COLOR, typeBadge } from '../data/types.js';
 import { TOWNS, STONES, DUNGEONS, REGIONS, RING, howToGet, hiddenInDex, WORLD, START_POS } from '../data/world.js';
 import { CREST_JA } from '../data/story.js';
 import { G, PARTY_MAX, partyHasSpecies, itemCount, addItem, useItem, addMoney, save, healParty, crests, isUnlocked, dexCounts, findMon, monCap, monCount, monFull, canRelease } from '../game/state.js';
-import { calcStats, adjBase, ivMul, monName, ivTotal, ivRank, expProgress, expToNext, healMon, maxHp, addExp, expForLevel, MAX_LV } from '../game/mon.js';
+import { calcStats, adjBase, ivMul, monName, ivTotal, ivRank, expProgress, expToNext, healMon, maxHp, addExp, expForLevel, MAX_LV, noEvoHeld } from '../game/mon.js';
 import { $, el, esc, openScreen, toast, ask, confirmBox, inputText, say, fade, hpClass, closeAllScreens } from './ui.js';
 import { portrait, portraitAsync, BLANK } from '../render/portrait.js';
 import { audio } from '../audio.js';
 import { Input } from '../input.js';
 import { STATUS_JA } from '../game/battle.js';
 import { saveSettings } from '../game/save.js';
-import { learnMove, evolveScene } from './battleUI.js';
+import { learnMove, evolveScene, evoStopMsg } from './battleUI.js';
 
 const waitClose = (s) => new Promise(r => { s.onClose = r; });
 const STAT_JA = { hp: 'HP（体力）', atk: '攻撃', def: '防御', spe: '素早さ' };
@@ -226,6 +226,15 @@ export async function openParty() {
     document.body.appendChild(g); d.ghost = g;
     d.el.classList.add('dragging');
     s.body.classList.add('isdrag');
+    // つかんだまま 画面の 上下の 端に 近づけると 自動で スクロール（ボックスが 縦に 長くても パーティーまで 運べる）
+    const edge = () => {
+      if (drag !== d || !d.active) return;
+      const r = s.body.getBoundingClientRect(), zone = Math.min(70, r.height * 0.18);
+      const v = d.y < r.top + zone ? -(r.top + zone - d.y) : d.y > r.bottom - zone ? d.y - (r.bottom - zone) : 0;
+      if (v) { s.body.scrollTop += Math.max(-18, Math.min(18, v * 0.35)); move(d.x, d.y); }
+      d.raf = requestAnimationFrame(edge);
+    };
+    d.raf = requestAnimationFrame(edge);
     try { navigator.vibrate && navigator.vibrate(12); } catch (e) { /* */ }
     audio.sfx('select');
     move(d.x, d.y);
@@ -242,6 +251,7 @@ export async function openParty() {
     if (!d) return;
     clearTimeout(d.timer);
     if (!d.active) return;
+    cancelAnimationFrame(d.raf);
     dragEnd = performance.now();
     d.ghost.remove(); d.el.classList.remove('dragging'); s.body.classList.remove('isdrag');
     if (d.hover) d.hover.classList.remove('dropon');
@@ -306,7 +316,7 @@ export async function openParty() {
   await waitClose(s);
   window.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', onUp); window.removeEventListener('pointercancel', onCancel);
   document.removeEventListener('touchmove', noScroll);
-  if (drag && drag.ghost) drag.ghost.remove();
+  if (drag) { cancelAnimationFrame(drag.raf); if (drag.ghost) drag.ghost.remove(); drag = null; }
   (await import('../game/overworld.js')).refreshFollower();
 }
 
@@ -335,7 +345,8 @@ export async function monDetail(m, where, opts = {}) {
         ${sp.ride ? `<div class="ridenote">🐎 この子には ライドできる（${RIDE_JA[sp.ride]}）。メニューの「ライド」か ライドボタンで 乗れます${opts.readOnly ? '' : '（ボックスに いても OK）'}。</div>` : ''}
         <div class="muted" style="font-size:.85em">次のレベルまで ${expToNext(m).toLocaleString()} EXP</div><div class="expbar"><i style="width:${expProgress(m) * 100}%"></i></div>
         <div class="card" style="margin:.5em 0;padding:.5em"><b>特殊能力：${esc(ab?.name || '')}</b><div class="muted">${esc(ab?.desc || '')}</div></div>
-        <div class="card" style="padding:.5em">持ち物：<b>${m.item ? esc(ITEMS[m.item].name) : 'なし'}</b>${m.item ? `<div class="muted">${esc(ITEMS[m.item].desc)}</div>` : ''}</div>
+        <div class="card" style="padding:.5em">持ち物：<b>${m.item ? `${ITEMS[m.item].icon && ITEMS[m.item].noEvo ? ITEMS[m.item].icon + ' ' : ''}${esc(ITEMS[m.item].name)}` : 'なし'}</b>${m.item ? `<div class="muted">${esc(ITEMS[m.item].desc)}</div>` : ''}</div>
+        ${sp.evoTo ? `<div class="evonote${noEvoHeld(m) ? ' stop' : ''}">${noEvoHeld(m) ? `🧿 ${esc(ITEMS[m.item].name)}を 持っているので 進化しない（ふつうは Lv${sp.evoLv}で 進化）` : m.lv >= sp.evoLv ? `✨ 次に 経験値が 入ると 進化する（Lv${sp.evoLv}〜）` : `Lv${sp.evoLv}で 進化する`}</div>` : ''}
         <h4 style="margin:.6em 0 .2em">能力 <span class="muted" style="font-size:.78em;font-weight:400">個体値 <b style="color:${ivr.c}">${ivr.s}・合計${ivTotal(m)}/60</b></span></h4>
         <div class="sttable"><div class="sttr hd"><span class="k"></span><span class="b">種族値</span><span class="iv">個体値</span><span class="a">調整後</span><span class="v">Lv${m.lv}</span><span class="bar"></span></div>${['hp', 'atk', 'def', 'spe'].map(statRow).join('')}
         <div class="stnote">個体値 7.5 が基準。15 なら 種族値 +9%、1 なら −7.8%（1ごとに 1.2%）</div></div>
@@ -650,6 +661,7 @@ async function useCandy(it) {
     for (const id of r.learned) await say([`|${monName(m)} は ${MOVES[id].name} を 覚えた！`]);
     for (const id of r.pending) await learnMove(m, id);
     save();
+    await evoStopMsg({ ...r, m });
     if (r.evolve) { await evolveScene(m); save(); }
     if (!itemCount(it.id) || !(await confirmBox(`${it.name}を もう1つ 使いますか？（のこり ${itemCount(it.id)}個）`))) return;
   }
@@ -702,6 +714,7 @@ async function useOnMon(it) {
     await say([`|${monName(m)} は レベル ${m.lv} に 上がった！`]);
     for (const id of r.learned) await say([`|${monName(m)} は ${MOVES[id].name} を 覚えた！`]);
     for (const id of r.pending) await learnMove(m, id);
+    await evoStopMsg({ ...r, m });
     if (r.evolve) await evolveScene(m);
     save(); return;
   }
@@ -711,7 +724,7 @@ async function useOnMon(it) {
 // ---------- ショップ・病院 ----------
 export function shopList() {
   const c = crests(), post = G.save.postGame;
-  const L = ['repel', 'herb', 'cureall'];
+  const L = ['repel', 'herb', 'cureall', 'h_curse'];
   if (c >= 1) L.push('goodherb', 'revive', 'ppdrop');
   if (c >= 2) L.push('scroll');
   if (c >= 3) L.push('superherb', 'h_berry', 'h_clear');
