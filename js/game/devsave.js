@@ -10,7 +10,7 @@ import { newState } from './save.js';
 import { createMon, maxHp, legendIv } from './mon.js';
 import { BY_NAME, SPECIES } from '../data/species.js';
 import { STEPS, SCENES, CHAPTERS } from '../data/story.js';
-import { STONES, TOWNS, TRAINERS, rivalTeam, encounterTable, REGIONS, ORDER } from '../data/world.js';
+import { STONES, TOWNS, TRAINERS, rivalTeam, encounterTable, REGIONS, ORDER, DUNGEONS, DUNGEON_BOSS } from '../data/world.js';
 import { SHOP_FOODS, ITEMS } from '../data/items.js';
 
 export { CHAPTERS };
@@ -57,6 +57,34 @@ function simulate(clearedCh) {
   return R;
 }
 
+// その章まで クリアした ときに 歩いた 地域（解放されたばかりで まだ 行っていない 地域は のぞく）
+export function visitedRegions(cleared) { return cleared <= 1 ? [] : cleared === 2 ? ['plains', 'forest'] : ORDER.slice(1, cleared); }
+// その章までに 図鑑に のりそうな アニモン（管理サイトの 図鑑の 数あわせ用）
+//  catchable：歩いた 地域・その地域の ダンジョン（主も）で 出会える 種類（＝捕まえられる）
+//  seen：catchable ＋ 戦った トレーナーの アニモン・最初の 相棒3匹・（全クリアなら）伝説2匹
+export function chapterPool(cleared, starter = 0) {
+  cleared = Math.max(1, Math.min(11, Math.round(+cleared || 4)));
+  const R = simulate(cleared);
+  const catchable = new Set(), seen = new Set();
+  const regs = ['start', ...visitedRegions(cleared)];
+  for (const reg of regs) for (const w of [false, true]) { try { for (const e of encounterTable(reg, w)) catchable.add(e.sp); } catch (e) { /* 水辺なし */ } }
+  for (const [d, D] of Object.entries(DUNGEONS)) {
+    if (!regs.includes(D.region) || D.post) continue;   // クリア後の ダンジョン（深淵の迷宮）は まだ 行っていない
+    for (const e of encounterTable(d)) catchable.add(e.sp);
+    const b = SPECIES.find(s => s && s.name === DUNGEON_BOSS[d]?.[0]); if (b) catchable.add(b.id);
+  }
+  for (const id of catchable) seen.add(id);
+  for (const tid of Object.keys(R.defeated)) {
+    const tr = TRAINERS[tid]; if (!tr || !tr.team) continue;
+    const team = typeof tr.team === 'string' ? rivalTeam(tr.team, starter) : tr.team;
+    for (const [nm] of team) if (id(nm)) seen.add(id(nm));
+  }
+  for (const sp of [1, 4, 7]) seen.add(sp);
+  if (R.lulu !== 'none') { seen.add(id('ルミナ')); catchable.add(id('ルミナ')); }
+  if (R.legend) { seen.add(199); seen.add(200); }
+  return { catchable, seen };
+}
+
 // opts: { starter: 0|1|2, legend: 199|200, look }
 export function buildStorySave(name = 'nekojita', cleared = 4, opts = {}) {
   cleared = Math.max(1, Math.min(11, Math.round(+cleared || 4)));
@@ -66,7 +94,7 @@ export function buildStorySave(name = 'nekojita', cleared = 4, opts = {}) {
   const starter = opts.starter ?? 0;
   const lv = LV[cleared];
   // 実際に 歩いた 地域（解放されたばかりで まだ 行っていない 地域は のぞく）
-  const visited = cleared === 1 ? [] : cleared === 2 ? ['plains', 'forest'] : ORDER.slice(1, cleared);
+  const visited = visitedRegions(cleared);
   const t0 = Date.now() - (cleared + 1) * 86400000;
   let k = 0;
   const meet = (base, l, place, o = {}) => { const m = createMon(grown(base, l), l, { ot: name, metAt: place, ...o }); m.caughtAt = t0 + (k++) * 3600000; return m; };

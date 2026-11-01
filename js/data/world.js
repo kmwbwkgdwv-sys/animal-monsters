@@ -91,6 +91,9 @@ export const DUNGEONS = {
   abyss: { name: '深淵の迷宮', pos: [0, -30], rec: 95, lv: [90, 99], theme: 'abyss', size: 19, region: 'inner', post: true },
 };
 
+// ダンジョンの主（種族名・レベル）
+export const DUNGEON_BOSS = { ruins: ['イニシエ', 22], pyramid: ['ホウタイオウ', 38], icecave: ['ヒョウショウ', 55], skytower: ['ドラコンロード', 68], lavacave: ['マグマジン', 79], abyss: ['ヤミノオウ', 98] };
+
 // ---------------- 落ちているアイテム ----------------
 export const ITEM_BALLS = [
   ['ib1', 'herb', [30, 520]], ['ib2', 'food1', [-60, 470]], ['ib3', 'goodherb', polar(80, 640)], ['ib4', 'revive', polar(100, 330)],

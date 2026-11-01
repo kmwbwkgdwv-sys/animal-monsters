@@ -17,6 +17,8 @@
 //   transfers/{連携コード}     → { pid }（ほかの端末をこのデータに連携するためのコード）
 //   rankings/{pid}           ランキング用の公開成績
 //   worlds/{ホストpid}         フレンドと 同じワールドで あそぶ（meta と members/{pid} に 位置など）
+//   gifts/{pid}/{id}         運営（管理サイト）からの プレゼント（お金・アニモン）。受け取ったら 消す
+//   giftsAll/{id}            運営から 全員への プレゼント（1アカウント 1回・期限つき）
 //
 //  1つのデータ（pid）に 複数の端末（匿名ログインの uid）を登録できる：players/{pid}/devices/{uid} = true
 // =============================================================
@@ -230,6 +232,7 @@ export async function deleteAccount() {
   for (const f of Object.keys(fr)) { await tryRm('friends', f, pid); await tryRm('friends', pid, f); }
   for (const k of Object.keys((await val('requests', pid)) || {})) await tryRm('requests', pid, k);
   for (const k of Object.keys((await val('invites', pid)) || {})) await tryRm('invites', pid, k);
+  try { for (const k of Object.keys((await val('gifts', pid)) || {})) await tryRm('gifts', pid, k); } catch (e) { /* */ }
   // ランキング（これは 必ず 消す：失敗したら エラー）
   await R.remove(ref('rankings', pid));
   if (S.transferCode) await tryRm('transfers', S.transferCode);
@@ -438,3 +441,18 @@ export function watchInvitesAlways(cb) {
   return invUn;
 }
 export async function declineWorldInvite(id) { try { await R.remove(ref('invites', Online.pid, id)); } catch (e) { /* */ } }
+
+// ---------------- 運営からの プレゼント（管理サイトから 送られる） ----------------
+//  gifts/{pid}/{id} = { at, by, note, money, mons: JSON文字列（アニモンの 配列） }
+export async function fetchGifts() {
+  if (!Online.ready || !Online.pid || !G.save || G.save.pid !== Online.pid) return [];
+  const v = await val('gifts', Online.pid);
+  return Object.entries(v || {}).filter(([, g]) => g && typeof g === 'object').map(([id, g]) => ({ id, ...g })).sort((a, b) => (+a.at || 0) - (+b.at || 0));
+}
+export async function removeGift(id) { if (Online.pid) await R.remove(ref('gifts', Online.pid, id)); }
+// 全員への プレゼント（giftsAll/{id}）：1アカウント 1回だけ（受け取った 記録は セーブの giftsGot）。消さない
+export async function fetchGiftsAll() {
+  if (!Online.ready) return [];
+  const v = await val('giftsAll');
+  return Object.entries(v || {}).filter(([, g]) => g && typeof g === 'object').map(([id, g]) => ({ id, all: true, ...g })).sort((a, b) => (+a.at || 0) - (+b.at || 0));
+}

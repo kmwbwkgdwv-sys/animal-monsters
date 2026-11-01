@@ -297,7 +297,9 @@ function renderPanel(side, slot) {
     const alive = team.length - down.size;
     dots = `<div class="tdots" title="のこりの 手持ち">${team.map(b => `<i class="${down.has(b.idx) ? 'dn' : ''}"></i>`).join('')}<small>のこり ${alive}/${team.length}匹</small></div>`;
   }
-  p.innerHTML = `<div class="top"><span>${m.shiny ? '<span class="shiny">✨</span>' : ''}${esc(monName(m))}${d.status ? `<span class="st ${d.status}">${STATUS_JA[d.status]}</span>` : ''}</span><span class="lv">Lv${d.lv}</span></div>
+  // 野生で、もう なかまに したことが ある 種類なら しるし
+  const owned = v !== 0 && B.kind === 'wild' && !!G.save?.dex?.caught?.[m.sp];
+  p.innerHTML = `<div class="top"><span>${m.shiny ? '<span class="shiny">✨</span>' : ''}${esc(monName(m))}${owned ? '<span class="ownmark" title="なかまに したことが ある">✔入手済み</span>' : ''}${d.status ? `<span class="st ${d.status}">${STATUS_JA[d.status]}</span>` : ''}</span><span class="lv">Lv${d.lv}</span></div>
   <div style="font-size:.7em">${sp.types.map(typeBadge).join('')}</div>
   <div class="hprow"><b>HP</b><div class="hpbar"><i class="${hpClass(r)}" style="width:${Math.max(0, r * 100)}%"></i></div></div>
   ${v === 0 ? `<div class="hpnum">${hp} / ${max}</div>` : ''}${dots}`;
@@ -419,13 +421,15 @@ async function chooseFor(need, pvp) {
 
 function chooseCommand(b, slot, pvp, already, setAuto) {
   return new Promise(res => {
-    const done = (c) => { clearCmds(); res(c); };
+    let finished = false;
+    const done = (c) => { if (finished) return; finished = true; clearCmds(); res(c); };
     setAuto(() => done({ type: 'move', move: Math.max(0, b.m.moves.findIndex(x => x.pp > 0)), target: firstFoe(b) }));
     const main = () => {
       setMsg(`${monName(b.m)} は どうする？`);
       const box = cmdBox(); box.innerHTML = '';
-      const add = (cls, label, fn, dis = false) => { const bt = el('button', 'cmd ' + cls, label); bt.disabled = dis; bt.onclick = () => { audio.sfx('select'); fn(); }; box.appendChild(bt); };
-      add('fight', '<span class="ic">⚔️</span>たたかう', () => moves());
+      // 連打しても 1回だけ（確認を 出している あいだは ほかの ボタンも 押せない）
+      const add = (cls, label, fn, dis = false) => { const bt = el('button', 'cmd ' + cls, label); bt.disabled = dis; bt.onclick = async () => { if (box.__lock || finished) return; box.__lock = true; audio.sfx('select'); try { await fn(); } finally { box.__lock = false; } }; box.appendChild(bt); };
+      add('fight', '<span class="ic">⚔️</span>たたかう', () => fight());
       if (pvp) {
         add('party', '<span class="ic">🐾</span>てもち', () => partyCmd());
         add('run', '<span class="ic">🏳️</span>降参する', async () => { if (await confirmBox('本当に 降参しますか？')) done({ forfeit: true }); else main(); });
@@ -440,15 +444,28 @@ function chooseCommand(b, slot, pvp, already, setAuto) {
         }, !!ctx.noRun);
       }
     };
+    // ダブルバトル：先に ねらう 相手を 選んでから、その 相手への 効果（ばつぐん・いまひとつ）つきで 技を 選ぶ
+    let aim = null;
+    const aimFoe = () => { const fs = B.foesOf(b); return (aim && fs.find(f => f.side === aim.side && f.slot === aim.slot)) || fs[0] || null; };
+    const fight = async () => {
+      const foes = B.foesOf(b);
+      aim = null;
+      if (B.n === 2 && foes.length > 1) {
+        const t = await pickTarget(foes, b);
+        if (!t) { main(); return; }
+        aim = t;
+      }
+      moves();
+    };
     const moves = () => {
       const box = cmdBox(); box.innerHTML = '';
       const allZero = b.m.moves.every(x => x.pp <= 0);
-      if (allZero) { done({ type: 'move', move: 0, target: firstFoe(b) }); return; }
+      if (allZero) { done({ type: 'move', move: 0, target: aim || firstFoe(b) }); return; }
+      const foe = aimFoe();
       b.m.moves.forEach((mm, i) => {
         const mv = MOVES[mm.id];
         const locked = b.locked && (b.item === 'h_band' || b.item === 'h_shoes') && mm.id !== b.locked;
         const vest = b.item === 'h_vest' && mv.power === 0;
-        const foe = B.foesOf(b)[0];
         let effTxt = '';
         if (mv.power > 0 && foe) { const e = typeEff(mv.type, foe.types); effTxt = e === 0 ? ' 効果なし' : e > 1 ? ' ◎ばつぐん' : e < 1 ? ' △いまひとつ' : ''; }
         const fx = moveEffectText(mv);
@@ -470,15 +487,17 @@ function chooseCommand(b, slot, pvp, already, setAuto) {
           const targetsFoe = mv.power > 0 || mv.e.some(e => e[2] === 'foe' || ['brn', 'psn', 'par', 'slp', 'frz'].includes(e[0]));
           if (B.n === 2 && targetsFoe) {
             const foes = B.foesOf(b);
-            if (foes.length > 1) { target = await pickTarget(foes); if (!target) { moves(); return; } }
+            if (aim && foes.some(f => f.side === aim.side && f.slot === aim.slot)) target = aim;
+            else if (foes.length > 1) { target = await pickTarget(foes, b); if (!target) { moves(); return; } }
             else if (foes.length) target = { side: foes[0].side, slot: foes[0].slot };
           } else target = firstFoe(b);
           done({ type: 'move', move: i, target });
         };
         box.appendChild(bt);
       });
-      backBtn(() => { audio.sfx('cancel'); main(); });
-      setMsg(Input.touch ? 'どの 技を つかう？（長押しで 技の説明）' : 'どの 技を つかう？（マウスを のせると 技の説明）');
+      backBtn(() => { audio.sfx('cancel'); if (aim) fight(); else main(); });
+      const who = aim && foe ? `${monName(foe.m)}に ` : '';
+      setMsg(Input.touch ? `${who}どの 技を つかう？（長押しで 技の説明）` : `${who}どの 技を つかう？（マウスを のせると 技の説明）`);
     };
     const catchCmd = () => {
       const foods = Object.values(ITEMS).filter(i => i.cat === 'food' && itemCount(i.id) > 0).sort((a, b) => (a.rank || 0) - (b.rank || 0));
@@ -512,20 +531,30 @@ function chooseCommand(b, slot, pvp, already, setAuto) {
   });
 }
 function firstFoe(b) { const f = B.foesOf(b)[0]; return f ? { side: f.side, slot: f.slot } : null; }
-function pickTarget(foes) {
+function pickTarget(foes, me = null) {
   return new Promise(res => {
     const box = cmdBox(); box.innerHTML = '';
-    setMsg('どの 相手に 使う？');
-    for (const f of foes) { const bt = el('button', 'cmd fight', `${esc(monName(f.m))}<small>Lv${f.lv}</small>`); bt.onclick = () => res({ side: f.side, slot: f.slot }); box.appendChild(bt); }
+    setMsg(me ? `${monName(me.m)} は どの 相手を ねらう？` : 'どの 相手に 使う？');
+    for (const f of foes) { const bt = el('button', 'cmd fight target', `${esc(monName(f.m))}<small>Lv${f.lv}</small><small class="tline">${f.types.map(typeBadge).join('')}</small>`); bt.onclick = () => { audio.sfx('select'); res({ side: f.side, slot: f.slot }); }; box.appendChild(bt); }
     backBtn(() => res(null));
   });
 }
 // てもち：交代 or 道具
+// 手持ちの カードに 出す 技の 一覧（タイプの 色・威力・いまの 相手への 効果）
+function movesRowHtml(m, foe) {
+  return `<div class="bmvrow">${m.moves.map(x => {
+    const mv = MOVES[x.id]; if (!mv) return '';
+    let eff = '';
+    if (foe && mv.power > 0) { const e = typeEff(mv.type, foe.types); eff = e === 0 ? '<em class="e0">×</em>' : e > 1 ? '<em class="e2">◎</em>' : e < 1 ? '<em class="e1">△</em>' : ''; }
+    return `<span class="bmv" style="--tc:${TYPE_COLOR[mv.type]}"><b>${esc(mv.name)}</b><small>${TYPE_JA[mv.type]} ${mv.power ? mv.power : '変化'} PP${x.pp}</small>${eff}</span>`;
+  }).join('')}</div>`;
+}
+function mainFoe() { try { const me = B.sides[mySide]; return B.sides[1 - mySide].active.find(x => x && x.alive) || null; } catch (e) { return null; } }
 function partyMenu(b, pvp, used) {
   return new Promise(res => {
     const s = B.sides[mySide];
-    const ov = el('div', 'screen'); ov.style.zIndex = 30;
-    ov.innerHTML = `<div class="head"><h2>てもち</h2><button class="close">もどる</button></div><div class="body"><div class="mlist"></div></div>`;
+    const ov = el('div', 'screen bparty'); ov.style.zIndex = 30;
+    ov.innerHTML = `<div class="head"><h2>てもち</h2><span class="muted bfoehint">${mainFoe() ? `◎ばつぐん △いまひとつ ×効果なし（相手：${esc(monName(mainFoe().m))}）` : ''}</span><button class="close">もどる</button></div><div class="body"><div class="mlist"></div></div>`;
     root.appendChild(ov);
     const close = (v) => { ov.remove(); res(v); };
     ov.querySelector('.close').onclick = () => close(null);
@@ -533,7 +562,7 @@ function partyMenu(b, pvp, used) {
     s.team.forEach((tb, i) => {
       const m = tb.m, max = tb.maxhp, r = m.hp / max;
       const c = el('button', 'mcard' + (m.hp <= 0 ? ' fnt' : '') + (tb.slot >= 0 ? ' sel' : ''));
-      c.innerHTML = `<img src="${portrait(m.sp, m.shiny)}"><div class="info"><div class="nm">${m.shiny ? '<span class="shiny">✨</span>' : ''}${esc(monName(m))} <span class="lv">Lv${tb.lv}</span>${m.status ? `<span class="st ${m.status}">${STATUS_JA[m.status]}</span>` : ''}${m.hp <= 0 ? '<span class="st fnt">ひんし</span>' : ''}</div><div class="hpbar"><i class="${hpClass(r)}" style="width:${r * 100}%"></i></div><div class="muted">${m.hp}/${max}${tb.slot >= 0 ? '　（戦闘中）' : ''}</div></div>`;
+      c.innerHTML = `<img src="${portrait(m.sp, m.shiny)}"><div class="info"><div class="nm">${m.shiny ? '<span class="shiny">✨</span>' : ''}${esc(monName(m))} <span class="lv">Lv${tb.lv}</span>${m.status ? `<span class="st ${m.status}">${STATUS_JA[m.status]}</span>` : ''}${m.hp <= 0 ? '<span class="st fnt">ひんし</span>' : ''}</div><div class="hpbar"><i class="${hpClass(r)}" style="width:${r * 100}%"></i></div><div class="muted">${m.hp}/${max}${tb.slot >= 0 ? '　（戦闘中）' : ''}　${SPECIES[m.sp].types.map(typeBadge).join('')}${m.item && ITEMS[m.item] ? `<span class="bheld">🎁${esc(ITEMS[m.item].name)}</span>` : ''}</div>${movesRowHtml(m, mainFoe())}</div>`;
       c.onclick = async () => {
         audio.sfx('select');
         const opts = [];
@@ -575,8 +604,8 @@ function pickBattleItem(tb) {
 function pickParty(forced, used, setAuto) {
   return new Promise(res => {
     const s = B.sides[mySide];
-    const ov = el('div', 'screen'); ov.style.zIndex = 30;
-    ov.innerHTML = `<div class="head"><h2>次に 出す アニモンを 選んでください</h2></div><div class="body"><div class="mlist"></div></div>`;
+    const ov = el('div', 'screen bparty'); ov.style.zIndex = 30;
+    ov.innerHTML = `<div class="head"><h2>次に 出す アニモンを 選んでください</h2><span class="muted bfoehint">${mainFoe() ? `◎ばつぐん △いまひとつ ×効果なし（相手：${esc(monName(mainFoe().m))}）` : ''}</span></div><div class="body"><div class="mlist"></div></div>`;
     root.appendChild(ov);
     const close = (v) => { ov.remove(); res(v); };
     const firstOk = s.team.findIndex((tb, i) => tb.m.hp > 0 && tb.slot < 0 && !used.includes(i));
@@ -587,7 +616,7 @@ function pickParty(forced, used, setAuto) {
       const ok = m.hp > 0 && tb.slot < 0 && !used.includes(i);
       const c = el('button', 'mcard' + (ok ? '' : ' fnt'));
       c.disabled = !ok;
-      c.innerHTML = `<img src="${portrait(m.sp, m.shiny)}"><div class="info"><div class="nm">${esc(monName(m))} <span class="lv">Lv${tb.lv}</span></div><div class="hpbar"><i class="${hpClass(r)}" style="width:${r * 100}%"></i></div></div>`;
+      c.innerHTML = `<img src="${portrait(m.sp, m.shiny)}"><div class="info"><div class="nm">${esc(monName(m))} <span class="lv">Lv${tb.lv}</span>${m.status ? `<span class="st ${m.status}">${STATUS_JA[m.status]}</span>` : ''}${m.hp <= 0 ? '<span class="st fnt">ひんし</span>' : ''}</div><div class="hpbar"><i class="${hpClass(r)}" style="width:${r * 100}%"></i></div><div class="muted">${Math.max(0, m.hp)}/${tb.maxhp}　${SPECIES[m.sp].types.map(typeBadge).join('')}${m.item && ITEMS[m.item] ? `<span class="bheld">🎁${esc(ITEMS[m.item].name)}</span>` : ''}</div>${movesRowHtml(m, mainFoe())}</div>`;
       c.onclick = () => { audio.sfx('select'); close(i); };
       list.appendChild(c);
     });
@@ -597,7 +626,7 @@ function pickParty(forced, used, setAuto) {
 // ---------- 技を覚える ----------
 //  4つで いっぱいの ときは、新しい技と 今の 4つの技の くわしい 説明（タイプ・威力・命中・PP・効果・説明文）を
 //  ぜんぶ 並べてから、どれを 忘れるか 選べるようにする
-function moveCardHtml(mv, pp = null, extra = '') {
+export function moveCardHtml(mv, pp = null, extra = '') {
   const fx = moveEffects(mv);
   const kind = mv.power ? `威力 <b>${mv.power}</b>` : '<b>変化技</b>';
   const pri = mv.pri > 0 ? `<span class="mvtag">先制+${mv.pri}</span>` : mv.pri < 0 ? `<span class="mvtag">後攻</span>` : '';

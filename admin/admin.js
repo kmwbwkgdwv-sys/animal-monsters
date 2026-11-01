@@ -46,7 +46,7 @@ function render() {
   $('.who').textContent = user ? (user.email || user.uid) + (isAdmin ? '（管理者）' : '') : '';
   show('.notadmin', !!user && !isAdmin);
   if (user) $('.myuid').textContent = user.uid;
-  show('.compose', isAdmin); show('.listcard', isAdmin); show('.makeacct', isAdmin);
+  show('.compose', isAdmin); show('.listcard', isAdmin); show('.makeacct', isAdmin); show('.giftcard', isAdmin);
   preview();
 }
 
@@ -157,8 +157,51 @@ async function mkPreview() {
     $('.mkinfo').innerHTML = `${n >= 11 ? 'ストーリー 全クリア（クリア後の 世界）' : `第${n + 1}章が 始まる ところ`}・紋章 ${S.story.crests}個・手持ち ${S.party.length}匹 Lv${Math.min(...lvs)}〜${Math.max(...lvs)}・ボックス ${S.box.length}匹${lulu}<br>スタート：${esc(town)}　手持ち：${S.party.map(m => esc(m.nick || SPECIES[m.sp].name)).join('・')}`;
   } catch (e) { $('.mkinfo').textContent = ''; console.error(e); }
 }
-$('.mkch').onchange = mkPreview; $('.mkst').onchange = mkPreview; $('.mklg').onchange = mkPreview;
+const onSetting = () => { mkPreview(); if (draft) { buildDraft(); toast('設定を 変えたので 中身を 作りなおしました'); } };
+$('.mkch').onchange = onSetting; $('.mkst').onchange = onSetting; $('.mklg').onchange = onSetting;
 mkPreview();
+
+// ---------- 中身を 調整する（お金・図鑑・アニモン） ----------
+let draft = null, ME = null;
+const loadME = async () => (ME ||= await import('./moneditor.js'));
+async function buildDraft() {
+  const [{ buildStorySave, chapterPool }] = await Promise.all([import('../js/game/devsave.js'), loadME()]);
+  const name = $('.mkname').value.trim() || 'nekojita';
+  const ch = Math.max(1, Math.min(11, +$('.mkch').value || 4));
+  draft = buildStorySave(name, ch, { starter: +$('.mkst').value, legend: +$('.mklg').value });
+  draftPool = chapterPool(ch, +$('.mkst').value);
+  $('.dmoney').value = draft.money;
+  $('.dseen').value = Object.keys(draft.dex.seen).length;
+  $('.dcaught').value = Object.keys(draft.dex.caught).length;
+  showDraft();
+}
+let draftPool = null;
+function updDexNote() {
+  const L = ME.dexLimits(draft, draftPool);
+  $('.dcaught').min = L.min; $('.dcaught').max = L.caughtMax; $('.dseen').max = L.seenMax;
+  if (+$('.dcaught').value < L.min) $('.dcaught').value = L.min;
+  if (+$('.dcaught').value > L.caughtMax) $('.dcaught').value = L.caughtMax;
+  if (+$('.dseen').value > L.seenMax) $('.dseen').value = L.seenMax;
+  if (+$('.dseen').value < +$('.dcaught').value) $('.dseen').value = $('.dcaught').value;
+  $('.ddex').innerHTML = `<b>図鑑登録数</b>＝図鑑に のっている（見たことが ある）種類の 数、<b>捕まえた数</b>＝なかまに したことが ある 種類の 数です。<br>この章までに 出会える アニモンの 中から ランダムに 選びます（捕まえた数 ${L.min}〜${L.caughtMax}・図鑑登録数 〜${L.seenMax}）。持っている アニモン（${L.min}種類）は かならず 捕まえた ことに なります。`;
+}
+function showDraft() {
+  $('.drafted').classList.remove('hidden');
+  const S = draft, st = S.story;
+  const lock = (m) => { if (m.uid === st.luluUid || m.uid === st.legendUid) { alert('ルルと 伝説は ストーリーで 使うので 外せません（✏️ で 直すことは できます）'); return false; } return true; };
+  const sameSp = (list, m, skipUid) => list.some(x => x.sp === m.sp && x.uid !== skipUid);
+  const common = { ot: S.name, metAt: 'はじまりの町', canRemove: lock, onChange: updDexNote };
+  let partyL = null, boxL = null;
+  partyL = ME.monList($('.dparty'), S.party, { ...common, title: '🐾 手持ち（6匹まで・同じ 種類は 1匹）', max: 6,
+    accept: (m) => { if (sameSp(S.party, m)) { alert('同じ 種類は 手持ちに 1匹までです（ボックスに 追加してください）'); return false; } },
+    other: { label: '📦へ', move: (m) => { if (S.party.length <= 1) { alert('手持ちは 1匹 以上 必要です'); return false; } S.box.unshift(m); boxL.redraw(); } } });
+  boxL = ME.monList($('.dbox'), S.box, { ...common, title: '📦 ボックス', max: 600,
+    other: { label: '🐾へ', move: (m) => { if (S.party.length >= 6) { alert('手持ちが いっぱいです'); return false; } if (sameSp(S.party, m)) { alert('同じ 種類が もう 手持ちに います'); return false; } S.party.push(m); partyL.redraw(); } } });
+  updDexNote();
+}
+$('.draft').onclick = async () => { $('.draft').disabled = true; try { await buildDraft(); toast('中身を 作りました。下で 調整してください'); } catch (e) { console.error(e); toast('作れませんでした：' + e.message); } $('.draft').disabled = false; };
+$('.dcaught').onchange = updDexNote; $('.dseen').onchange = updDexNote;
+
 
 $('.domake').onclick = async () => {
   if (!isAdmin) return;
@@ -171,14 +214,23 @@ $('.domake').onclick = async () => {
   try {
     const [{ G }, SV, { buildStorySave, CLEAR_JA }, ON] = await Promise.all([import('../js/game/state.js'), import('../js/game/save.js'), import('../js/game/devsave.js'), import('../js/online.js')]);
     G.settings = SV.loadSettings();
-    G.save = buildStorySave(name, ch, { starter: +$('.mkst').value, legend: +$('.mklg').value });
+    if (draft) {
+      // 調整した 中身を 使う（なまえを 変えていたら 合わせる）
+      const old = draft.name;
+      draft.name = name;
+      for (const m of [...draft.party, ...draft.box, ...(draft.story.lulu ? [draft.story.lulu] : [])]) if (!m.ot || m.ot === old) m.ot = name;
+      draft.money = Math.max(0, Math.min(9999999, Math.round(+$('.dmoney').value || 0)));
+      (await loadME()).setDexCounts(draft, +$('.dseen').value, +$('.dcaught').value, draftPool);
+      draft.created = Date.now() - 86400000; draft.saved = Date.now();
+      G.save = JSON.parse(JSON.stringify(draft));
+    } else G.save = buildStorySave(name, ch, { starter: +$('.mkst').value, legend: +$('.mklg').value });
     const code = await ON.issueTransferCode();
     try { await ON.publishRanking(true); } catch (e) { /* */ }
     const S = G.save;
     out.innerHTML = `<p class="okc">✅ アカウント「${esc(S.name)}」を 作りました。</p><p class="muted">${esc(CLEAR_JA(ch))}</p><p>引き継ぎコード：</p>
       <p style="font-size:1.9em;font-weight:900;letter-spacing:.1em;color:var(--acc);user-select:all;margin:.2em 0">${esc(code)}</p>
       <div class="row"><button class="sm cpc">📋 コピー</button></div>
-      <p class="muted">ゲームの タイトル画面 →「🔑 引き継ぎコードの発行・アカウント引き継ぎ」→「コードを入力して 連携する」に 入力すると、この データで 遊べます。<br>パーティー ${S.party.length}匹・ボックス ${S.box.length}匹・所持金 ¥${S.money.toLocaleString()}・紋章 ${S.story.crests}個</p>
+      <p class="muted">ゲームの タイトル画面 →「🔑 引き継ぎコードの発行・アカウント引き継ぎ」→「コードを入力して 連携する」に 入力すると、この データで 遊べます。<br>パーティー ${S.party.length}匹・ボックス ${S.box.length}匹・所持金 ¥${S.money.toLocaleString()}・紋章 ${S.story.crests}個・図鑑登録 ${Object.keys(S.dex.seen).length}・捕まえた ${Object.keys(S.dex.caught).length}</p>
       <p class="muted">このコードを 知っている人は この データで 遊べます。ほかの人には 教えないでください。</p>`;
     out.querySelector('.cpc').onclick = () => navigator.clipboard?.writeText(code).then(() => toast('コピーしました'));
   } catch (e) {
@@ -188,6 +240,99 @@ $('.domake').onclick = async () => {
     if (keep === null) localStorage.removeItem(KEY); else localStorage.setItem(KEY, keep);
     $('.domake').disabled = false;
   }
+};
+
+// ---------- 今ある アカウントに プレゼント（お金・アニモン）を 送る ----------
+//  gifts/{pid}/{id} に 書くと、その人の ゲームが 受け取って 追加する（セーブを 直接 書きかえない）
+let giftPid = null, giftName = '';
+const giftMons = [];
+let giftL = null;
+async function findAccount(raw) {
+  raw = raw.trim().toUpperCase();
+  const al = raw.replace(/[^0-9A-Z]/g, '');
+  if (/^\d{8}$/.test(al)) { const s = await D.get(D.ref(db, 'codes/' + al)); return s.exists() ? s.val().pid : null; }
+  if (al.length === 12) { const code = al.slice(0, 4) + '-' + al.slice(4, 8) + '-' + al.slice(8); const s = await D.get(D.ref(db, 'transfers/' + code)); return s.exists() ? s.val().pid : null; }
+  throw new Error('コードの 形が ちがいます（引き継ぎコードは 12文字、フレンドコードは 数字8けた）');
+}
+const gmode = () => (document.querySelector('input[name="gmode"]:checked') || {}).value || 'one';
+function ensureGiftList() {
+  if (giftL) { giftL.redraw(); return; }
+  loadME().then(ME2 => { giftL = ME2.monList($('.glist'), giftMons, { title: '🎁 送る アニモン', max: 30, ot: '', metAt: '運営からの プレゼント' }); });
+}
+{ const d = new Date(Date.now() + 30 * 86400000), p2 = (n) => String(n).padStart(2, '0'); $('.guntil').value = `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`; }
+function onMode() {
+  const all = gmode() === 'all';
+  $('.gone').classList.toggle('hidden', all); $('.gall').classList.toggle('hidden', !all);
+  $('.gform').classList.toggle('hidden', !(all || giftPid));
+  if (all || giftPid) { ensureGiftList(); loadPending(); }
+}
+document.querySelectorAll('input[name="gmode"]').forEach(r => r.onchange = onMode);
+const fmtDay = (t) => { const d = new Date(+t); return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`; };
+async function loadPending() {
+  const el = $('.gpend');
+  const all = gmode() === 'all';
+  if (!all && !giftPid) { el.innerHTML = ''; return; }
+  const path = all ? 'giftsAll' : 'gifts/' + giftPid;
+  try {
+    const s = await D.get(D.ref(db, path));
+    const v = s.exists() ? s.val() : {};
+    const ids = Object.keys(v).sort((a, b) => (+v[b].at || 0) - (+v[a].at || 0));
+    el.innerHTML = all ? (ids.length ? `<b>全員への プレゼント（${ids.length}）</b>` : '<span class="muted">全員への プレゼントは まだ ありません</span>')
+      : (ids.length ? `<b>まだ 受け取られていない プレゼント（${ids.length}）</b>` : '<span class="muted">まだ 受け取られていない プレゼントは ありません</span>');
+    for (const id of ids) {
+      const g = v[id]; let n = 0; try { n = JSON.parse(g.mons || '[]').length; } catch (e) { /* */ }
+      const end = +g.until && Date.now() > +g.until;
+      const row = document.createElement('div'); row.className = 'gpitem';
+      row.innerHTML = `<span class="grow">${g.money ? '¥' + (+g.money).toLocaleString() + ' ' : ''}${n ? 'アニモン ' + n + '匹 ' : ''}${g.note ? '「' + esc(g.note) + '」' : ''}${all ? `<br><small class="muted">${g.at ? fmtDay(g.at) + ' 送信' : ''}${+g.until ? '・' + fmtDay(g.until) + ' まで' : ''}${g.newOk === false ? '・送った 時点の プレイヤーだけ' : ''}${end ? '・<b class="ng">期限切れ</b>' : ''}</small>` : ''}</span><button class="sm red">${all ? '終わらせる' : '取り消す'}</button>`;
+      row.querySelector('button').onclick = async () => {
+        if (!confirm(all ? 'この プレゼントを 終わらせますか？（まだ 受け取っていない 人は 受け取れなく なります）' : 'この プレゼントを 取り消しますか？')) return;
+        await D.remove(D.ref(db, `${path}/${id}`)); toast(all ? '終わらせました' : '取り消しました'); loadPending();
+      };
+      el.appendChild(row);
+    }
+  } catch (e) { el.innerHTML = `<span class="ng">読めませんでした：${esc(errText(e))}（新しい ルールを 公開してください）</span>`; }
+}
+$('.gfind').onclick = async () => {
+  const w = $('.gwho');
+  $('.gform').classList.add('hidden'); giftPid = null;
+  w.innerHTML = '<span class="muted">さがしています……</span>';
+  try {
+    const pid = await findAccount($('.gcode').value);
+    if (!pid) { w.innerHTML = '<span class="ng">見つかりません（コードを 発行しなおした 場合は 新しい コードを 入れてください）</span>'; return; }
+    const pl = (await D.get(D.ref(db, 'players/' + pid))).val() || {};
+    let sum = '';
+    try { const sv = await D.get(D.ref(db, 'saves/' + pid)); if (sv.exists()) { const v = sv.val(); sum = `図鑑 ${v.dex ?? '?'}・紋章 ${v.crests ?? '?'}・プレイ ${Math.floor((v.playTime || 0) / 3600)}時間${Math.floor((v.playTime || 0) / 60) % 60}分`; } } catch (e) { sum = '（セーブの 中身は ルールを 公開すると 見られます）'; }
+    giftPid = pid; giftName = pl.name || '';
+    w.innerHTML = `<span class="okc">✅ 見つかりました：${esc(giftName || '（なまえ なし）')}</span> <span class="muted">${esc(sum)}</span>`;
+    onMode();
+  } catch (e) { w.innerHTML = `<span class="ng">${esc(errText(e))}</span>`; }
+};
+$('.gcode').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('.gfind').click(); });
+$('.gsend').onclick = async () => {
+  const all = gmode() === 'all';
+  if (!all && !giftPid) return;
+  const money = Math.round(+$('.gmoney').value || 0), note = $('.gnote').value.trim().slice(0, 200), toBox = $('.gtobox').checked;
+  if (!money && !giftMons.length) { alert('お金か アニモンを 入れてください'); return; }
+  let until = 0;
+  if (all) {
+    const v = $('.guntil').value;
+    until = v ? new Date(v + 'T23:59:59').getTime() : 0;
+    if (until && until < Date.now()) { alert('期限が もう すぎています'); return; }
+  }
+  const what = `${money ? '¥' + money.toLocaleString() + ' ' : ''}${giftMons.length ? 'アニモン ' + giftMons.length + '匹 ' : ''}`;
+  if (!confirm(all ? `【全員】すべての プレイヤーに ${what}を 送りますか？${until ? `\n（${fmtDay(until)} まで 受け取れます）` : ''}` : `${giftName || 'この人'} に ${what}を 送りますか？`)) return;
+  $('.gsend').disabled = true;
+  try {
+    const gid = 'g' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    const mons = giftMons.map(m => ({ sp: m.sp, lv: m.lv, iv: m.iv, shiny: !!m.shiny, nick: m.nick || '', moves: m.moves.map(x => x.id), item: m.item || null, toBox }));
+    const data = { at: D.serverTimestamp(), by: user.uid, money, note, mons: JSON.stringify(mons) };
+    if (all) { if (until) data.until = until; data.newOk = $('.gnew').checked; }
+    await D.set(D.ref(db, all ? `giftsAll/${gid}` : `gifts/${giftPid}/${gid}`), data);
+    toast(all ? '🎁 全員に 送りました！ ゲームを 開いた 人から 順に 届きます' : '🎁 送りました！ その人が ゲームを 開くと 届きます');
+    giftMons.length = 0; giftL && giftL.redraw(); $('.gmoney').value = 0; $('.gnote').value = '';
+    loadPending();
+  } catch (e) { alert('送れませんでした：' + errText(e) + '\n（新しい ルールを 公開してください）'); }
+  $('.gsend').disabled = false;
 };
 
 boot().catch(e => { $('.loading').innerHTML = `<p class="ng">読み込めませんでした：${esc(errText(e))}</p>`; });

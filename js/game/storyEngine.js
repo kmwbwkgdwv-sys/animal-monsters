@@ -202,12 +202,21 @@ async function doAction(c) {
     case 'takeLulu': case 'loseLulu': {
       const uid = S.luluUid;
       for (const arr of [G.save.party, G.save.box]) { const i = arr.findIndex(m => m.uid === uid); if (i >= 0) { S.lulu = arr.splice(i, 1)[0]; break; } }
+      // 連れ去られる 前の 技・持ち物を 覚えておく（戻ってきたとき そのまま 返す）
+      if (S.lulu) S.luluKeep = { moves: JSON.parse(JSON.stringify(S.lulu.moves)), item: S.lulu.item || null, nick: S.lulu.nick || '' };
       if (G.save.party.length === 0 && G.save.box.length) G.save.party.push(G.save.box.shift());
       refreshFollower();
       break;
     }
     case 'returnLulu': {
-      if (S.lulu) { const m = S.lulu; m.hp = Math.max(1, m.hp); const where = giveMon(m); S.lulu = null; if (where === 'box') toast('ルルは ボックスに 送られた（パーティーがいっぱい）'); }
+      if (S.lulu) {
+        const m = S.lulu;
+        // 技構成・持ち物・ニックネームは 連れ去られる 前と 同じ まま
+        if (S.luluKeep) { if (Array.isArray(S.luluKeep.moves) && S.luluKeep.moves.length) m.moves = S.luluKeep.moves; m.item = S.luluKeep.item; if (S.luluKeep.nick) m.nick = S.luluKeep.nick; }
+        m.hp = Math.max(1, m.hp);
+        const where = giveMon(m); S.lulu = null; delete S.luluKeep;
+        if (where === 'box') toast('ルルは ボックスに 送られた（パーティーがいっぱい）');
+      }
       refreshFollower();
       break;
     }

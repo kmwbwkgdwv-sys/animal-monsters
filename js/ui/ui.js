@@ -50,22 +50,34 @@ export async function say(lines) {
   hideDialog();
 }
 // 選択肢付きの質問
+// 選択肢は 同時に 1つだけ。
+//  ・同じ 質問が 連打などで 重ねて 呼ばれたら、あとの ほうは すぐ「やめる（最後の 選択肢）」を 返す
+//    （ボタンが 何個も 出たり、道具を 2回 使ったり しないように）
+//  ・ちがう 質問が 来たら、前の 質問は「やめる」で 終わらせてから 出す
+let askNow = null;
 export function ask(text, options, name = '') {
-  return new Promise(res => {
-    const d = $('#dialog');
-    d.classList.remove('hidden');
-    d.querySelector('.name').textContent = UI.fmt(name);
-    d.querySelector('.text').textContent = UI.fmt(text);
-    d.querySelector('.next').style.visibility = 'hidden';
-    const box = el('div', 'choices');
-    options.forEach((o, i) => {
-      const b = el('button', 'btn' + (i === 0 ? ' pri' : ''), esc(o));
-      b.onclick = (e) => { e.stopPropagation(); audio.sfx('select'); box.remove(); hideDialog(); res(i); };
-      box.appendChild(b);
-    });
-    d.appendChild(box);
-    advanceFn = null;
+  const key = name + '|' + text + '|' + options.join('/');
+  if (askNow && askNow.key === key && askNow.box.isConnected) return Promise.resolve(options.length - 1);
+  if (askNow) { const old = askNow; askNow = null; old.box.remove(); old.res(old.cancel); }
+  let resolve;
+  const promise = new Promise(r => { resolve = r; });
+  const d = $('#dialog');
+  d.querySelectorAll('.choices').forEach(x => x.remove());
+  d.classList.remove('hidden');
+  d.querySelector('.name').textContent = UI.fmt(name);
+  d.querySelector('.text').textContent = UI.fmt(text);
+  d.querySelector('.next').style.visibility = 'hidden';
+  const box = el('div', 'choices');
+  const me = { key, box, res: resolve, cancel: options.length - 1, promise };
+  options.forEach((o, i) => {
+    const b = el('button', 'btn' + (i === 0 ? ' pri' : ''), esc(o));
+    b.onclick = (e) => { e.stopPropagation(); if (askNow !== me) return; askNow = null; audio.sfx('select'); box.remove(); hideDialog(); resolve(i); };
+    box.appendChild(b);
   });
+  d.appendChild(box);
+  advanceFn = null;
+  askNow = me;
+  return promise;
 }
 export const confirmBox = async (text, yes = 'はい', no = 'いいえ') => (await ask(text, [yes, no])) === 0;
 

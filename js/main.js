@@ -14,7 +14,7 @@ import { initInput, Input } from './input.js';
 import { audio } from './audio.js';
 import { $, el, esc, UI, openScreen, toast, confirmBox, say, ask, loadingProgress, hideLoading, advance, topScreen, fade, closeAllScreens } from './ui/ui.js';
 import { OW, buildOverworld, updateOverworld, runFlow, buildBarriers, refreshActors, resetCamera, tickRepel, repelLeft } from './game/overworld.js';
-import { showNewNewsOnce, openNewsList, refreshNewsBadges, linkOnboarding, hookTouchLayout } from './ui/extras.js';
+import { showNewNewsOnce, openNewsList, refreshNewsBadges, linkOnboarding, hookTouchLayout, startGiftWatch } from './ui/extras.js';
 import { resetInput } from './input.js';
 import { initMinimap, updateMinimap } from './ui/minimap.js';
 import { initCoop, updateCoop, startInviteWatch } from './game/coop.js';
@@ -351,7 +351,7 @@ async function startGame(state, isNew) {
     setTimeout(hint, 5000);
   }
   // オンラインが使える設定なら、裏でランキングに自分の成績を載せておく
-  setTimeout(() => import('./online.js').then(m => { if (m.isConfigured()) m.ensurePlayer().then(() => { m.publishRanking(true); startInviteWatch(); }).catch(() => {}); }), 4000);
+  setTimeout(() => import('./online.js').then(m => { if (m.isConfigured()) m.ensurePlayer().then(() => { m.publishRanking(true); startInviteWatch(); startGiftWatch(); }).catch(() => {}); }), 4000);
 }
 
 // ---------- HUD ----------

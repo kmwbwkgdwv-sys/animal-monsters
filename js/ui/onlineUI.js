@@ -9,7 +9,7 @@ import { MOVES } from '../data/moves.js';
 import { ITEMS } from '../data/items.js';
 import { $, el, esc, openScreen, toast, ask, confirmBox, inputText, say } from './ui.js';
 import { portrait } from '../render/portrait.js';
-import { pickFromAll, monDetail } from './menus.js';
+import { pickFromAll, monDetail, presets, presetMons, openPresets } from './menus.js';
 import { startPvpBattle } from './battleUI.js';
 import { audio } from '../audio.js';
 import { writeGame } from '../game/save.js';
@@ -129,7 +129,14 @@ async function battleRoom(id, role) {
     const all = [...G.save.party, ...G.save.box];
     const uniq = new Set(all.map(m => m.sp));
     if (uniq.size < set.count) { await say([`|${set.count}種類 以上の アニモンが 必要です。`]); ON.closeRoom(id, 'abandoned'); w.close(); return; }
-    const team = await pickFromAll(`対戦に 出す ${set.count}匹を 選ぶ`, null, set.count);
+    // 保存した パーティーが あれば、そこから 選べる（選んだ あと 出す 子を 確認・変更 できる）
+    let pre = [];
+    if (presets().some(p => presetMons(p).length)) {
+      const how = await ask(`チームの 選び方（${set.count}匹）`, ['💾 保存した パーティーから', '1匹ずつ 選ぶ', 'やめる']);
+      if (how === 2) { ON.closeRoom(id, 'abandoned'); w.close(); return; }
+      if (how === 0) { const p = await openPresets({ pick: true }); if (p) pre = presetMons(p); }
+    }
+    const team = await pickFromAll(`対戦に 出す ${set.count}匹を 選ぶ`, null, set.count, pre);
     if (!team) { ON.closeRoom(id, 'abandoned'); w.close(); return; }
     await ON.updateRoom(id, { [role + 'Team']: JSON.stringify(teamPayload(team)) });
     w.body.querySelector('.st2').textContent = '相手の チーム選びを 待っています……';

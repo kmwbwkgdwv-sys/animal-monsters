@@ -189,7 +189,7 @@ export class Battle {
       if (this.over) return;
       if (a.type === 'run') { if (this._tryRun(a)) return; }
       else if (a.type === 'catch') { if (this._tryCatch(a)) return; }
-      else if (a.type === 'item') this._useItem(a);
+      else if (a.type === 'item' && this.kind !== 'pvp') this._useItem(a);   // フレンド対戦では 道具を 使えない
       else if (a.type === 'switch') this._switch(a);
       else if (a.type === 'forfeit') { this.over = true; this.result = { winner: 1 - a.side, kind: 'forfeit', by: a.side }; this.msg(`${this.sides[a.side].name} は 降参した！`); this.emit({ t: 'end', result: this.result }); return; }
     }

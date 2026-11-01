@@ -795,3 +795,53 @@ b, strong { font-weight: 800; }
 @media (max-height: 520px) { .cmsw { width: 1.75em; height: 1.75em; } .cmchip { padding: .22em .6em; font-size: .82em; } .cmrow { margin-bottom: .4em; } .cm { gap: .6em; } }
 @media (max-width: 700px) and (orientation: portrait) { .cm { grid-template-columns: 1fr; grid-template-rows: 38% 1fr; } }
 @media (pointer: coarse) { .cmsw { width: 2.1em; height: 2.1em; } .cmvals { gap: .45em; } }
+/* ---------- タイプ・持ち物の しるし（ボックス）／パーティーの 並べかえ ---------- */
+.boxgrid { grid-template-columns: repeat(auto-fill, minmax(5.3em, 1fr)); }
+.bcell { aspect-ratio: auto; min-height: 6.9em; justify-content: flex-start; padding-top: .3em; }
+.bcell img { width: 3.3em; height: 3.3em; }
+.bxcard { position: relative; }
+.tdotrow { display: flex; gap: 2px; justify-content: center; margin-top: .12em; }
+.tdot { font-size: .58em; font-weight: 900; color: #fff; padding: 0 .38em; border-radius: 6px; line-height: 1.5; text-shadow: 0 1px 1px rgba(0, 0, 0, .65); box-shadow: inset 0 -1px 0 rgba(0, 0, 0, .2); }
+.heldmark { position: absolute; left: .15em; top: 1.2em; font-size: .78em; filter: drop-shadow(0 1px 1px rgba(0, 0, 0, .6)); }
+.heldnm { font-size: .55em; font-weight: 800; color: #ffd98a; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 1.3; order: 9; }
+.pttools { display: flex; gap: .5em; flex-wrap: wrap; margin: 0 0 .5em; }
+.ptboxhd .bsort { font-size: .8em; padding: .3em .4em; border-radius: 8px; background: rgba(5, 10, 40, .55); color: #fff; border: 1px solid rgba(160, 185, 255, .5); }
+/* 入手済みの しるし（フィールドの 野生・バトル） */
+#labels .lbl.own { background: radial-gradient(circle at 40% 35%, #d8ffe4, #3fcf7a 60%, #1c9a52); color: #fff; border-color: #fff; border-radius: 50%; width: 1.35em; height: 1.35em; padding: 0; display: grid; place-items: center; font-size: .85em; font-weight: 900; text-shadow: 0 1px 1px rgba(0, 0, 0, .4); }
+.ownmark { margin-left: .4em; font-size: .62em; font-weight: 900; color: #fff; background: #2fae63; border-radius: 8px; padding: .05em .45em; vertical-align: middle; }
+/* バトルの 手持ち・交代：技構成 */
+.bparty .mcard { align-items: flex-start; }
+.bparty .mcard .info { min-width: 0; }
+.bmvrow { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .25em; margin-top: .3em; }
+.bmv { position: relative; display: flex; flex-direction: column; text-align: left; padding: .15em .45em .2em; border-radius: 8px; background: linear-gradient(var(--tc), color-mix(in srgb, var(--tc) 70%, #000)); color: #fff; text-shadow: 0 1px 1px rgba(0, 0, 0, .55); line-height: 1.25; min-width: 0; }
+.bmv b { font-size: .78em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 1em; }
+.bmv small { font-size: .62em; opacity: .95; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bmv em { position: absolute; right: .3em; top: .1em; font-style: normal; font-weight: 900; font-size: .85em; }
+.bmv em.e2 { color: #fff36a; } .bmv em.e1 { color: #c9d2ff; } .bmv em.e0 { color: #ff9aa8; }
+.bheld { margin-left: .4em; font-size: .85em; color: #ffd98a; font-weight: 800; }
+.bfoehint { font-size: .72em; margin-left: auto; margin-right: .6em; }
+.cmd.target .tline { display: block; font-size: .6em; margin-top: .15em; }
+@media (max-height: 520px) { .bmv b { font-size: .72em; } .bmv small { font-size: .58em; } .bfoehint { display: none; } }
+/* おもいだしの巻物：説明が 切れないように（下の ボタンと 重ならない） */
+.scrollov .lbox { padding-bottom: 0; }
+.scrollov .lmcard.cur { opacity: .85; }
+.scrollov .lmcard .lmdesc, .scrollov .lmcard .lmfx, .learnov .lmcard .lmdesc, .learnov .lmcard .lmfx { white-space: normal; overflow: visible; word-break: break-word; }
+.learnov .lbtns { position: static; background: none; margin-bottom: 0; padding: .6em 0 .5em; }
+/* パーティーの 保存 */
+.pslist { display: flex; flex-direction: column; gap: .45em; }
+.psrow { display: flex; align-items: center; gap: .6em; padding: .45em .6em; border-radius: 14px; background: linear-gradient(160deg, rgba(255, 255, 255, .12), rgba(255, 255, 255, .04)); border: 2px solid rgba(160, 185, 255, .45); }
+.psrow.now { border-color: var(--acc); }
+.psno { font-weight: 900; font-size: 1.2em; color: var(--acc); width: 1.5em; text-align: center; }
+.psmain { flex: 1; min-width: 0; }
+.psname { display: flex; align-items: center; gap: .4em; flex-wrap: wrap; }
+.pstag { font-size: .7em; background: var(--acc); color: #3a2400; border-radius: 99px; padding: .05em .55em; font-weight: 900; }
+.psmons { display: flex; flex-wrap: wrap; gap: .25em; margin-top: .2em; align-items: center; }
+.psm { display: flex; flex-direction: column; align-items: center; }
+.psm img { width: 2.6em; height: 2.6em; object-fit: contain; }
+.psm small { font-size: .6em; color: var(--acc); font-weight: 800; }
+.psbtns { display: flex; flex-direction: column; gap: .3em; }
+.bcell .selno { position: absolute; right: .25em; bottom: .2em; font-weight: 900; color: #3a2400; background: var(--acc); border-radius: 50%; width: 1.4em; height: 1.4em; display: grid; place-items: center; font-size: .75em; }
+.bcell .selno:empty { display: none; }
+.bcell.picked2 { border-color: var(--acc) !important; box-shadow: 0 0 0 2px rgba(255, 210, 63, .5), 0 3px 0 rgba(0, 0, 0, .28); }
+@media (max-height: 520px) { .psbtns { flex-direction: row; flex-wrap: wrap; justify-content: flex-end; max-width: 13em; } .psm img { width: 2.2em; height: 2.2em; } }
+.pthint .hosp { color: #ffd98a; }

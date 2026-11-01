@@ -2327,8 +2327,9 @@ function addExtras(K, M, head) {
   if (ex.has('cape')) {
     const n = A.neck;
     const cp = K.joint(pv, [0, n[1] + A.w * 0.1, n[2] - A.w * 0.55], [0.25, 0, 0]);
-    const P = new Part([box([0, -A.w * 1.3, -A.w * 0.05], [A.w * 1.15, A.w * 1.3, A.w * 0.05], A.w * 0.04, [0.78, 0.15, 0.25], { k: 0 })]);
-    P.paint(box([0, -A.w * 1.3, A.w * 0.03], [A.w * 1.1, A.w * 1.25, A.w * 0.03], 0), [0.95, 0.82, 0.3], A.w * 0.03);
+    const th = Math.max(A.w * 0.12, 0.035);   // マントの 厚み（薄すぎると 形に ならず 消えてしまう）
+    const P = new Part([box([0, -A.w * 1.3, -th], [A.w * 1.15, A.w * 1.3, th], th * 0.8, [0.78, 0.15, 0.25], { k: 0 })]);
+    P.paint(box([0, -A.w * 1.3, th * 0.6], [A.w * 1.1, A.w * 1.25, th * 0.5], 0), [0.95, 0.82, 0.3], th * 0.5);
     K.add(cp, K.mesh(P, 'small')); M.cape = cp;
   }
   if (ex.has('star')) { const z = A.z0 + A.w * 0.5; K.prim(pv, PRIM.star, [1, 0.95, 0.4], [0, A.y, z + A.w * 0.55], [A.w * 0.35], null, { emis: [0.5, 0.45, 0.1], unlit: true, outline: 0 }).doubleSide = true; }

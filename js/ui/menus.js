@@ -16,7 +16,7 @@ import { audio } from '../audio.js';
 import { Input } from '../input.js';
 import { STATUS_JA } from '../game/battle.js';
 import { saveSettings } from '../game/save.js';
-import { learnMove, evolveScene, evoStopMsg } from './battleUI.js';
+import { learnMove, evolveScene, evoStopMsg, moveCardHtml } from './battleUI.js';
 
 const waitClose = (s) => new Promise(r => { s.onClose = r; });
 const STAT_JA = { hp: 'HP（体力）', atk: '攻撃', def: '防御', spe: '素早さ' };
@@ -170,18 +170,41 @@ function monCardHtml(m, extra = '') {
   <div class="hpbar"><i class="${hpClass(r)}" style="width:${Math.max(0, r * 100)}%"></i></div><div class="muted" style="font-size:.78em">HP ${m.hp}/${mx}${extra}</div></div>`;
 }
 
+// ボックスから パーティーに 入れるのは 病院（アニモン病院の 受付）で だけ。並べかえ・預けるのは いつでも
+let atHospital = false;
+export const canWithdraw = () => atHospital;
+const NEED_HOSPITAL = '📦 ボックスから パーティーに 入れるのは アニモン病院で できます（受付で「パーティーを 変更する」）';
+
+// 並べかえ（パーティー・ボックス 共通）
+const SORT_OPTS = [['new', '新しい順'], ['lvd', 'レベルが 高い順'], ['lva', 'レベルが 低い順'], ['dex', '図鑑番号順'], ['type', 'タイプ順'], ['iv', '個体値が 高い順'], ['hp', 'HPが 多い順'], ['name', '名前順']];
+const TYPE_ORDER = Object.keys(TYPE_JA);
+const MON_SORT = {
+  new: (a, b) => (b.caughtAt || 0) - (a.caughtAt || 0),
+  lvd: (a, b) => b.lv - a.lv || a.sp - b.sp, lva: (a, b) => a.lv - b.lv || a.sp - b.sp,
+  dex: (a, b) => a.sp - b.sp || b.lv - a.lv,
+  type: (a, b) => TYPE_ORDER.indexOf(SPECIES[a.sp].types[0]) - TYPE_ORDER.indexOf(SPECIES[b.sp].types[0]) || TYPE_ORDER.indexOf(SPECIES[a.sp].types[1] || '') - TYPE_ORDER.indexOf(SPECIES[b.sp].types[1] || '') || a.sp - b.sp,
+  iv: (a, b) => ivTotal(b) - ivTotal(a), hp: (a, b) => maxHp(b) - maxHp(a),
+  name: (a, b) => monName(a).localeCompare(monName(b), 'ja'),
+};
+// ボックスの 小さい カード用：タイプ（色つきの 短い 札）と 持ち物の しるし
+const TYPE_SHORT = { normal: 'ノ', fire: '炎', water: '水', grass: '草', steel: '鋼', poison: '毒', electric: '電', ice: '氷', fighting: '闘', ground: '地', flying: '飛', psychic: 'エ', bug: '虫', rock: '岩', ghost: 'ゴ', dragon: '竜', dark: '悪', fairy: 'フ' };
+export function typeDots(sp) { return `<div class="tdotrow">${SPECIES[sp].types.map(t => `<span class="tdot" style="background:${TYPE_COLOR[t]}" title="${TYPE_JA[t]}">${TYPE_SHORT[t]}</span>`).join('')}</div>`; }
+export function heldMark(m) { const it = m.item && ITEMS[m.item]; return it ? `<span class="heldmark" title="持ち物：${esc(it.name)}">${it.icon || '🎁'}</span><div class="heldnm">${esc(it.name)}</div>` : ''; }
+
 // ---------- パーティー ----------
 export async function openParty() {
   const s = openScreen('パーティー', { extra: '<span class="muted">長押しして ドラッグで 入れかえ</span>' });
   let q = '';
+  G.ptBoxSort ||= 'new';
   const P = () => G.save.party, B = () => G.save.box;
   const renderBox = () => {
     const box = s.body.querySelector('.ptbox'); if (!box) return;
     box.innerHTML = '';
     const list = B().map((m, i) => ({ m, i })).filter(({ m }) => !q || monName(m).includes(q) || SPECIES[m.sp].name.includes(q));
+    const cmp = MON_SORT[G.ptBoxSort]; if (cmp) list.sort((a, b) => cmp(a.m, b.m));
     if (!list.length) box.innerHTML = `<p class="muted" style="margin:.6em">${B().length ? '見つかりません' : 'ボックスは からっぽ。ここに パーティーの アニモンを 落とすと 預けられます'}</p>`;
     for (const { m, i } of list) {
-      const c = el('button', 'bxcard' + (partyHasSpecies(m.sp) ? ' dup' : ''), `<img src="${BLANK}" draggable="false"><div class="nm">${m.shiny ? '✨' : ''}${esc(monName(m))}</div><div class="lv">Lv${m.lv}${rideBadge(m.sp, true)}</div>`);
+      const c = el('button', 'bxcard' + (partyHasSpecies(m.sp) ? ' dup' : ''), `<img src="${BLANK}" draggable="false">${heldMark(m)}<div class="nm">${m.shiny ? '✨' : ''}${esc(monName(m))}</div><div class="lv">Lv${m.lv}${rideBadge(m.sp, true)}</div>${typeDots(m.sp)}`);
       c.dataset.drag = 'box'; c.dataset.i = i;
       portraitAsync(m.sp, m.shiny, false, (u) => { const im = c.querySelector('img'); if (im) im.src = u; });
       c.onclick = async () => { if (justDragged()) return; audio.sfx('select'); await monDetail(m, 'box'); render(); };
@@ -189,9 +212,9 @@ export async function openParty() {
     }
   };
   const render = () => {
-    s.body.innerHTML = `<div class="ptgrid"></div>
-      <div class="pthint">👆 アニモンを <b>長押し</b>（PCは そのまま ドラッグ）して ほかの アニモンに 重ねると 入れかわります。下の ボックスに 落とすと 預けて、ボックスの 子を 上に 落とすと パーティーに 入ります。</div>
-      <div class="ptboxhd"><b>📦 ボックス</b><span class="muted">${B().length}匹・持てる数 ${monCount()}/${monCap()}</span><span class="grow"></span><input class="textin q" placeholder="名前で さがす" value="${esc(q)}"></div>
+    s.body.innerHTML = `<div class="pttools"><button class="btn sm psort">↕ パーティーを 並べかえ</button><button class="btn sm ppreset">💾 パーティーの 保存・呼び出し</button></div><div class="ptgrid"></div>
+      <div class="pthint">👆 アニモンを <b>長押し</b>（PCは そのまま ドラッグ）して ほかの アニモンに 重ねると 順番が 入れかわります。下の ボックスに 落とすと 預けます。${atHospital ? 'ボックスの 子を 上に 落とすと パーティーに 入ります。' : '<b class="hosp">🏥 ボックスの 子を パーティーに 入れるのは アニモン病院で できます。</b>'}</div>
+      <div class="ptboxhd"><b>📦 ボックス</b><span class="muted">${B().length}匹・持てる数 ${monCount()}/${monCap()}</span><span class="grow"></span><select class="bsort">${SORT_OPTS.map(([v, n]) => `<option value="${v}" ${G.ptBoxSort === v ? 'selected' : ''}>${n}</option>`).join('')}</select><input class="textin q" placeholder="名前で さがす" value="${esc(q)}"></div>
       <div class="ptbox" data-drop="box"></div>`;
     const grid = s.body.querySelector('.ptgrid');
     for (let i = 0; i < PARTY_MAX; i++) {
@@ -211,6 +234,15 @@ export async function openParty() {
     const inp = s.body.querySelector('.q');
     inp.onkeydown = (e) => e.stopPropagation();
     inp.oninput = () => { q = inp.value.trim(); renderBox(); };
+    s.body.querySelector('.bsort').onchange = (e) => { G.ptBoxSort = e.target.value; renderBox(); };
+    s.body.querySelector('.psort').onclick = async () => {
+      audio.sfx('select');
+      const opts = SORT_OPTS.filter(([v]) => v !== 'new');
+      const k = await ask('パーティーを どの 順番に 並べる？（いちばん 前が 先頭で 戦う）', [...opts.map(o => o[1]), 'やめる']);
+      if (k >= opts.length) return;
+      P().sort(MON_SORT[opts[k][0]]); save(); toast(`${opts[k][1]}に 並べかえた！（先頭：${monName(P()[0])}）`); render();
+    };
+    s.body.querySelector('.ppreset').onclick = async () => { audio.sfx('select'); await openPresets(); render(); };
     renderBox();
   };
 
@@ -219,6 +251,7 @@ export async function openParty() {
   const justDragged = () => performance.now() - dragEnd < 350;
   const begin = (d) => {
     if (d.active) return;
+    if (s.closed || !s.body.isConnected) { drag = null; return; }
     d.active = true;
     const src = d.zone === 'party' ? P()[d.i] : B()[d.i]; if (!src) { drag = null; return; }
     d.mon = src;
@@ -270,6 +303,7 @@ export async function openParty() {
       if (party.length <= 1) { toast('パーティーが 0匹に なってしまう！'); return; }
       const [m] = party.splice(d.i, 1); box.unshift(m); toast(`${monName(m)} を ボックスに 預けた`);
     } else if (d.zone === 'box' && zone === 'party') {
+      if (!atHospital) { toast(NEED_HOSPITAL, 3600); return; }
       const m = box[d.i]; if (!m) return;
       if (j < party.length) {
         const out = party[j];
@@ -303,20 +337,36 @@ export async function openParty() {
     move(d.x, d.y);
   };
   const onUp = (e) => { if (drag && e.pointerId === drag.id) finish(e.clientX, e.clientY); };
-  const onCancel = (e) => { if (drag && e.pointerId === drag.id) { const d = drag; if (d.active) finish(d.x, d.y); else { clearTimeout(d.timer); drag = null; } } };
-  // つかんでいる あいだは 画面が スクロールしないように
-  const noScroll = (e) => { if (drag && drag.active) e.preventDefault(); };
+  // スマホ：つかんだ あとで 指を 上下に 動かすと、ブラウザが スクロールと 思って pointercancel を 出すことが ある。
+  //  そのときは タッチの 動き（touchmove / touchend）で ドラッグを 続ける
+  const onCancel = (e) => { if (drag && e.pointerId === drag.id) { const d = drag; if (d.active) { if (d.type !== 'mouse') return; finish(d.x, d.y); } else { clearTimeout(d.timer); drag = null; } } };
+  // つかんでいる あいだは 画面が スクロールしないように（指の 位置で ドラッグを 動かす）
+  const noScroll = (e) => {
+    if (!drag || !drag.active) return;
+    if (e.cancelable) e.preventDefault();
+    const t = e.touches && e.touches[0]; if (!t) return;
+    drag.x = t.clientX; drag.y = t.clientY; move(drag.x, drag.y);
+  };
+  const onTouchEnd = (e) => { if (drag && drag.active && drag.type !== 'mouse') { const t = e.changedTouches && e.changedTouches[0]; finish(t ? t.clientX : drag.x, t ? t.clientY : drag.y); } };
   s.body.addEventListener('pointerdown', onDown);
   window.addEventListener('pointermove', onMove);
   window.addEventListener('pointerup', onUp);
   window.addEventListener('pointercancel', onCancel);
   document.addEventListener('touchmove', noScroll, { passive: false });
+  document.addEventListener('touchend', onTouchEnd); document.addEventListener('touchcancel', onTouchEnd);
   s.body.addEventListener('contextmenu', (e) => e.preventDefault());
+  // 画面を 閉じたら（つかんでいる 途中でも）ドラッグを すぐ 片付ける
+  const cleanupDrag = () => {
+    if (drag) { clearTimeout(drag.timer); cancelAnimationFrame(drag.raf); if (drag.ghost) drag.ghost.remove(); if (drag.el) drag.el.classList.remove('dragging'); drag = null; }
+    document.querySelectorAll('.dragghost').forEach(g => g.remove());
+    document.body.classList.remove('isdrag');
+  };
   render();
   await waitClose(s);
+  cleanupDrag();
   window.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', onUp); window.removeEventListener('pointercancel', onCancel);
   document.removeEventListener('touchmove', noScroll);
-  if (drag) { cancelAnimationFrame(drag.raf); if (drag.ghost) drag.ghost.remove(); drag = null; }
+  document.removeEventListener('touchend', onTouchEnd); document.removeEventListener('touchcancel', onTouchEnd);
   (await import('../game/overworld.js')).refreshFollower();
 }
 
@@ -364,7 +414,8 @@ export async function monDetail(m, where, opts = {}) {
       if (G.save.party.length <= 1) { toast('パーティーが 0匹に なってしまう！'); return; }
       G.save.party.splice(pi, 1); G.save.box.unshift(m); toast('ボックスに 預けました'); s.close();
     });
-    if (bi >= 0) btn('パーティーに入れる', async () => {
+    if (bi >= 0) btn(atHospital ? 'パーティーに入れる' : '🏥 パーティーに入れる', async () => {
+      if (!atHospital) { toast(NEED_HOSPITAL, 3600); return; }
       if (partyHasSpecies(m.sp)) { toast('同じアニモンが すでに パーティーにいる！'); return; }
       if (G.save.party.length >= PARTY_MAX) {
         const k = await ask('パーティーが いっぱいです。だれと 入れかえる？', [...G.save.party.map(x => monName(x)), 'やめる']);
@@ -415,10 +466,28 @@ async function scrollLearn(m) {
   const sp = SPECIES[m.sp];
   const cand = sp.moves.map(x => x.id).filter(id => !m.moves.find(y => y.id === id));
   if (!cand.length) { toast('覚えられる技は 全部 覚えている！'); return; }
-  const k = await ask('おもいだしの巻物：どの技を 覚えさせる？', [...cand.map(id => `${MOVES[id].name}（${TYPE_JA[MOVES[id].type]}・${MOVES[id].power ? '威力' + MOVES[id].power : '変化'}${moveEffects(MOVES[id]).length ? '・' + moveEffectText(MOVES[id]) : ''}）`), 'やめる']);
-  if (k >= cand.length) return;
+  // 技の くわしい 説明（タイプ・威力・命中・PP・説明・効果）を カードで 全部 見せて 選ぶ
+  const id = await new Promise(res => {
+    const ov = el('div', 'learnov scrollov');
+    ov.innerHTML = `<div class="lbox"><div class="lttl">📜 おもいだしの巻物：${esc(monName(m))} に どの技を 覚えさせる？</div>
+      <div class="lq">覚えられる 技（${cand.length}）</div><div class="lmlist cand"></div>
+      <div class="lq" style="color:#cfe0ff">いま 覚えている 技</div><div class="lmlist now"></div>
+      <div class="row lbtns"><button class="btn cancel">やめる</button></div></div>`;
+    const lc = ov.querySelector('.cand'), ln = ov.querySelector('.now');
+    for (const cid of cand) {
+      const mv = MOVES[cid];
+      const c = el('div', 'lmcard', moveCardHtml(mv));
+      const b = el('button', 'btn sm pri', 'この技を 覚える');
+      b.onclick = (e) => { e.stopPropagation(); audio.sfx('select'); ov.remove(); res(cid); };
+      c.appendChild(b); lc.appendChild(c);
+    }
+    for (const x of m.moves) ln.appendChild(el('div', 'lmcard cur', moveCardHtml(MOVES[x.id], x.pp)));
+    ov.querySelector('.cancel').onclick = (e) => { e.stopPropagation(); audio.sfx('cancel'); ov.remove(); res(null); };
+    $('#ui').appendChild(ov);
+  });
+  if (!id) return;
   useItem('scroll');
-  await learnMove(m, cand[k]);
+  await learnMove(m, id);
 }
 
 // ---------- ボックス（しぼりこみ付き） ----------
@@ -496,7 +565,7 @@ export async function openBox(opts = {}) {
     grid.classList.toggle('bulkmode', bulk);
     if (!list.length) grid.innerHTML = '<p class="muted">アニモンが いません。</p>';
     for (const m of list) {
-      const c = el('button', 'bcell' + (picked.has(m) ? ' picked' : '') + (bulk && !canRelease(m) ? ' locked' : ''), `<img src="${BLANK}"><div class="bnm">${esc(monName(m))}</div><div class="lv">Lv${m.lv}</div>${m.shiny ? '<span class="shiny-mark">✨</span>' : ''}${m.fav ? '<span class="fav">★</span>' : ''}${SPECIES[m.sp].ride ? `<span class="ride-mark" title="ライドできる">${RIDE_IC[SPECIES[m.sp].ride]}</span>` : ''}${bulk ? `<span class="chk">${picked.has(m) ? '✔' : ''}</span>` : ''}`);
+      const c = el('button', 'bcell' + (picked.has(m) ? ' picked' : '') + (bulk && !canRelease(m) ? ' locked' : ''), `<img src="${BLANK}"><div class="bnm">${esc(monName(m))}</div><div class="lv">Lv${m.lv}</div>${typeDots(m.sp)}${heldMark(m)}${m.shiny ? '<span class="shiny-mark">✨</span>' : ''}${m.fav ? '<span class="fav">★</span>' : ''}${SPECIES[m.sp].ride ? `<span class="ride-mark" title="ライドできる">${RIDE_IC[SPECIES[m.sp].ride]}</span>` : ''}${bulk ? `<span class="chk">${picked.has(m) ? '✔' : ''}</span>` : ''}`);
       c.title = monName(m);
       portraitAsync(m.sp, m.shiny, false, (u) => { c.querySelector('img').src = u; });
       c.onclick = async () => {
@@ -527,35 +596,101 @@ export async function openBox(opts = {}) {
   (await import('../game/overworld.js')).refreshFollower();
 }
 // 選択用（トレード・対戦チーム）
-export function pickFromAll(title, filterFn, multi = 0) {
+export function pickFromAll(title, filterFn, multi = 0, pre = []) {
   return new Promise(res => {
     const s = openScreen(title);
     const all = [...G.save.party, ...G.save.box].filter(filterFn || (() => true));
     const sel = [];
-    s.body.innerHTML = `<div class="row" style="margin-bottom:.5em"><span class="muted grow">${multi ? `${multi}匹 選んでください（同じアニモンは1匹まで）` : '1匹 選んでください'}</span>${multi ? '<button class="btn pri ok">けってい</button>' : ''}</div><div class="boxgrid"></div>`;
+    s.body.innerHTML = `<div class="row" style="margin-bottom:.5em"><span class="muted grow">${multi ? `${multi}匹 選んでください（同じアニモンは1匹まで・選んだ 順に 出ます）` : '1匹 選んでください'}</span>${multi ? '<button class="btn sm clr">選びなおす</button><button class="btn pri ok">けってい</button>' : ''}</div><div class="boxgrid"></div>`;
     const grid = s.body.querySelector('.boxgrid');
     if (!all.length) grid.outerHTML = '<p class="muted" style="margin:1em 0">えらべる アニモンが いません。（伝説・ルル・パーティーに 1匹だけの子は 出せません）</p>';
     const okB = s.body.querySelector('.ok');
-    const upd = () => { if (okB) { okB.disabled = sel.length !== multi; okB.textContent = `けってい（${sel.length}/${multi}）`; } };
+    const cells = new Map();
+    const upd = () => {
+      if (okB) { okB.disabled = sel.length !== multi; okB.textContent = `けってい（${sel.length}/${multi}）`; }
+      for (const [m, c] of cells) { const k = sel.indexOf(m); c.classList.toggle('picked2', k >= 0); c.querySelector('.selno').textContent = k >= 0 ? k + 1 : ''; }
+    };
     for (const m of all) {
-      const c = el('button', 'bcell', `<img src="${BLANK}"><div class="lv">${esc(monName(m))} Lv${m.lv}</div>${m.shiny ? '<span class="shiny-mark">✨</span>' : ''}`);
+      const c = el('button', 'bcell', `<img src="${BLANK}"><div class="bnm">${esc(monName(m))}</div><div class="lv">Lv${m.lv}</div>${typeDots(m.sp)}${heldMark(m)}${m.shiny ? '<span class="shiny-mark">✨</span>' : ''}<span class="selno"></span>`);
       portraitAsync(m.sp, m.shiny, false, (u) => { c.querySelector('img').src = u; });
+      cells.set(m, c);
       c.onclick = async () => {
         if (!multi) { s.onClose = null; s.close(); res(m); return; }
         const i = sel.indexOf(m);
-        if (i >= 0) { sel.splice(i, 1); c.style.borderColor = ''; }
+        if (i >= 0) sel.splice(i, 1);
         else {
-          if (sel.length >= multi) return;
+          if (sel.length >= multi) { toast(`${multi}匹 まで！（外したい 子を 押してください）`); return; }
           if (sel.some(x => x.sp === m.sp)) { toast('同じアニモンは 1匹まで！'); return; }
-          sel.push(m); c.style.borderColor = 'var(--acc)';
+          sel.push(m);
         }
-        upd();
+        audio.sfx('select'); upd();
       };
       grid.appendChild(c);
     }
+    // 保存した パーティーから 選んだ ときは、その 子たちを 先に 選んでおく
+    for (const m of pre || []) { if (multi && sel.length < multi && all.includes(m) && !sel.some(x => x.sp === m.sp)) sel.push(m); }
     upd();
+    const clr = s.body.querySelector('.clr'); if (clr) clr.onclick = () => { sel.length = 0; upd(); };
     if (okB) okB.onclick = () => { s.onClose = null; s.close(); res(sel.slice()); };
     s.onClose = () => res(null);
+  });
+}
+
+// ---------- パーティーの 保存（1〜10）：いつでも 呼び出せる・名前を 変えられる・フレンド対戦でも 使える ----------
+export const PRESET_N = 10;
+export function presets() {
+  const S = G.save;
+  if (!Array.isArray(S.presets)) S.presets = [];
+  for (let i = 0; i < PRESET_N; i++) if (!S.presets[i] || typeof S.presets[i] !== 'object') S.presets[i] = { name: `パーティー${i + 1}`, uids: [] };
+  S.presets.length = PRESET_N;
+  for (const p of S.presets) if (!Array.isArray(p.uids)) p.uids = [];
+  return S.presets;
+}
+export function presetMons(p) { const all = [...G.save.party, ...G.save.box]; return (p?.uids || []).map(u => all.find(m => m.uid === u)).filter(Boolean); }
+function loadPreset(p) {
+  const team = [], seen = new Set();
+  // いまの パーティーの 子だけで できる（並べかえ・預ける）なら いつでも OK。ボックスの 子が 入るなら 病院で
+  if (!atHospital && presetMons(p).some(m => G.save.box.includes(m))) { toast(NEED_HOSPITAL, 3600); return false; }
+  for (const m of presetMons(p)) { if (team.length >= PARTY_MAX || seen.has(m.sp)) continue; seen.add(m.sp); team.push(m); }
+  if (!team.length) { toast('この パーティーの アニモンが もう いません'); return false; }
+  const out = G.save.party.filter(m => !team.includes(m));
+  G.save.box = G.save.box.filter(m => !team.includes(m));
+  G.save.party = team;
+  G.save.box.unshift(...out);
+  save();
+  return true;
+}
+// opts.pick：フレンド対戦用（パーティーを 1つ 選んで 返す）
+export function openPresets(opts = {}) {
+  return new Promise(res => {
+    const s = openScreen(opts.pick ? '保存した パーティーから 選ぶ' : 'パーティーの 保存・呼び出し');
+    let picked = null;
+    const render = () => {
+      const ps = presets();
+      s.body.innerHTML = `<p class="muted" style="margin:.1em 0 .5em">${opts.pick ? '対戦に 使う パーティーを 選んでください（このあと 出す 子を 確認・変更 できます）' : '「保存」で いまの パーティーを 記録、「呼び出す」で その メンバーに 入れかえ（ほかの 子は ボックスへ）。✏️ で 名前を 変えられます。'}</p><div class="pslist"></div>`;
+      const list = s.body.querySelector('.pslist');
+      ps.forEach((p, i) => {
+        const mons = presetMons(p), lost = p.uids.length - mons.length;
+        const isNow = mons.length && mons.length === G.save.party.length && mons.every((m, k) => G.save.party[k] === m);
+        const row = el('div', 'psrow' + (isNow ? ' now' : ''), `<div class="psno">${i + 1}</div><div class="psmain"><div class="psname"><b>${esc(p.name)}</b>${opts.pick ? '' : '<button class="btn sm rn" title="名前を 変える">✏️</button>'}${isNow ? '<span class="pstag">いまの パーティー</span>' : ''}</div>
+          <div class="psmons">${mons.length ? mons.map(m => `<span class="psm" title="${esc(monName(m))} Lv${m.lv}"><img src="${portrait(m.sp, m.shiny)}"><small>Lv${m.lv}</small></span>`).join('') : '<span class="muted">（まだ 保存していない）</span>'}${lost > 0 ? `<span class="muted" style="font-size:.75em">　いない子 ${lost}匹</span>` : ''}</div></div><div class="psbtns"></div>`);
+        const bt = row.querySelector('.psbtns');
+        const add = (label, cls, fn, dis = false) => { const b = el('button', 'btn sm ' + cls, label); b.disabled = dis; b.onclick = async () => { if (b.__busy) return; b.__busy = true; try { await fn(); } finally { b.__busy = false; } }; bt.appendChild(b); };
+        if (opts.pick) add('このパーティーで 出る', 'pri', () => { picked = p; s.onClose = null; s.close(); res(p); }, !mons.length);
+        else {
+          add('💾 保存', 'pri', async () => {
+            if (p.uids.length && !(await confirmBox(`「${p.name}」に 上書きして 保存しますか？`))) return;
+            p.uids = G.save.party.map(m => m.uid); save(); audio.sfx('item'); toast(`いまの パーティーを「${p.name}」に 保存した！`); render();
+          });
+          add('呼び出す', '', async () => { if (loadPreset(p)) { audio.sfx('item'); toast(`「${p.name}」に 入れかえた！`); render(); } }, !mons.length || isNow);
+          add('消す', 'red', async () => { if (await confirmBox(`「${p.name}」の 保存を 消しますか？（アニモンは 消えません）`)) { p.uids = []; save(); render(); } }, !p.uids.length);
+          row.querySelector('.rn').onclick = async () => { const nm = await inputText('パーティーの 名前（12文字まで）', p.name, 12); if (nm && nm.trim()) { p.name = nm.trim().slice(0, 12); save(); render(); } };
+        }
+        list.appendChild(row);
+      });
+    };
+    render();
+    s.onClose = () => res(picked);
   });
 }
 
@@ -802,6 +937,8 @@ export async function openShop(townId) {
 export function healAll() { healParty(); }
 export async function openHospital(townId) {
   G.save.lastHospital = 't_' + townId;
+  atHospital = true;
+  try {
   while (true) {
     const k = await ask('アニモン病院へ ようこそ！ ご用件は？', ['アニモンを 回復する（HP・技・状態）', '買い物をする', 'パーティーを 変更する', 'やめる'], '受付');
     if (k === 0) {
@@ -810,9 +947,10 @@ export async function openHospital(townId) {
       await say(['受付|お待たせしました！ アニモンたちは 元気いっぱいです！', '受付|技の 使用回数も 全て 回復しましたよ。']);
       save();
     } else if (k === 1) await openShop(townId);
-    else if (k === 2) await openBox();
+    else if (k === 2) await openParty();
     else break;
   }
+  } finally { atHospital = false; }
   (await import('../game/overworld.js')).refreshFollower();
 }
 

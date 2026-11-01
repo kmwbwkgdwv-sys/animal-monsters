@@ -275,3 +275,69 @@ export async function deleteAccountFlow() {
   location.reload();
   return true;
 }
+
+// ---------------------------------------------------------------
+//  運営からの プレゼント（管理サイトの「🎁 プレゼントを 送る」）
+//   ・ゲーム中（フィールドで 何もしていない とき）に 受け取って、お金・アニモンを 追加する
+//   ・受け取った しるしを セーブに 残してから サーバーの 分を 消す（2回 もらわない）
+// ---------------------------------------------------------------
+let giftBusy = false;
+function cleanGiftMon(raw, S, M, SP, MV, IT) {
+  const sp = SP.SPECIES[+raw.sp]; if (!sp) return null;
+  const lv = Math.max(1, Math.min(99, Math.round(+raw.lv || 5)));
+  const iv = {}; for (const k of ['atk', 'def', 'hp', 'spe']) iv[k] = Math.max(1, Math.min(15, Math.round(+raw.iv?.[k] || 8)));
+  let moves = Array.isArray(raw.moves) ? raw.moves.map(x => (typeof x === 'string' ? x : x?.id)).filter(id => MV.MOVES[id]) : [];
+  moves = [...new Set(moves)].slice(0, 4);
+  const m = M.createMon(sp.id, lv, { iv, shiny: !!raw.shiny && !sp.legend, ot: S.name, metAt: '運営からの プレゼント', nick: String(raw.nick || '').slice(0, 10), moves: moves.length ? moves : undefined, item: raw.item && IT.ITEMS[raw.item]?.cat === 'held' ? raw.item : null });
+  return m;
+}
+export async function checkGifts() {
+  if (giftBusy || !G.save || G.state !== 'world' || G.busy) return;
+  giftBusy = true;
+  try {
+    const ON = await import('../online.js');
+    if (!ON.Online.ready || !ON.Online.pid) return;
+    const list = await ON.fetchGifts();
+    let all = []; try { all = await ON.fetchGiftsAll(); } catch (e) { /* ルールが 古い */ }
+    const got = G.save.giftsGot || (G.save.giftsGot = {});
+    const created = +G.save.created || 0, now = Date.now();
+    // 全員への プレゼント：期限内・まだ 受け取っていない・（送った あとに 始めた 人も OK の ときだけ）新しい 人にも
+    const allFresh = all.filter(g => !got[g.id] && !(+g.until && now > +g.until) && !(g.newOk === false && created && +g.at && created > +g.at));
+    const fresh = [...list.filter(g => !got[g.id]), ...allFresh];
+    // サーバーに 残っている 受け取りずみの 分（自分あて）は 消しておく
+    for (const g of list) if (got[g.id]) { try { await ON.removeGift(g.id); } catch (e) { /* */ } }
+    if (!fresh.length) return;
+    const live = new Set([...list, ...all].map(g => g.id));
+    const [M, SP, MV, IT, ST, OW] = await Promise.all([import('../game/mon.js'), import('../data/species.js'), import('../data/moves.js'), import('../data/items.js'), import('../game/state.js'), import('../game/overworld.js')]);
+    await OW.runFlow(async () => {
+      for (const g of fresh) {
+        if (got[g.id]) continue;
+        const lines = [g.all ? '|🎁 運営から みんなへ プレゼントが 届いた！' : '|🎁 運営から プレゼントが 届いた！'];
+        if (g.note) lines.push('|「' + String(g.note).slice(0, 200) + '」');
+        const money = Math.round(+g.money || 0);
+        if (money) { ST.addMoney(money); lines.push(`|${money > 0 ? '' : '（'}${Math.abs(money).toLocaleString()}円 ${money > 0 ? 'を 受け取った！' : '減った）'}`); }
+        let mons = []; try { mons = JSON.parse(g.mons || '[]'); } catch (e) { mons = []; }
+        for (const raw of Array.isArray(mons) ? mons : []) {
+          const m = cleanGiftMon(raw, G.save, M, SP, MV, IT); if (!m) continue;
+          const where = ST.giveMon(m, !!raw.toBox);
+          lines.push(`|${m.shiny ? '✨' : ''}${M.monName(m)}（Lv${m.lv}）が なかまに 加わった！${where === 'box' ? '（ボックスへ）' : ''}`);
+        }
+        for (const [id, n] of Object.entries(g.items || {})) if (IT.ITEMS[id] && +n) { ST.addItem(id, Math.round(+n)); lines.push(`|${IT.ITEMS[id].name} ×${Math.round(+n)} を 受け取った！`); }
+        got[g.id] = Date.now();
+        save();
+        audio.sfx('kiran');
+        await say(lines);
+        if (!g.all) { try { await ON.removeGift(g.id); } catch (e) { /* 次に 消す */ } }
+      }
+      // 受け取りの しるし：まだ サーバーに ある 分は ずっと 残す（2回 もらわない）。ほかは 新しい 100件まで
+      const ids = Object.keys(got).filter(id => !live.has(id)).sort((a, b) => got[b] - got[a]); for (const id of ids.slice(100)) delete got[id];
+      save();
+      try { OW.refreshFollower(); } catch (e) { /* */ }
+    });
+  } catch (e) { console.warn('gifts', e); } finally { giftBusy = false; }
+}
+export function startGiftWatch() {
+  if (startGiftWatch.on) return; startGiftWatch.on = true;
+  setTimeout(() => checkGifts(), 9000);
+  setInterval(() => checkGifts(), 60000);
+}

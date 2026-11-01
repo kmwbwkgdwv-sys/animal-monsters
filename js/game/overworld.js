@@ -8,7 +8,7 @@ import { clamp, lerp, mulberry32, angleDiff, hashStr } from '../engine/util.js';
 import { World, buildBuilding, SKY, REGION_INDEX } from '../render/world.js';
 import { Dungeon, chestGeo } from '../render/dungeon.js';
 import { buildHuman, animateHuman, buildAnimon, animateAnimon, randomLook, pumpHumans } from '../render/models.js';
-import { TOWNS, STONES, DUNGEONS, ITEM_BALLS, REGIONS, RING, TRAINERS, routeTrainers, encounterTable, regionLevel, ringAt, polar, BUILD_JA, SANCT_R, INNER_R, START_POS, COAST_R, ALTAR } from '../data/world.js';
+import { DUNGEON_BOSS, TOWNS, STONES, DUNGEONS, ITEM_BALLS, REGIONS, RING, TRAINERS, routeTrainers, encounterTable, regionLevel, ringAt, polar, BUILD_JA, SANCT_R, INNER_R, START_POS, COAST_R, ALTAR } from '../data/world.js';
 import { SPECIES, BY_NAME } from '../data/species.js';
 import { DESIGN } from '../data/designs.js';
 import { NPCS, LOOKS, QUESTS, STEPS } from '../data/story.js';
@@ -1036,7 +1036,7 @@ function runReward(runs) {
   const pool = tiers[t];
   return pool[Math.floor(Math.random() * pool.length)];
 }
-export const DUNGEON_BOSS = { ruins: ['イニシエ', 22], pyramid: ['ホウタイオウ', 38], icecave: ['ヒョウショウ', 55], skytower: ['ドラコンロード', 68], lavacave: ['マグマジン', 79], abyss: ['ヤミノオウ', 98] };
+export { DUNGEON_BOSS };
 async function dungeonBoss() {
   const id = OW.dungeon.id;
   const [nm, lv0] = DUNGEON_BOSS[id];
@@ -1133,6 +1133,12 @@ function updateLabels() {
       }
     } else {
       for (const t of OW.dtrig) { const d = Math.hypot(t.x - P.x, t.z - P.z); if (d > 20) continue; if (t.kind === 'exit') show(t.x, 2.2, t.z, '出口'); if (t.kind === 'boss') show(t.x, 4, t.z, '!', 'ex'); }
+    }
+    // 歩いている 野生の アニモン：なかまに したことが ある 種類には ✔ の しるし
+    if (!OW.dungeon) for (const w of OW.wilds) {
+      if (!G.save.dex.caught[w.mon.sp]) continue;
+      const d = Math.hypot(w.x - P.x, w.z - P.z); if (d > 48) continue;
+      show(w.x, (w.water ? -0.35 : gr(w.x, w.z)) + (w.M.height || 1) + 0.35, w.z, '✔', 'own');
     }
     if (OW.exMark) show(OW.exMark.x, gr(OW.exMark.x, OW.exMark.z) + 3.2, OW.exMark.z, '!', 'ex');
     if (!OW.dungeon) COOP.coopLabels(show, P);

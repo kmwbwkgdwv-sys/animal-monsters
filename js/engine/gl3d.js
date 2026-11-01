@@ -122,6 +122,9 @@ export class Geometry {
       const x = data[i], y = data[i + 1], z = data[i + 2];
       if (x < minx) minx = x; if (x > maxx) maxx = x; if (y < miny) miny = y; if (y > maxy) maxy = y; if (z < minz) minz = z; if (z > maxz) maxz = z;
     }
+    // 頂点が 1つも ない（細すぎて 形に ならなかった）ときは 大きさ 0 に する
+    //  （1e9 の ままだと 外接箱が こわれて、アイコンが まっさらに なる）
+    if (minx > maxx) { minx = miny = minz = maxx = maxy = maxz = 0; this.empty = true; }
     this.center = [(minx + maxx) / 2, (miny + maxy) / 2, (minz + maxz) / 2];
     this.radius = Math.hypot(maxx - minx, maxy - miny, maxz - minz) / 2;
     this.min = [minx, miny, minz]; this.max = [maxx, maxy, maxz];
@@ -295,7 +298,7 @@ export function treeBounds(root) {
   root.update(root.parent ? root.parent.world : null);
   const b = [1e9, 1e9, 1e9, -1e9, -1e9, -1e9];
   root.traverse(n => {
-    if (!n.geo || !n.visible || !n.geo.min || n.inst) return;
+    if (!n.geo || !n.visible || !n.geo.min || n.inst || n.geo.empty || !n.geo.count) return;
     const m = n.world, lo = n.geo.min, hi = n.geo.max;
     for (let k = 0; k < 8; k++) {
       const x = k & 1 ? hi[0] : lo[0], y = k & 2 ? hi[1] : lo[1], z = k & 4 ? hi[2] : lo[2];
