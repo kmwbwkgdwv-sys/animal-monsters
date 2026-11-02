@@ -328,7 +328,10 @@ export function refreshActors() {
     if (!st && si < reqI) continue;
     if (q.hidden && !st) continue;   // 隠しミッションは 見つけるまで 出ない
     if (!eraOk({ era: q.era, pos: q.giver.pos })) continue;
-    OW.npcs.push(makeNpc({ id: 'giver_' + q.id, name: q.giver.name, pos: q.giver.pos, ry: 0, kind: 'giver', quest: q }, q.giver.look));
+    // 同じ 人（同じ 名前）が すぐ 近くに もう 立っている ときは、2人に ならないように その 人が サイドストーリーも 受けもつ
+    const host = OW.npcs.find(n => n.kind === 'npc' && n.name === q.giver.name && Math.hypot(n.x - q.giver.pos[0], n.z - q.giver.pos[1]) < 14);
+    if (host) host.mergedQuest = q;
+    else OW.npcs.push(makeNpc({ id: 'giver_' + q.id, name: q.giver.name, pos: q.giver.pos, ry: 0, kind: 'giver', quest: q }, q.giver.look));
     if (st && !st.done) {
       const step = q.steps[st.stage];
       if (step && step.trig.t === 'spot') {

@@ -430,10 +430,10 @@ export function npcMark(n) {
   const st = currentStep();
   if ((st.trig.t === 'talk' || st.trig.t === 'deliver') && st.trig.npc === n.id) return '!';
   if (n.donate && !G.save.story.flags['don_' + n.donate]) return '…';
-  if (n.kind === 'giver') {
-    const s = G.save.quests[n.quest.id];
+  if (n.kind === 'giver' || n.mergedQuest) {
+    const q = n.kind === 'giver' ? n.quest : n.mergedQuest, s = G.save.quests[q.id];
     if (!s) return '!';
-    if (!s.done && n.quest.steps[s.stage].trig.t === 'talk') return '?';
+    if (!s.done && ['talk', 'deliver'].includes(q.steps[s.stage].trig.t)) return '?';
   }
   if (n.kind === 'spot') return '!';
   if (n.kind === 'questTrainer' && !G.save.defeated[n.id]) return '!';
@@ -444,6 +444,8 @@ export async function talkNpc(n) {
   const st = currentStep();
   if ((st.trig.t === 'talk' || st.trig.t === 'deliver') && st.trig.npc === n.id) { running = false; return runStep(); }
   if (n.donate) return donateTalk(n);
+  // 同じ 人が 受けもつ サイドストーリー（始める とき・話して 進む ときだけ）
+  if (n.mergedQuest) { const q = n.mergedQuest, s = G.save.quests[q.id], stp = s && !s.done ? q.steps[s.stage] : null; if (!s || (stp && ['talk', 'deliver'].includes(stp.trig.t))) return giverTalk(q); }
   if (n.kind === 'trainer') {
     if (G.save.defeated[n.id]) return say([`${n.name}|また いつか 勝負しようね！`]);
     await say([`${n.name}|勝負だ！`]);
