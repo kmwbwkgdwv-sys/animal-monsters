@@ -38,6 +38,15 @@ const PAL = {
   lava: { g: [0.3, 0.24, 0.22], g2: [0.42, 0.26, 0.2], pad: [0.28, 0.22, 0.22], sky: 'volcano', cave: true, flora: 'volcano' },
   lavacave: { g: [0.3, 0.24, 0.22], g2: [0.42, 0.26, 0.2], pad: [0.28, 0.22, 0.22], sky: 'volcano', cave: true, flora: 'volcano' },
   abyss: { g: [0.26, 0.22, 0.36], g2: [0.36, 0.3, 0.5], pad: [0.4, 0.34, 0.56], sky: 'inner', cave: true, flora: 'inner' },
+  // 第2部（隕石の あとの 大陸）
+  ruin_forest: { g: [0.22, 0.18, 0.16], g2: [0.34, 0.27, 0.22], pad: [0.4, 0.32, 0.28], sky: 'volcano', flora: 'volcano' },
+  ruin_lake: { g: [0.6, 0.5, 0.38], g2: [0.5, 0.42, 0.32], pad: [0.7, 0.6, 0.46], sky: 'desert', flora: 'desert' },
+  ruin_swamp: { g: [0.26, 0.21, 0.3], g2: [0.36, 0.3, 0.36], pad: [0.4, 0.34, 0.4], sky: 'swamp', flora: 'swamp' },
+  ruin_highland: { g: [0.56, 0.56, 0.56], g2: [0.66, 0.65, 0.64], pad: [0.7, 0.68, 0.64], sky: 'swamp', flora: 'canyon' },
+  ruin_volcano: { g: [0.26, 0.2, 0.2], g2: [0.4, 0.24, 0.2], pad: [0.26, 0.2, 0.2], sky: 'volcano', flora: 'volcano' },
+  crater: { g: [0.18, 0.16, 0.22], g2: [0.32, 0.26, 0.4], pad: [0.36, 0.3, 0.46], sky: 'inner', flora: 'inner' },
+  lavaland: { g: [0.12, 0.1, 0.1], g2: [0.24, 0.18, 0.16], pad: [0.22, 0.18, 0.18], sky: 'volcano', flora: 'volcano' },
+  meteor: { g: [0.2, 0.16, 0.28], g2: [0.32, 0.24, 0.44], pad: [0.4, 0.32, 0.54], sky: 'inner', cave: true, flora: 'inner' },
   arena: { g: [0.72, 0.74, 0.8], g2: [0.85, 0.86, 0.9], pad: [0.92, 0.92, 0.96], sky: 'day', flora: 'meadow' },
 };
 

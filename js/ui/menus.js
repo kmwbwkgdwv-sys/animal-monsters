@@ -7,7 +7,7 @@ import { ITEMS, CAT_JA, SHOP_FOODS, FOOD_STARS, SHOP_HELD } from '../data/items.
 import { ABILITIES } from '../data/abilities.js';
 import { TYPES, TYPE_JA, TYPE_COLOR, typeBadge } from '../data/types.js';
 import { TOWNS, STONES, DUNGEONS, REGIONS, RING, howToGet, hiddenInDex, WORLD, START_POS, naturalMetAt } from '../data/world.js';
-import { CREST_JA } from '../data/story.js';
+import { CREST_JA, chLabel } from '../data/story.js';
 import { G, PARTY_MAX, partyHasSpecies, itemCount, addItem, useItem, addMoney, save, healParty, crests, isUnlocked, dexCounts, findMon, monCap, monCount, monFull, canRelease } from '../game/state.js';
 import { calcStats, adjBase, ivMul, monName, ivTotal, ivRank, expProgress, expToNext, healMon, maxHp, addExp, expForLevel, MAX_LV, noEvoHeld } from '../game/mon.js';
 import { $, el, esc, openScreen, toast, ask, confirmBox, inputText, say, fade, hpClass, closeAllScreens } from './ui.js';
@@ -39,7 +39,7 @@ export async function openMainMenu() {
     <div class="mhead">
       <div class="mprof">
         <div class="row"><b class="pname">${esc(G.save.name)}</b><span class="muted">⏱ ${Math.floor(mins / 60)}時間${mins % 60}分</span><span class="grow"></span><b class="money">¥${G.save.money.toLocaleString()}</b></div>
-        <div class="mstats"><span>📖 図鑑 <b>${c.caught}</b>/${DEX_COUNT}</span><span>👀 見つけた <b>${c.seen}</b></span><span>🏅 紋章 <b>${crests()}</b>/8</span>${G.save.postGame ? '<span class="clear">★クリア済み（経験値2倍）</span>' : ''}</div>
+        <div class="mstats"><span>📖 図鑑 <b>${c.caught}</b>/${DEX_COUNT}</span><span>👀 見つけた <b>${c.seen}</b></span><span>🏅 紋章 <b>${crests()}</b>/8</span>${G.save.story?.flags?.p2clear ? '<span class="clear">★第2部クリア（経験値2倍）</span>' : G.save.postGame ? '<span class="clear">★クリア済み</span>' : ''}</div>
         <div class="mcrests">${CREST_JA.map((n, i) => `<span title="${n}" class="${i < crests() ? 'on' : ''}">${['🌳', '💧', '🏜️', '⛰️', '❄️', '🌫️', '☁️', '🌋'][i]}</span>`).join('')}</div>
         ${goal ? `<div class="mgoal"><b>⭐ 次の目的</b><span>${esc(goal)}</span></div>` : ''}
       </div>
@@ -52,7 +52,7 @@ export async function openMainMenu() {
       ['📦', 'ボックス', `所持 ${monCount()}/${monCap()}`, '#c08a4a', () => openBox()],
       ['📖', '図鑑', `${c.caught}/${DEX_COUNT}`, '#e05a7a', () => openDex()],
       ['🎒', 'バッグ', `${bagN}こ`, '#f0a830', () => openBag()],
-      ['📜', 'ストーリー', SE.currentStep().ch <= 11 ? `第${SE.currentStep().ch}章・サイド` : 'クリア後・サイド', '#d98c3a', () => openJournal()],
+      ['📜', 'ストーリー', `${chLabel(SE.currentStep().ch)}・サイド`, '#d98c3a', () => openJournal()],
       ['🗺️', 'マップ', '行き先を見る', '#3cb371', () => openMap()],
       ['🐎', 'ライド', '乗って移動', '#8a6adf', () => openRide()],
       ['👕', 'キャラメイク', '見た目・なまえ', '#e07ab8', async () => (await import('./charamake.js')).charaMakeInGame()],
@@ -83,8 +83,9 @@ export async function openJournal() {
   const fm = (t) => esc(UI_fmt(t || ''));
   const render = () => {
     const si = SE.storyInfo();
-    const chips = Object.entries(SE.CHAPTERS).map(([n, nm]) => { n = +n; const st = n < si.ch || si.end ? 'done' : n === si.ch ? 'now' : 'lock'; return `<span class="chchip ${st}" title="${esc(nm)}">${st === 'done' ? '✔' : st === 'now' ? '▶' : '🔒'} ${n}章</span>`; }).join('');
-    const qs = SE.QUESTS.map(q => ({ q, i: SE.questInfo(q) }));
+    // 第1部（1〜11章）と、第2部が 始まっていれば 第2部（2-1〜2-9）
+    const chips = Object.entries(SE.CHAPTERS).map(([n, nm]) => +n).sort((a, b) => a - b).filter(n => n <= 11 || si.ch >= 13).map(n => { const nm = SE.CHAPTERS[n]; const st = n < si.ch || si.ch === 22 ? 'done' : n === si.ch ? 'now' : 'lock'; return `<span class="chchip ${st}" title="${esc(nm)}">${st === 'done' ? '✔' : st === 'now' ? '▶' : '🔒'} ${n <= 11 ? n : '2-' + (n - 12)}章</span>`; }).join('');
+    const qs = SE.QUESTS.filter(q => !q.hidden || G.save.quests[q.id]).map(q => ({ q, i: SE.questInfo(q) }));
     const order = { active: 0, new: 1, done: 2, locked: 3 };
     qs.sort((a, b) => order[a.i.state] - order[b.i.state]);
     const badge = { active: '<span class="qbadge act">進行中</span>', new: '<span class="qbadge new">まだ 受けていない</span>', done: '<span class="qbadge done">クリア</span>', locked: '<span class="qbadge lock">？？？</span>' };
@@ -96,7 +97,7 @@ export async function openJournal() {
     const act = ERM.activeErrands();
     s.body.innerHTML = `
       <div class="jmain">
-        <div class="jch">${si.end ? 'ストーリー クリア！' : `第${si.ch}章「${esc(si.chName)}」`}</div>
+        <div class="jch">${si.ch === 12 ? 'ストーリー クリア！' : si.ch === 22 ? '第2部 クリア！' : esc(chLabel(si.ch, true))}</div>
         <div class="jobj"><b>目的</b>${fm(si.obj)}</div>
         ${si.dest ? `<div class="jdest"><b>目的地</b>${esc(si.dest)}${si.dist != null ? `<span class="muted">（ここから ${si.dist}m）</span>` : ''}</div>` : ''}
         <div class="row" style="gap:.5em;margin-top:.5em;flex-wrap:wrap">${SE.pendingHere() ? '<button class="btn sm pri gostory">📖 ここで イベントを 始める</button>' : ''}${si.pos ? `<button class="btn sm ${SE.pendingHere() ? '' : 'pri'} smap">🗺️ 地図で 目的地を 見る</button>` : ''}</div>
@@ -605,7 +606,7 @@ export async function openBox(opts = {}) {
   (await import('../game/overworld.js')).refreshFollower();
 }
 // 選択用（トレード・対戦チーム）
-export function pickFromAll(title, filterFn, multi = 0, pre = []) {
+export function pickFromAll(title, filterFn, multi = 0, pre = [], opts = {}) {
   return new Promise(res => {
     const s = openScreen(title);
     const all = [...G.save.party, ...G.save.box].filter(filterFn || (() => true));
@@ -620,7 +621,7 @@ export function pickFromAll(title, filterFn, multi = 0, pre = []) {
       for (const [m, c] of cells) { const k = sel.indexOf(m); c.classList.toggle('picked2', k >= 0); c.querySelector('.selno').textContent = k >= 0 ? k + 1 : ''; }
     };
     for (const m of all) {
-      const c = el('button', 'bcell', `<img src="${BLANK}"><div class="bnm">${esc(monName(m))}</div><div class="lv">Lv${m.lv}</div>${typeDots(m.sp)}${heldMark(m)}${m.shiny ? '<span class="shiny-mark">✨</span>' : ''}<span class="selno"></span>`);
+      const c = el('button', 'bcell', `<img src="${BLANK}"><div class="bnm">${esc(monName(m))}</div><div class="lv">Lv${m.lv}${opts.iv ? `・個体値${ivTotal(m)}` : ''}</div>${typeDots(m.sp)}${heldMark(m)}${m.shiny ? '<span class="shiny-mark">✨</span>' : ''}<span class="selno"></span>`);
       portraitAsync(m.sp, m.shiny, false, (u) => { c.querySelector('img').src = u; });
       cells.set(m, c);
       c.onclick = async () => {
@@ -915,9 +916,8 @@ async function useOnMon(it) {
 // ---------- ショップ・病院 ----------
 export function shopList() {
   const c = crests(), post = G.save.postGame;
-  const L = ['repel', 'herb', 'cureall', 'h_curse'];
+  const L = ['repel', 'herb', 'cureall', 'h_curse', 'scroll'];
   if (c >= 1) L.push('goodherb', 'revive', 'ppdrop');
-  if (c >= 2) L.push('scroll');
   if (c >= 3) L.push('superherb', 'h_berry', 'h_clear');
   if (c >= 4) L.push('h_charm', 'h_bread');
   if (c >= 5) L.push('fullmed', 'ppspring', 'h_glass', 'h_belt');
@@ -1357,3 +1357,55 @@ export function chooseLegend() {
   });
 }
 export { STAT_JA };
+
+// ---------- 納品：1匹ずつ スライドして 見くらべ、わたす 子を 決める ----------
+//  mons：候補（同じ種類の 子を ぜんぶ）  okFn：条件を みたすか  cond：条件の 説明
+export function slidePick({ title, mons, okFn, cond, need = null, okLabel = 'この子を 納品する' }) {
+  return new Promise(res => {
+    const s = openScreen(title, { cls: 'slidepick' });
+    const list = mons.slice().sort((a, b) => (okFn(b) - okFn(a)) || (ivTotal(b) - ivTotal(a)) || (b.lv - a.lv));
+    let i = 0, done = false;
+    s.body.innerHTML = `<div class="sp-cond">📦 条件：${esc(cond)}</div>
+      <div class="sp-stage"><button class="sp-nav prev" aria-label="まえ">‹</button><div class="sp-view"><div class="sp-card"></div></div><button class="sp-nav next" aria-label="つぎ">›</button></div>
+      <div class="sp-count"></div>
+      <input type="range" class="sp-range" min="0" max="${Math.max(0, list.length - 1)}" step="1" value="0" ${list.length < 2 ? 'disabled' : ''}>
+      <div class="sp-hint muted">← → や スワイプで 1匹ずつ 見られます</div>
+      <div class="row sp-btns"><button class="btn sp-cancel">やめる</button><button class="btn pri sp-ok">${esc(okLabel)}</button></div>`;
+    const card = s.body.querySelector('.sp-card'), range = s.body.querySelector('.sp-range'), cnt = s.body.querySelector('.sp-count'), okB = s.body.querySelector('.sp-ok');
+    const ST = [['hp', 'HP'], ['atk', '攻撃'], ['def', '防御'], ['spe', '素早さ']];
+    const inParty = (m) => G.save.party.includes(m);
+    const draw = (dir = 0) => {
+      const m = list[i]; if (!m) return;
+      const tot = ivTotal(m), ok = okFn(m);
+      card.innerHTML = `<div class="sp-pic"><img src="${BLANK}">${m.shiny ? '<span class="sp-shiny">✨</span>' : ''}</div>
+        <div class="sp-info"><div class="sp-name">${esc(monName(m))} <small>Lv${m.lv}</small></div>
+        <div class="sp-where">${inParty(m) ? 'パーティー' : 'ボックス'}${m.item ? `・${esc(ITEMS[m.item]?.name || '')}を 持っている` : ''}</div>
+        ${ST.map(([k, n]) => `<div class="sp-iv"><span class="k">${n}</span><span class="b"><i style="width:${(m.iv[k] / 15 * 100).toFixed(0)}%"></i></span><span class="v">${m.iv[k]}</span></div>`).join('')}
+        <div class="sp-tot ${ok ? 'ok' : 'ng'}">個体値の 合計 <b>${tot}</b> / 60　${ok ? '✓ 条件クリア' : `✗ ${need != null && tot < need ? `あと ${need - tot} たりない` : 'わたせない'}`}</div></div>`;
+      portraitAsync(m.sp, m.shiny, false, (u) => { const im = card.querySelector('img'); if (im) im.src = u; });
+      if (dir) { card.classList.remove('in-l', 'in-r'); void card.offsetWidth; card.classList.add(dir > 0 ? 'in-r' : 'in-l'); }
+      cnt.textContent = `${i + 1} / ${list.length}`;
+      range.value = i;
+      okB.disabled = !ok;
+      s.body.querySelector('.prev').disabled = i <= 0; s.body.querySelector('.next').disabled = i >= list.length - 1;
+    };
+    const go = (d) => { const j = Math.max(0, Math.min(list.length - 1, i + d)); if (j === i) return; i = j; audio.sfx('select'); draw(d); };
+    s.body.querySelector('.prev').onclick = () => go(-1);
+    s.body.querySelector('.next').onclick = () => go(1);
+    range.oninput = () => { const j = +range.value; if (j !== i) { const d = j > i ? 1 : -1; i = j; draw(d); } };
+    // スワイプ
+    let sx = null, dx = 0;
+    const view = s.body.querySelector('.sp-view');
+    view.addEventListener('pointerdown', (e) => { sx = e.clientX; dx = 0; card.style.transition = 'none'; try { view.setPointerCapture(e.pointerId); } catch (er) { /* */ } });
+    view.addEventListener('pointermove', (e) => { if (sx == null) return; dx = e.clientX - sx; card.style.transform = `translateX(${dx}px) rotate(${dx / 40}deg)`; });
+    const up = () => { if (sx == null) return; sx = null; card.style.transition = ''; card.style.transform = ''; if (dx < -45) go(1); else if (dx > 45) go(-1); };
+    view.addEventListener('pointerup', up); view.addEventListener('pointercancel', up);
+    const key = (e) => { if (s.closed) return; if (e.key === 'ArrowLeft') { go(-1); e.preventDefault(); e.stopPropagation(); } else if (e.key === 'ArrowRight') { go(1); e.preventDefault(); e.stopPropagation(); } else if (e.key === 'Enter' && !okB.disabled) { e.preventDefault(); okB.click(); } };
+    window.addEventListener('keydown', key, true);
+    const fin = (v) => { if (done) return; done = true; window.removeEventListener('keydown', key, true); s.onClose = null; s.close(); res(v); };
+    okB.onclick = () => { if (okB.disabled) return; audio.sfx('select'); fin(list[i]); };
+    s.body.querySelector('.sp-cancel').onclick = () => { audio.sfx('cancel'); fin(null); };
+    s.onClose = () => { if (!done) { done = true; window.removeEventListener('keydown', key, true); res(null); } };
+    draw();
+  });
+}

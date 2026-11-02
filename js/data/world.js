@@ -1,5 +1,6 @@
 // 大陸（1つの大きな大陸）のデータ
 import { SPECIES, BY_NAME, REGION_JA } from './species.js';
+import { smooth } from '../engine/util.js';
 
 export const WORLD = { half: 768, cell: 4, n: 384, sea: 0 };
 
@@ -39,6 +40,12 @@ export function ringAt(x, z) {
 }
 export function regionAt(x, z, h = 1) {
   const r = Math.hypot(x, z);
+  // 第2部（隕石の あと）：溶岩の新大地（海に 広がった 新しい 陸と その まわりの 海）・メテオクレーター
+  if (ERA.ruin) {
+    const ext = lavaExt(x, z);
+    if (ext > 1 && r > COAST_R - 40 && r < COAST_R + ext + 60) return 'lavaland';
+    if (inCrater(x, z, 14)) return 'crater';
+  }
   if (h < -0.6 && r > COAST_R - 80) return 'sea';
   if (r > COAST_R + 25) return 'sea';
   if (r < INNER_R) return 'inner';
@@ -91,6 +98,7 @@ export const DUNGEONS = {
   abyss: { name: '深淵の迷宮', pos: [0, -30], rec: 95, lv: [90, 99], theme: 'abyss', size: 19, region: 'inner', post: true },
 };
 
+export const PAST_DUNGEONS = { ...DUNGEONS };
 // ダンジョンの主（種族名・レベル）
 export const DUNGEON_BOSS = { ruins: ['イニシエ', 22], pyramid: ['ホウタイオウ', 38], icecave: ['ヒョウショウ', 55], skytower: ['ドラコンロード', 68], lavacave: ['マグマジン', 79], abyss: ['ヤミノオウ', 98] };
 
@@ -182,20 +190,42 @@ export function routeTrainers() {
       k++;
     }
   }
+  // 第2部：こわれた 大陸の トレーナー（新しい アニモンを 連れた 強い トレーナー）
+  if (ERA.ruin) {
+    const NM = ['ほしよみのセナ', 'がれきひろいのトウマ', 'ひなんしゃのアキ', 'メテオハンターのジン', 'はいいろのカラス使いミオ', 'かざんがくしゃのリツ', 'さすらいのハヤテ', 'へんいけんきゅういんのユウ', 'ほのおのぬけがらのレイ', 'あらしのテン', 'クレーターのガイ', 'ようがんサーファーのナギ', 'ほしくずのシズク', 'しんたいりくのコウ'];
+    const BASE_LV = { forest: 78, lake: 80, swamp: 84, highland: 86, volcano: 88, lavaland: 90, crater: 93 };
+    let j2 = 0;
+    for (const rid of Object.keys(BASE_LV)) {
+      const pool = encounterTable(rid, false, true).slice().sort((a, b) => SPECIES[b.sp].stage - SPECIES[a.sp].stage);
+      for (let i = 0; i < 2; i++) {
+        let pos;
+        if (rid === 'crater') { const a = i * 2.6 + 0.6; pos = [IMPACT[0] + Math.cos(a) * CRATER_R * 0.62, IMPACT[1] + Math.sin(a) * CRATER_R * 0.62]; }
+        else if (rid === 'lavaland') pos = polar(38 + i * 16, 790 + i * 50);
+        else { pos = polar(REGIONS[rid].ang - 9 + i * 18, 360 + i * 140); if (goneAt(pos)) pos = polar(REGIONS[rid].ang - 9 + i * 18, 560 + i * 60); }
+        const team = [];
+        for (let m = 0; m < 4 && pool.length; m++) { const e = pool[(j2 * 3 + m * 2 + i) % pool.length]; const lv = Math.min(99, BASE_LV[rid] + i * 2 + m); let s = SPECIES[e.sp]; while (s.evoTo && lv >= s.evoLv) s = SPECIES[s.evoTo]; if (!team.find(t => t[0] === s.name)) team.push([s.name, lv]); }
+        out.push({ id: `p2rt_${rid}_${i}`, name: NM[j2 % NM.length], team, pos, region: rid, reward: BASE_LV[rid] * 60, look: 'random', seed: 300 + j2, ai: 'trainer', p2: true });
+        j2++;
+      }
+    }
+  }
   return out;
 }
 
 // ---------------- 出現テーブル ----------------
 const DUNGEON_OF = { start: 'ruins', plains: 'ruins', forest: 'ruins', lake: 'pyramid', desert: 'pyramid', canyon: 'icecave', snow: 'icecave', swamp: 'skytower', highland: 'skytower', volcano: 'lavacave', sanctuary: 'abyss', inner: 'abyss' };
-export function isWaterSp(s) { return s.plan === 'fish' || (s.hab.includes('sea') && s.types.includes('water')) || (s.types.includes('water') && s.plan === 'serpent' && s.hab.includes('lake')); }
+export function isWaterSp(s) { if (s.gen2) return !!s.waterSp; return s.plan === 'fish' || (s.hab.includes('sea') && s.types.includes('water')) || (s.types.includes('water') && s.plan === 'serpent' && s.hab.includes('lake')); }
 
 const _encCache = {};
 // 出現の重み（種族値の合計 230 を 1 として、強いほど 小さく）
 export const spawnMul = (sp) => Math.pow(230 / (sp.bst || 230), 2.4) * (sp.rare ? 0.6 : 1);
-export function encounterTable(region, water = false) {
-  const key = region + (water ? '_w' : '');
+export function encounterTable(region, water = false, ruin = ERA.ruin) {
+  const key = region + (water ? '_w' : '') + (ruin ? '_r' : '');
   if (_encCache[key]) return _encCache[key];
-  const R = REGIONS[region] || DUNGEONS[region];
+  // 第2部：こわれた 地域・新しい 場所では 新しい アニモン だけ（レベルは もとの 場所の まま）
+  if (ruin && (RUINED.has(region) || NEW_REGIONS[region] || NEW_DUNGEONS[region])) return (_encCache[key] = ruinTable(region, water));
+  if (NEW_REGIONS[region] || NEW_DUNGEONS[region]) return (_encCache[key] = []);
+  const R = REGIONS[region] || DUNGEONS[region] || PAST_DUNGEONS[region];
   const lv = R.lv;
   const out = [];
   const add = (sp, w) => {
@@ -204,9 +234,9 @@ export function encounterTable(region, water = false) {
     // 強い（種族値の合計が高い）ほど 出にくい。もともと珍しい種族は さらに出にくい
     out.push({ sp: sp.id, w: w * spawnMul(sp), minLv });
   };
-  const isDungeon = !!DUNGEONS[region];
+  const isDungeon = !!(DUNGEONS[region] || PAST_DUNGEONS[region]);
   for (const s of SPECIES) {
-    if (!s || s.legend || s.story || s.side) continue;
+    if (!s || s.legend || s.story || s.side || s.gen2) continue;
     if (!!water !== isWaterSp(s) && !isDungeon) continue;
     const hab = s.hab.length ? s.hab : (s.evoFrom ? baseHab(s) : []);
     if (isDungeon) {
@@ -229,25 +259,155 @@ export function encounterTable(region, water = false) {
 }
 function baseHab(s) { let b = s; while (b.evoFrom) b = SPECIES[b.evoFrom]; return b.hab; }
 
-export function regionLevel(region) { return (REGIONS[region] || DUNGEONS[region]).lv; }
+export function regionLevel(region) { return (REGIONS[region] || DUNGEONS[region] || NEW_REGIONS[region] || NEW_DUNGEONS[region] || PAST_DUNGEONS[region]).lv; }
+
+// =============================================================
+//  第2部：隕石が 落ちた あとの 大陸（現在）／ 過去（第1部の 大陸）
+//   ERA.ruin = true のとき：クレーター・噴火・溶岩の新大地。町や ダンジョンの 一部が 消える
+//   applyEra() で 町・岩・ダンジョン・落とし物・地域名を 入れかえる（ほかの ファイルは 同じ 配列を 見ている）
+// =============================================================
+export const ERA = { ruin: false };
+export const IMPACT = polar(140, 430);          // 隕石の 落ちた 場所（もりの村の あたり）
+export const CRATER_R = 112, BLAST_R = 330;
+export const RUINED = new Set(['forest', 'lake', 'swamp', 'highland', 'volcano']);
+export const RUIN_NAMES = { forest: 'くだけた森', lake: 'ひからびた湖畔', swamp: 'どくぬまの湿原', highland: '灰の高原', volcano: 'ふんかした火山' };
+const LAVA_A = 46, LAVA_W = 27, LAVA_EXT = 240;
+// 溶岩の新大地：火山の 方角の 海が 陸に なった（海岸が 最大 230 外へ）
+export function lavaExt(x, z) {
+  const a = angDeg(x, z), t = angDist(a, LAVA_A) / LAVA_W; if (t >= 1) return 0;
+  // 大陸の 四角の はしを こえないように
+  const rad = a * Math.PI / 180, cap = 728 / Math.max(Math.abs(Math.cos(rad)), Math.abs(Math.sin(rad))) - COAST_R - 50;
+  return Math.max(0, Math.min(LAVA_EXT * (1 - smooth(0.3, 1, t)), cap));
+}
+export function inCrater(x, z, pad = 0) { return Math.hypot(x - IMPACT[0], z - IMPACT[1]) < CRATER_R + pad; }
+export const NEW_REGIONS = {
+  crater: { name: 'メテオクレーター', lv: [80, 92], biome: 'crater', order: 12 },
+  lavaland: { name: '溶岩の新大地', lv: [70, 85], biome: 'lavaland', order: 13 },
+};
+export const NEW_DUNGEONS = {
+  meteor: { name: 'メテオコア', pos: [IMPACT[0], IMPACT[1] + 16], rec: 96, lv: [92, 99], theme: 'meteor', size: 17, region: 'crater', p2: true },
+};
+// 消えた 町・岩・ダンジョン（溶岩に のまれた・隕石で ふきとんだ）
+const GONE_TOWNS = new Set(['forest', 'volcano']);
+const GONE_STONES = new Set(['t_forest', 't_volcano', 'r_forest']);
+const GONE_DUNGEONS = new Set(['ruins']);
+export const P2_STONES = [
+  { id: 'r_crater', name: 'クレーターのふち', pos: [IMPACT[0] + 40, IMPACT[1] + CRATER_R + 34] },
+  { id: 'r_lavaland', name: '新大地の岬', pos: polar(46, 850) },
+];
+// 第2部の 落とし物（こわれた 大陸で 見つかる）
+export const P2_ITEMS = [
+  ['p2ib1', 'maxrevive', polar(150, 300)], ['p2ib2', 'ppspring', polar(168, 520)], ['p2ib3', 'h_power', polar(336, 470)],
+  ['p2ib4', 'fullmed', polar(12, 520)], ['p2ib5', 'h_guard', polar(46, 800)], ['p2ib6', 'maxrevive', polar(42, 900)],
+  ['p2ib7', 'h_heavy', [IMPACT[0] - 60, IMPACT[1] - 20]], ['p2ib8', 'h_regen', polar(64, 700)], ['p2ib9', 'scroll', polar(128, 600)],
+];
+// 第2部の 入口（クリア後に 丘に 落ちてくる 流れ星の かけら）
+export const P2_START = [-34, 506];
+// 時の扉（第2部 第3章の あと）：現在 ⇔ 過去。同じ 場所に 両方の 時代の 扉が ある
+export const TIME_GATES = [
+  { id: 'tg_crater', name: '時の扉（クレーターのふち）', pos: [IMPACT[0] + 74, IMPACT[1] + CRATER_R + 46] },
+  { id: 'tg_lake', name: '時の扉（みなとまち）', pos: polar(160, 560) },
+  { id: 'tg_volcano', name: '時の扉（火山のふもと）', pos: polar(36, 350) },
+  { id: 'tg_highland', name: '時の扉（天空の塔の前）', pos: polar(4, 596) },
+];
+// その 場所が 消えた（クレーターの 中・消えた 町の 中）か
+export function goneAt(p) {
+  if (!ERA.ruin || !p) return false;
+  if (inCrater(p[0], p[1], 26)) return true;
+  for (const t of BASE.towns) if (GONE_TOWNS.has(t.id) && Math.hypot(p[0] - t.pos[0], p[1] - t.pos[1]) < t.r + 12) return true;
+  return false;
+}
+// こわれた 場所の 種類（色・草木・空の 切りかえ用）
+export function ruinKind(reg, x, z) {
+  if (!ERA.ruin) return null;
+  if (reg === 'crater' || reg === 'lavaland') return reg;
+  if (RUINED.has(reg)) return 'r_' + reg;
+  if (reg !== 'sea' && Math.hypot(x - IMPACT[0], z - IMPACT[1]) < BLAST_R) return 'r_blast';
+  return null;
+}
+const BASE = { towns: null, stones: null, items: null, dungeons: null, names: null, townNames: null };
+export function applyEra(ruin) {
+  if (!BASE.towns) {
+    BASE.towns = TOWNS.slice(); BASE.stones = STONES.slice(); BASE.items = ITEM_BALLS.slice(); BASE.dungeons = { ...DUNGEONS };
+    BASE.names = Object.fromEntries(Object.entries(REGIONS).map(([k, v]) => [k, v.name]));
+    BASE.townNames = Object.fromEntries(TOWNS.map(t => [t.id, t.name]));
+  }
+  ERA.ruin = !!ruin;
+  for (const k in _encCache) delete _encCache[k];
+  TOWNS.length = 0; TOWNS.push(...BASE.towns.filter(t => !ruin || !GONE_TOWNS.has(t.id)));
+  for (const t of BASE.towns) { t.name = BASE.townNames[t.id]; t.ruined = false; }
+  const lake = BASE.towns.find(t => t.id === 'lake');
+  if (ruin) { lake.name = 'みなとまち跡'; lake.ruined = true; }
+  STONES.length = 0; STONES.push(...BASE.stones.filter(s => !ruin || !GONE_STONES.has(s.id)), ...(ruin ? P2_STONES : []));
+  for (const s of STONES) if (s.town) s.name = BASE.towns.find(t => t.id === s.town)?.name || s.name;
+  ITEM_BALLS.length = 0; ITEM_BALLS.push(...BASE.items.filter(([, , p]) => !goneAt(p)), ...(ruin ? P2_ITEMS : []));
+  for (const k of Object.keys(DUNGEONS)) delete DUNGEONS[k];
+  for (const [k, v] of Object.entries(BASE.dungeons)) if (!ruin || !GONE_DUNGEONS.has(k)) DUNGEONS[k] = v;
+  if (ruin) Object.assign(DUNGEONS, NEW_DUNGEONS);
+  for (const [k, n] of Object.entries(BASE.names)) REGIONS[k].name = ruin && RUIN_NAMES[k] ? RUIN_NAMES[k] : n;
+  for (const k of Object.keys(NEW_REGIONS)) { if (ruin) REGIONS[k] = NEW_REGIONS[k]; else delete REGIONS[k]; }
+  if (ruin) DUNGEON_BOSS.meteor = ['ゼノドラグ', 99]; else delete DUNGEON_BOSS.meteor;
+}
+// こわれた 地域の 出現（新しい アニモン だけ）
+function ruinTable(region, water) {
+  const R = REGIONS[region] || NEW_REGIONS[region] || DUNGEONS[region] || NEW_DUNGEONS[region];
+  const lv = R.lv, isDungeon = !!NEW_DUNGEONS[region], tag = RUINED.has(region) ? 'r_' + region : isDungeon ? 'crater' : region;
+  const out = [];
+  for (const s of SPECIES) {
+    if (!s || !s.gen2 || s.legend || s.story) continue;
+    if (!isDungeon && !!water !== !!s.waterSp) continue;
+    if (!s.hab.includes(tag)) continue;
+    const minLv = s.evoFrom ? SPECIES[s.evoFrom].evoLv : 1;
+    if (minLv > lv[1] + 2) continue;
+    const w = s.stages === 1 ? 5 : s.stage === 1 ? 10 : s.stage === 2 ? 4 : 2;
+    out.push({ sp: s.id, w: w * spawnMul(s), minLv });
+  }
+  return out;
+}
 
 // 入手方法（図鑑用）
 export const SIDE_JA = { caravan: '砂漠のキャラバン', mine: '廃鉱山のあかり', swampboss: '沼のぬし' };
 export function howToGet(s) {
   const out = [];
-  if (s.legend) return ['ストーリーの最後に出会う（どちらか1匹だけ）'];
+  if (s.hiddenQuest) return ['隠しミッションで 入手可能'];
+  if (s.legend) return ['ストーリー（第1部の 最後）で 出会う 伝説（どちらか 1匹）', '第2部 第9章で もう一匹も 仲間に なる'];
+  if (s.name === 'トキワタリ') return ['第2部の ストーリーで 仲間に なる（第2部 クリア）'];
   if (s.story) out.push('ストーリーで仲間になる');
   if (s.side) out.push(`サイドストーリー「${SIDE_JA[s.side]}」をクリアする`);
   if (s.evoFrom) out.push(`${SPECIES[s.evoFrom].name} が Lv${SPECIES[s.evoFrom].evoLv} で進化`);
-  const places = [];
-  for (const rid of Object.keys(REGIONS)) {
-    for (const water of [false, true]) if (encounterTable(rid, water).some(e => e.sp === s.id)) { places.push(REGION_JA[rid] + (water ? '（水上）' : '')); break; }
+  const P = placesOf(s.id);
+  if (s.gen2) {
+    if (P.now.length) out.unshift('生息地（隕石の あとの 大陸）：' + P.now.join('・'));
+    if (s.name === 'ゼノドラグ') out.push('メテオコア の 主（第2部 クリア後）');
+  } else {
+    if (P.past.length) out.unshift('生息地：' + P.past.join('・'));
+    const gone = P.pastIds.filter(r => RUINED.has(r) || r === 'ruins');
+    if (gone.length && gone.length === P.pastIds.length) out.push('第2部（隕石の あと）では 時の扉で 過去へ 行くと 会える');
+    else if (gone.length) out.push(`第2部では ${gone.map(r => REGION_JA[r] || PAST_DUNGEONS[r]?.name).join('・')} には 出ない（時の扉で 過去へ 行くと 会える）`);
   }
-  for (const did of Object.keys(DUNGEONS)) if (encounterTable(did).some(e => e.sp === s.id)) places.push(DUNGEONS[did].name);
-  if (places.length) out.unshift('生息地：' + [...new Set(places)].join('・'));
   if (s.starter && !s.evoFrom) out.push('最初の相棒として選ぶ');
   return out.length ? out : ['？？？'];
 }
+// 種類ごとの 生息地（過去＝第1部の 大陸・現在＝隕石の あと）
+const _placeCache = {};
+export function placesOf(spId) {
+  if (_placeCache[spId]) return _placeCache[spId];
+  const s = SPECIES[spId], past = [], pastIds = [], now = [];
+  const has = (tbl) => tbl.some(e => e.sp === spId);
+  if (s && !s.gen2) {
+    for (const rid of Object.keys(REGION_JA)) {
+      if (!BASE_REGION_IDS.includes(rid)) continue;
+      for (const water of [false, true]) if (has(encounterTable(rid, water, false))) { past.push(REGION_JA[rid] + (water && rid !== 'sea' ? '（水上）' : '')); pastIds.push(rid); break; }
+    }
+    for (const did of Object.keys(PAST_DUNGEONS)) if (has(encounterTable(did, false, false)) || DUNGEON_BOSS[did]?.[0] === s.name) { past.push(PAST_DUNGEONS[did].name); pastIds.push(did); }
+  }
+  if (s && s.gen2) {
+    for (const rid of [...RUINED, ...Object.keys(NEW_REGIONS)]) for (const water of [false, true]) if (has(encounterTable(rid, water, true))) { now.push((RUIN_NAMES[rid] || NEW_REGIONS[rid].name) + (water ? '（水上）' : '')); break; }
+    for (const did of Object.keys(NEW_DUNGEONS)) if (has(encounterTable(did, false, true))) now.push(NEW_DUNGEONS[did].name);
+  }
+  return (_placeCache[spId] = { past: [...new Set(past)], pastIds: [...new Set(pastIds)], now: [...new Set(now)] });
+}
+const BASE_REGION_IDS = ['start', 'plains', 'forest', 'lake', 'desert', 'canyon', 'snow', 'swamp', 'highland', 'volcano', 'sanctuary', 'inner', 'sea'];
 // その アニモンが 住んでいる 場所の 名前（運営からの プレゼントなども ふつうに つかまえた ことに する）
 //  同じ 種類でも 子ごとに ちがう 場所に なるよう seed（uid など）で えらぶ
 const SIDE_REGION = { caravan: 'desert', mine: 'canyon', swampboss: 'swamp' };
@@ -256,15 +416,17 @@ export function habitatPlaces(spId) {
   if (_habCache[spId]) return _habCache[spId];
   const s = SPECIES[spId]; if (!s) return [];
   let out = [];
-  if (s.legend) out = [REGIONS.sanctuary.name];
+  if (s.hiddenQuest) out = ['新大地の岬'];
+  else if (s.legend) out = [REGION_JA.sanctuary];
+  else if (s.name === 'トキワタリ') out = ['みなとまち跡'];
+  else if (s.name === 'ゼノドラグ') out = [NEW_DUNGEONS.meteor.name];
   else {
     for (let b = s; b && !out.length; b = b.evoFrom ? SPECIES[b.evoFrom] : null) {
-      for (const rid of ORDER) if (encounterTable(rid).some(e => e.sp === b.id) || encounterTable(rid, true).some(e => e.sp === b.id)) out.push(REGIONS[rid].name);
-      for (const did of Object.keys(DUNGEONS)) if (encounterTable(did).some(e => e.sp === b.id) || DUNGEON_BOSS[did]?.[0] === b.name) out.push(DUNGEONS[did].name);
-      if (!out.length && encounterTable('sea', true).some(e => e.sp === b.id)) out.push(REGIONS.sea.name);
-      if (!out.length && b.side) out.push(REGIONS[SIDE_REGION[b.side]].name);
+      const P = placesOf(b.id);
+      out.push(...(b.gen2 ? P.now : P.past).map(n => n.replace(/（水上）$/, '')));
+      if (!out.length && b.side) out.push(REGION_JA[SIDE_REGION[b.side]]);
     }
-    if (!out.length && s.story) out = [REGIONS.forest.name];
+    if (!out.length && s.story) out = [REGION_JA.forest];
     if (!out.length) out = ['はじまりの町'];
   }
   return (_habCache[spId] = [...new Set(out)]);
@@ -276,5 +438,5 @@ export function habitatName(spId, seed = '') {
 // 出会った 場所の 記録を ふつうに する（「運営からの プレゼント」や、管理サイトで 作った 子の「はじまりの町」→ 住んでいる 場所）
 export function unnaturalMet(m) { const t = String(m?.metAt || ''); return /運営|プレゼント/.test(t) || (t === 'はじまりの町' && !habitatPlaces(m.sp).includes('はじまりの町')); }
 export function naturalMetAt(m) { if (m && unnaturalMet(m)) m.metAt = habitatName(m.sp, m.uid); return m?.metAt || ''; }
-export function hiddenInDex(s) { return s.legend || !!s.side || (s.rare && (s.hab.includes('inner') || s.hab.includes('abyss'))); }
+export function hiddenInDex(s) { if (s.hiddenQuest) return false; return s.legend || !!s.side || (s.rare && (s.hab.includes('inner') || s.hab.includes('abyss'))); }
 export { BY_NAME };

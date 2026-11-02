@@ -6,7 +6,7 @@
 export const MOVES = {};
 function mv(id, name, type, power, acc, pp, tier, o = {}) {
   MOVES[id] = { id, name, type, power, acc, pp, tier, pri: o.pri || 0, e: o.e || [], crit: o.crit || 0, drain: o.drain || 0, recoil: o.recoil || 0, heal: o.heal || 0,
-    protect: !!o.protect, redirect: !!o.redirect, help: !!o.help, sig: o.sig || null, desc: o.desc || '' };
+    protect: !!o.protect, redirect: !!o.redirect, help: !!o.help, sig: o.sig || null, desc: o.desc || '', g2: !!o.g2 };
 }
 
 // ---- ノーマル ----
@@ -208,11 +208,48 @@ mv('sig_kongou', 'こんごうしょう', 'steel', 100, 100, 10, 4, { sig: 'コ�
 mv('sig_mikoto', 'しんたくのひかり', 'psychic', 100, 100, 10, 4, { sig: 'ミコトラ', e: [['def', -1, 'foe', 30]], desc: '【特別技】神託の光。' });
 mv('sig_kotodama', 'いにしえのうた', 'rock', 95, 100, 10, 3, { sig: 'イニシエノカミ', e: [['def', 1, 'self', 50]], desc: '【特別技】古代の歌が岩を呼ぶ。' });
 
-// タイプ別プール（tier順）
+// ---- 第2部（隕石の あとに 生まれた 新しい 技）：新しい アニモンだけが 覚える（前の アニモンの 技構成は 変わらない） ----
+const g2 = (id, name, type, power, acc, pp, tier, o = {}) => mv(id, name, type, power, acc, pp, tier, { ...o, g2: true });
+g2('mutaclaw', 'ミュータクロー', 'normal', 75, 100, 15, 2, { crit: 1, desc: '変異した ツメで 切り裂く。急所に 当たりやすい。' });
+g2('mutate', 'とつぜんへんい', 'normal', 0, null, 10, 0, { e: [['atk', 1, 'self', 100], ['def', 1, 'self', 100]], desc: '体を 変異させ、自分の 攻撃と 防御を 上げる。' });
+g2('ashstorm', 'はいのあらし', 'fire', 70, 100, 15, 2, { e: [['acc', -1, 'foe', 30]], desc: '熱い 灰を 吹きつける。命中を 下げることがある。' });
+g2('magmaburst', 'マグマバースト', 'fire', 100, 90, 10, 4, { e: [['brn', 20]], desc: '地中の マグマを 噴き上げる。やけどさせることがある。' });
+g2('mudgeyser', 'どろのかんけつせん', 'water', 85, 95, 10, 3, { e: [['acc', -1, 'foe', 30]], desc: '熱い 泥水を 噴き出す。命中を 下げることがある。' });
+g2('sporebloom', 'ほうしのはな', 'grass', 70, 100, 15, 2, { drain: 0.5, desc: '変異した 花の 胞子で 体力を 吸い取る。' });
+g2('stormcell', 'らいうんのかく', 'electric', 95, 95, 10, 3, { e: [['par', 20]], desc: '雷雲の 核を ぶつける。まひさせることがある。' });
+g2('frostmeteor', 'ひょうせきりゅう', 'ice', 90, 95, 10, 3, { e: [['frz', 10]], desc: '氷の 隕石を 降らせる。こおらせることがある。' });
+g2('impactfist', 'インパクトナックル', 'fighting', 110, 95, 5, 4, { recoil: 0.25, desc: '隕石の ような 拳。自分も 反動を 受ける。' });
+g2('toxicrain', 'どくのあめ', 'poison', 85, 100, 10, 3, { e: [['psn', 30]], desc: '変異した 毒の 雨。どくにすることがある。' });
+g2('quakewave', 'しんげんのなみ', 'ground', 100, 95, 10, 4, { e: [['spe', -1, 'foe', 20]], desc: '震源から 広がる 揺れ。素早さを 下げることがある。' });
+g2('ashwing', 'はいかぜのつばさ', 'flying', 75, 100, 15, 2, { e: [['acc', -1, 'foe', 20]], desc: '灰を まきあげる 翼。命中を 下げることがある。' });
+g2('cosmicray', 'コズミックレイ', 'psychic', 90, 100, 10, 3, { e: [['def', -1, 'foe', 20]], desc: '宇宙の 光線。防御を 下げることがある。' });
+g2('mutaswarm', 'へんいのむれ', 'bug', 80, 100, 15, 3, { desc: '変異した 虫の 群れで おそいかかる。' });
+g2('shardshot', 'かけらだん', 'rock', 60, 100, 20, 2, { crit: 1, desc: '隕石の かけらを 撃ち出す。急所に 当たりやすい。' });
+g2('meteorfall', 'メテオフォール', 'rock', 110, 90, 5, 4, { desc: '小さな 隕石を 呼び寄せて ぶつける。' });
+g2('witherwind', 'かれはのかぜ', 'ghost', 65, 100, 20, 2, { desc: '枯れ葉と いっしょに 魂を 運ぶ 風。' });
+g2('dragonmeteor', 'りゅうせいぐん', 'dragon', 120, 90, 5, 4, { e: [['atk', -1, 'self', 100]], desc: '流れ星を 降らせる。撃った あと 自分の 攻撃が 下がる。' });
+g2('voidbite', 'ボイドバイト', 'dark', 80, 100, 15, 3, { e: [['flinch', 20]], desc: '虚空の キバで かみつく。ひるませることがある。' });
+g2('rustclaw', 'さびのかぎづめ', 'steel', 70, 100, 15, 2, { e: [['def', -1, 'foe', 30]], desc: 'さびた ツメで 切りつける。防御を 下げることがある。' });
+g2('stardust', 'ほしくずのまい', 'fairy', 80, 100, 10, 3, { e: [['spe', 1, 'self', 30]], desc: '星くずの 舞。自分の 素早さが 上がることがある。' });
+// 第2部の 特別技
+mv('sig_meteorlord', 'メテオインパクト', 'rock', 120, 95, 5, 5, { sig: 'メテオロード', e: [['flinch', 20]], desc: '【特別技】隕石そのものと なって 突撃する。ひるませることがある。', g2: true });
+mv('sig_kazan', 'かざんのいかり', 'fire', 110, 95, 5, 5, { sig: 'カザンリュウ', e: [['brn', 30]], desc: '【特別技】噴火の 怒りを ぶつける。やけどさせることがある。', g2: true });
+mv('sig_toki', 'ときのまきもどし', 'psychic', 85, 100, 10, 4, { sig: 'トキワタリ', drain: 0.5, desc: '【特別技】時を 巻きもどし、与えた ダメージの 半分を 回復する。', g2: true });
+mv('sig_xeno', 'ゼノバースト', 'dragon', 115, 95, 5, 5, { sig: 'ゼノドラグ', e: [['def', -1, 'foe', 30]], desc: '【特別技】宇宙の 竜の 力を 解き放つ。防御を 下げることがある。', g2: true });
+mv('sig_saisei', 'さいせいのほのお', 'fire', 95, 100, 10, 4, { sig: 'フェニクシア', drain: 0.5, desc: '【特別技】命を よみがえらせる 炎。与えた ダメージの 半分を 回復する。', g2: true });
+mv('sig_soukyuu', 'そうきゅうのりゅうげき', 'flying', 120, 95, 5, 5, { sig: 'スカイドラゴン', crit: 1, e: [['spe', 1, 'self', 50]], desc: '【特別技】蒼穹を 切り裂く 竜の 一撃。急所に 当たりやすく、素早さが 上がることがある。スカイドラゴンだけが 使える。', g2: true });
+
+// タイプ別プール（tier順）：第1部の アニモン用（新しい 技は 入れない）
 export const POOLS = {};
 for (const m of Object.values(MOVES)) {
-  if (m.sig) continue;
+  if (m.sig || m.g2) continue;
   (POOLS[m.type] ||= { 0: [], 1: [], 2: [], 3: [], 4: [] })[m.tier].push(m.id);
+}
+// 第2部の アニモン用（新しい 技も 入る。覚えるときは 新しい 技を 優先）
+export const POOLS2 = {};
+for (const m of Object.values(MOVES)) {
+  if (m.sig) continue;
+  (POOLS2[m.type] ||= { 0: [], 1: [], 2: [], 3: [], 4: [] })[m.tier].push(m.id);
 }
 // サブ技（補完）として相性の良いタイプ
 export const COVERAGE = {

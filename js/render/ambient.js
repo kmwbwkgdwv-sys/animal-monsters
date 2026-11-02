@@ -10,12 +10,17 @@ const KINDS = {
   snow: { geo: 'sphereLo', cols: [[1, 1, 1], [0.92, 0.96, 1]], size: [0.07, 0.14], fall: -2.0, drift: 0.9, spin: 0, alpha: 0.95 },
   fireflies: { geo: 'sphereLo', cols: [[0.85, 1, 0.45], [0.6, 1, 0.6]], size: [0.07, 0.11], fall: 0, drift: 0.3, wander: 1.4, glow: true, blink: true },
   embers: { geo: 'sphereLo', cols: [[1, 0.55, 0.12], [1, 0.82, 0.3], [1, 0.35, 0.1]], size: [0.06, 0.12], fall: 1.8, drift: 0.8, wander: 0.8, glow: true, blink: true },
+  ash: { geo: 'leaf', cols: [[0.62, 0.6, 0.6], [0.45, 0.43, 0.44], [0.78, 0.76, 0.74], [0.35, 0.33, 0.34]], size: [0.1, 0.2], fall: -0.75, drift: 1.5, spin: 2.2, lit: true },
+  toxic: { geo: 'sphereLo', cols: [[0.65, 1, 0.35], [0.8, 0.5, 1], [0.5, 0.95, 0.4]], size: [0.07, 0.14], fall: 0.9, drift: 0.3, wander: 0.6, glow: true, blink: true, alpha: 0.8 },
+  meteor: { geo: 'star', cols: [[0.8, 0.55, 1], [0.95, 0.8, 1], [0.6, 0.45, 1]], size: [0.1, 0.2], fall: 0.9, drift: 0.3, wander: 0.6, glow: true, blink: true, spin: 1.5 },
   motes: { geo: 'star', cols: [[1, 0.92, 0.55], [0.85, 0.75, 1], [1, 1, 1]], size: [0.1, 0.18], fall: 0.6, drift: 0.4, wander: 0.5, glow: true, blink: true, spin: 1.5 },
 };
 export const BIOME_AMBIENT = {
   start: 'petals', plains: 'petals', highland: 'petals', lake: 'petals', forest: 'leaves', desert: 'sand', canyon: 'sand',
   snow: 'snow', swamp: 'fireflies', volcano: 'embers', sanctuary: 'motes', inner: 'motes', sea: null,
   ruins: 'motes', pyramid: 'sand', ice: 'snow', sky: 'motes', lava: 'embers', abyss: 'motes',
+  // 第2部
+  ruin_forest: 'ash', ruin_lake: 'sand', ruin_swamp: 'toxic', ruin_highland: 'ash', ruin_volcano: 'embers', crater: 'meteor', lavaland: 'embers', meteor: 'meteor',
 };
 
 export class Ambient {

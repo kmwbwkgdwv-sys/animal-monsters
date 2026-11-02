@@ -4,11 +4,12 @@
 import { Scene, Camera, Node, GeoBuilder, PRIM, initPrims, M4, mixRgb, MAT, geoSerial, disposeSceneGeos } from '../engine/gl3d.js';
 import { SkyRig } from '../render/sky.js';
 import { Ambient, BIOME_AMBIENT } from '../render/ambient.js';
+import { RuinFx } from '../render/ruinfx.js';
 import { clamp, lerp, mulberry32, angleDiff, hashStr } from '../engine/util.js';
-import { World, buildBuilding, SKY, REGION_INDEX } from '../render/world.js';
+import { World, buildBuilding, SKY, SKY_RUIN, REGION_INDEX } from '../render/world.js';
 import { Dungeon, chestGeo } from '../render/dungeon.js';
 import { buildHuman, animateHuman, buildAnimon, animateAnimon, randomLook, pumpHumans } from '../render/models.js';
-import { DUNGEON_BOSS, TOWNS, STONES, DUNGEONS, ITEM_BALLS, REGIONS, RING, TRAINERS, routeTrainers, encounterTable, regionLevel, ringAt, polar, BUILD_JA, SANCT_R, INNER_R, START_POS, COAST_R, ALTAR } from '../data/world.js';
+import { DUNGEON_BOSS, TOWNS, STONES, DUNGEONS, ITEM_BALLS, REGIONS, RING, TRAINERS, routeTrainers, encounterTable, regionLevel, ringAt, polar, BUILD_JA, SANCT_R, INNER_R, START_POS, COAST_R, ALTAR, ERA, IMPACT, CRATER_R, VOLCANO_C, RUINED, goneAt, P2_START, TIME_GATES } from '../data/world.js';
 import { SPECIES, BY_NAME } from '../data/species.js';
 import { DESIGN } from '../data/designs.js';
 import { NPCS, LOOKS, QUESTS, STEPS } from '../data/story.js';
@@ -19,6 +20,7 @@ import { Input, readMove } from '../input.js';
 import { audio } from '../audio.js';
 import { $, el, esc, toast, say, confirmBox, fade, UI, glintAt } from '../ui/ui.js';
 import * as SE from './storyEngine.js';
+import * as FX from './movieFx.js';
 import { startWildBattle, startTrainerBattle } from '../ui/battleUI.js';
 import * as MENU from '../ui/menus.js';
 import * as ER from './errands.js';
@@ -60,6 +62,7 @@ export async function buildOverworld(progress) {
   S.outlineDist = 75;
   OW.sky = new SkyRig(S, { light: G.settings.light, cloudR: 230, cloudY: 30 });
   OW.amb = new Ambient(S, { light: G.settings.light });
+  OW.ruinFx = new RuinFx(S, W, G.settings.light);
   // 水面（浅瀬・泡・きらめきはシェーダーで）
   const wb = new GeoBuilder(); const WN = G.settings.light ? 40 : 64, WS = 4;
   for (let j = 0; j <= WN; j++) for (let i = 0; i <= WN; i++) wb._push((i - WN / 2) * WS, 0, (j - WN / 2) * WS, 0, 1, 0, [1, 1, 1]);
@@ -71,10 +74,13 @@ export async function buildOverworld(progress) {
   TOWNS.forEach((t, ti) => {
     const h = W.townH[ti];
     t.b.forEach(([type, dx, dz], bi) => {
-      const rc = { forest: '#3c9a4a', lake: '#2a78d0', desert: '#d0a040', canyon: '#b0603a', snow: '#6ab0e0', swamp: '#6a5a9a', highland: '#e080c0', volcano: '#d04020', start: '#d0503c', sanctuary: '#c0a050' }[t.region] || '#c8643c';
+      if (t.ruined && type === 'lighthouse') return;   // こわれた 灯台は がれきに
+      const rc = t.ruined ? '#7a706a' : { forest: '#3c9a4a', lake: '#2a78d0', desert: '#d0a040', canyon: '#b0603a', snow: '#6ab0e0', swamp: '#6a5a9a', highland: '#e080c0', volcano: '#d04020', start: '#d0503c', sanctuary: '#c0a050' }[t.region] || '#c8643c';
       const B = buildBuilding(type, ti * 31 + bi, rc);
       const x = t.pos[0] + dx, z = t.pos[1] + dz;
       const n = new Node(B.geo, { mat: MAT.building }); n.setPos(x, h, z); S.add(n);
+      // 第2部：こわれた 町（屋根が 落ち、かたむいて、がれきが 散らばる）
+      if (t.ruined) { n.setScale(1, 0.58 + (bi % 3) * 0.1, 1); n.rot[2] = (bi % 2 ? 1 : -1) * 0.05; n.rot[0] = (bi % 3 - 1) * 0.04; n.setColor && n.setColor([0.78, 0.74, 0.72]); ruinRubble(S, W, x, z, B.w, B.d, ti * 17 + bi); }
       W.boxes.push({ x0: x - B.w / 2, x1: x + B.w / 2, z0: z - B.d / 2, z1: z + B.d / 2 });
       // 研究所・家は 前に立っている 博士・ママに 話しかければ いいので、入口は 名前を 出すだけ（同じ会話が 2つ出ないように）
       OW.trig.push({ kind: 'door', type, town: t.id, x: x + B.door[0], z: z + B.door[1], r: (type === 'lab' || type === 'home') ? 0 : 2.8, label: type === 'house' ? '' : (type === 'hall' ? t.name.replace(/町|村|里|集落|タウン|まち/, '') + 'の守護者の館' : BUILD_JA[type]), ly: B.h + 3, lx: x, lz: z, bi });
@@ -94,7 +100,7 @@ export async function buildOverworld(progress) {
     bed(-8.5, -1.5); bed(8.5, -1.5);
     const fn = new Node(f.build(), { mat: MAT.building }); fn.setPos(t.pos[0], h, t.pos[1] - 2); S.add(fn);
     for (const [dx, dz] of [[-6.5, -6], [6.5, -6], [-6.5, 3], [6.5, 3]]) { const lx = t.pos[0] + dx, lz = t.pos[1] - 2 + dz; W.boxes.push({ x0: lx - 0.3, x1: lx + 0.3, z0: lz - 0.3, z1: lz + 0.3 }); }
-    const spout = new Node(PRIM.drop, { color: [0.75, 0.92, 1], alpha: 0.7, outline: 0, emis: [0.1, 0.2, 0.3] }); spout.setPos(t.pos[0], h + 2.6, t.pos[1] - 2); spout.setScale(0.35, 0.5, 0.35); S.add(spout); (OW.spouts ||= []).push(spout); W.boxes.push({ x0: t.pos[0] - 3, x1: t.pos[0] + 3, z0: t.pos[1] - 5, z1: t.pos[1] + 1 });
+    const spout = new Node(PRIM.drop, { color: [0.75, 0.92, 1], alpha: 0.7, outline: 0, emis: [0.1, 0.2, 0.3] }); spout.setPos(t.pos[0], h + 2.6, t.pos[1] - 2); spout.setScale(0.35, 0.5, 0.35); if (t.ruined) spout.visible = false; S.add(spout); (OW.spouts ||= []).push(spout); W.boxes.push({ x0: t.pos[0] - 3, x1: t.pos[0] + 3, z0: t.pos[1] - 5, z1: t.pos[1] + 1 });
   });
   // ファストトラベルの岩
   for (const s of STONES) {
@@ -118,7 +124,7 @@ export async function buildOverworld(progress) {
   for (const [id, d] of Object.entries(DUNGEONS)) {
     const x = d.pos[0], z = d.pos[1], h = W.heightAt(x, z);
     const g = new GeoBuilder();
-    const col = { ruins: [0.6, 0.62, 0.52], pyramid: [0.85, 0.72, 0.45], ice: [0.7, 0.85, 0.95], sky: [0.92, 0.92, 1], lava: [0.3, 0.25, 0.25], abyss: [0.35, 0.28, 0.5] }[d.theme];
+    const col = { ruins: [0.6, 0.62, 0.52], pyramid: [0.85, 0.72, 0.45], ice: [0.7, 0.85, 0.95], sky: [0.92, 0.92, 1], lava: [0.3, 0.25, 0.25], abyss: [0.35, 0.28, 0.5], meteor: [0.24, 0.2, 0.32] }[d.theme];
     if (d.theme === 'pyramid') { g.cone(9, 9, col, 0, 0, -4, 4); }
     else if (d.theme === 'sky') { for (let i = 0; i < 6; i++) g.cylinder(3.2 - i * 0.3, 3.4 - i * 0.3, 5, i % 2 ? [0.95, 0.9, 0.7] : col, 0, i * 5, -4, 10); }
     else { g.sphere(6, col, 0, 0, -4, 8, 5, 0.9); }
@@ -138,6 +144,8 @@ export async function buildOverworld(progress) {
     const gem = new Node(PRIM.gem, { color: big ? [1, 0.75, 0.4] : [0.8, 0.7, 1], emis: big ? [0.5, 0.3, 0.1] : [0.4, 0.3, 0.7] }); gem.setScale(0.8, 1.6, 0.8); gem.setPos(ax, h + 3, az); S.add(gem);
     OW.trig.push({ kind: 'altar', x: ax, z: az, r: 0.1, label: big ? 'いにしえの祭壇' : '星の祭壇', ly: 6, gem });
   }
+  // 第2部：隕石・噴煙・流れ星の かけら・時の扉
+  buildP2Objects(S, W);
   progress && progress(0.75, '人々を配置中…');
   // 道ばたのトレーナー
   OW.routeTr = routeTrainers();
@@ -160,6 +168,83 @@ export async function buildOverworld(progress) {
   refreshFollower();
   OW.region = null; OW.dungeon = null;
   progress && progress(0.95, 'もうすぐ…');
+}
+
+// ---------- 第2部の 置きもの ----------
+function ruinRubble(S, W, x, z, w, d, seed) {
+  const r = mulberry32(seed * 97 + 5), g = new GeoBuilder();
+  for (let k = 0; k < 9; k++) {
+    const a = r() * Math.PI * 2, rr = Math.max(w, d) * (0.55 + r() * 0.5), bx = x + Math.cos(a) * rr, bz = z + Math.sin(a) * rr;
+    const s = 0.4 + r() * 0.9, c = r() < 0.5 ? [0.56, 0.5, 0.46] : [0.4, 0.3, 0.26];
+    g.setMatrix(M4.fromTRS([bx - x, W.heightAt(bx, bz) - W.heightAt(x, z) + s * 0.3, bz - z], [r(), r() * 6, r()], [1, 1, 1])).box(s * 1.4, s * 0.6, s, c, 0, 0, 0).setMatrix(null);
+  }
+  const n = new Node(g.build(), { mat: MAT.decor }); n.setPos(x, W.heightAt(x, z), z); S.add(n);
+}
+function buildP2Objects(S, W) {
+  OW.plume = null; OW.meteor = null; OW.p2fx = [];
+  const st = G.save.story || {};
+  if (ERA.ruin) {
+    // 隕石（クレーターの まんなか）
+    const [mx, mz] = IMPACT, mh = W.heightAt(mx, mz);
+    const root = new Node(); root.setPos(mx, mh, mz);
+    const rr = mulberry32(42);
+    for (let k = 0; k < 7; k++) { const a = k / 7 * Math.PI * 2, d = k ? 4.5 : 0, rk = new Node(PRIM.sphere, { color: [0.16, 0.13, 0.2] }); rk.setScale(k ? 3 + rr() * 2 : 7, k ? 2.5 + rr() * 2 : 6, k ? 3 + rr() * 2 : 7); rk.setPos(Math.cos(a) * d, k ? 1 : 3, Math.sin(a) * d - 3); rk.rot = [rr(), rr() * 6, rr()]; root.add(rk); }
+    const gems = [];
+    for (let k = 0; k < 9; k++) { const a = k / 9 * Math.PI * 2, g = new Node(PRIM.gem, { color: [0.75, 0.4, 1], emis: [0.45, 0.2, 0.7], mat: MAT.glossy }); g.setScale(0.8 + rr() * 0.8, 2.4 + rr() * 2.4, 0.8 + rr() * 0.8); g.setPos(Math.cos(a) * (2 + rr() * 4), 6 + rr() * 3, Math.sin(a) * (2 + rr() * 4) - 3); g.rot = [Math.cos(a) * 0.5, 0, Math.sin(a) * 0.5]; root.add(g); gems.push(g); }
+    S.add(root); OW.meteor = { root, gems };
+    W.boxes.push({ x0: mx - 9, x1: mx + 9, z0: mz - 12, z1: mz + 5 });
+    // 火山の 噴煙（灰色の けむりが 立ちのぼる）と 火口の 光
+    const vh = W.heightAt(VOLCANO_C[0], VOLCANO_C[1]);
+    const glow = new Node(PRIM.sphereHi, { color: [1, 0.45, 0.1], emis: [1, 0.4, 0.08], unlit: true, outline: 0 }); glow.setScale(12, 4, 12); glow.setPos(VOLCANO_C[0], vh + 2, VOLCANO_C[1]); S.add(glow);
+    const puffs = [];
+    for (let k = 0; k < 16; k++) { const p = new Node(PRIM.sphere, { color: k % 3 ? [0.32, 0.3, 0.32] : [0.5, 0.46, 0.46], alpha: 0.55, outline: 0, cloudShadow: 0 }); p.noDepthWrite = true; S.add(p); puffs.push({ n: p, ph: k / 16, k }); }
+    OW.plume = { base: [VOLCANO_C[0], vh + 4, VOLCANO_C[1]], puffs, glow };
+  }
+  // 流れ星の かけら（第1部 クリア後・第2部の 前）
+  const endI = STEPS.findIndex(s => s.id === 'end');
+  if (!G.save.era && st.step >= endI) {
+    const [x, z] = P2_START, h = W.heightAt(x, z);
+    const gem = new Node(PRIM.gem, { color: [0.85, 0.5, 1], emis: [0.6, 0.3, 0.9], mat: MAT.glossy }); gem.setScale(0.7, 1.4, 0.7); gem.setPos(x, h + 1.4, z); S.add(gem);
+    const ring = new Node(PRIM.torus, { color: [0.9, 0.7, 1], emis: [0.5, 0.35, 0.7], unlit: true, outline: 0 }); ring.setScale(1.6, 0.3, 1.6); ring.setPos(x, h + 0.2, z); S.add(ring);
+    OW.trig.push({ kind: 'p2start', x, z, r: 3.2, gem, label: 'あやしい 流れ星の かけら', ly: 3 });
+  }
+  buildGates(S, W);
+}
+function buildGates(S, W) {
+  const st = G.save.story || {};
+  // 時の扉
+  if (st.flags && st.flags.gates) {
+    for (const g of TIME_GATES) {
+      const [x, z] = g.pos, h = W.heightAt(x, z);
+      const ring = new Node(PRIM.torus, { color: [0.5, 0.95, 1], emis: [0.3, 0.7, 0.8], mat: MAT.glossy, outline: 0.6 }); ring.setScale(2.4, 1.4, 2.4); ring.rot = [Math.PI / 2, 0, 0]; ring.setPos(x, h + 2.6, z);
+      const disc = new Node(PRIM.disc, { color: ERA.ruin ? [0.6, 0.9, 1] : [1, 0.85, 0.5], alpha: 0.7, unlit: true, outline: 0 }); disc.doubleSide = true; disc.noDepthWrite = true; disc.setScale(2.1, 1, 2.1); disc.rot = [Math.PI / 2, 0, 0]; disc.setPos(x, h + 2.6, z);
+      S.add(ring); S.add(disc);
+      W.boxes.push({ x0: x - 0.6, x1: x + 0.6, z0: z - 0.3, z1: z + 0.3 });
+      OW.trig.push({ kind: 'gate', id: g.id, x, z: z + 2.2, r: 3, ring, disc, label: ERA.ruin ? '時の扉（過去へ）' : '時の扉（現在へ）', ly: 5.6 });
+    }
+  }
+}
+export function rebuildP2Objects() {
+  for (const t of OW.trig.filter(x => x.kind === 'gate')) { t.ring.parent?.remove(t.ring); t.disc.parent?.remove(t.disc); }
+  OW.trig = OW.trig.filter(x => x.kind !== 'gate');
+  buildGates(OW.scene, G.world);
+}
+function updateP2(dt) {
+  if (OW.meteor) for (const [i, g] of OW.meteor.gems.entries()) { const e = 0.35 + 0.25 * Math.sin(OW.t * 2 + i); g.emis = [e, e * 0.45, e * 1.5]; }
+  if (OW.plume) {
+    const P = OW.plume;
+    for (const p of P.puffs) {
+      p.ph = (p.ph + dt * 0.045) % 1;
+      const t = p.ph, s = 6 + t * 26;
+      p.n.setPos(P.base[0] + Math.sin(p.ph * 9 + p.k) * 6 + t * 40, P.base[1] + t * 120, P.base[2] + Math.cos(p.ph * 7) * 6 + t * 30);
+      p.n.setScale(s, s * 0.8, s); p.n.color[3] = 0.55 * (1 - t) * Math.min(1, t * 6);
+    }
+    const g = 0.8 + 0.2 * Math.sin(OW.t * 3); P.glow.emis = [g, g * 0.4, 0.08];
+  }
+  for (const t of OW.trig) {
+    if (t.kind === 'p2start') { t.gem.rot[1] += dt * 1.2; t.gem.pos[1] = G.world.heightAt(t.x, t.z) + 1.4 + Math.sin(OW.t * 2) * 0.25; }
+    else if (t.kind === 'gate') { const k = 2.05 + Math.sin(OW.t * 2.4) * 0.12; t.disc.setScale(k, 1, k); t.disc.color[3] = 0.55 + Math.sin(OW.t * 3) * 0.15; }
+  }
 }
 
 // 結界（まだ行けない地域との境目）
@@ -192,7 +277,22 @@ export function buildBarriers() {
 }
 
 // ---------- NPC・トレーナー ----------
+// その 時代に いる 人か（第2部：消えた 町の 人は 過去にだけ・第2部の 人は 現在にだけ）
+function eraOk(d) {
+  if (d.era === 'now') return !!ERA.ruin;
+  if (d.era === 'past') return !ERA.ruin;
+  if (ERA.ruin && goneAt(d.pos)) return false;
+  return true;
+}
 function makeNpc(def, look) {
+  if (def.sp) {
+    // アニモンの NPC（トキワタリ など）
+    const M = buildAnimon(BY_NAME[def.sp].id, false); const W = G.world;
+    const x = def.pos[0], z = def.pos[1];
+    M.root.setPos(x, W.groundAt(x, z) + (M.sp.plan === 'blob' ? 0.6 : 0), z); M.root.rot[1] = def.ry ?? 0;
+    OW.scene.add(M.root);
+    return { ...def, M, x, z };
+  }
   const lk = typeof look === 'string' ? (LOOKS[look] || randomLook(mulberry32(hashStr(look)))) : look;
   const H = buildHuman(lk, { lazy: true });
   const W = G.world;
@@ -211,11 +311,13 @@ export function refreshActors() {
   const idx = (id) => id === null || id === undefined ? null : STEPS.findIndex(s => s.id === id);
   for (const d of NPCS) {
     if (d.show) { const a = idx(d.show[0]), b = idx(d.show[1]); if (a !== null && si < a) continue; if (b !== null && si >= b) continue; }
+    if (!eraOk(d)) continue;
     OW.npcs.push(makeNpc({ ...d, kind: 'npc' }, d.look));
   }
   // 道ばたのトレーナー
   for (const t of OW.routeTr) {
     if (!isUnlocked(t.region)) continue;
+    if (t.p2 ? !ERA.ruin : (ERA.ruin && (RUINED.has(t.region) || goneAt(t.pos)))) continue;
     const look = randomLook(mulberry32(t.seed * 13));
     OW.npcs.push(makeNpc({ id: t.id, name: t.name, pos: t.pos, ry: (t.seed % 4) * Math.PI / 2, kind: 'trainer', tr: t }, look));
   }
@@ -224,6 +326,8 @@ export function refreshActors() {
     const st = G.save.quests[q.id];
     const reqI = idx(q.req);
     if (!st && si < reqI) continue;
+    if (q.hidden && !st) continue;   // 隠しミッションは 見つけるまで 出ない
+    if (!eraOk({ era: q.era, pos: q.giver.pos })) continue;
     OW.npcs.push(makeNpc({ id: 'giver_' + q.id, name: q.giver.name, pos: q.giver.pos, ry: 0, kind: 'giver', quest: q }, q.giver.look));
     if (st && !st.done) {
       const step = q.steps[st.stage];
@@ -337,7 +441,7 @@ export function startRide(mon) {
   const sp = SPECIES[mon.sp];
   stopRide(true);
   const M = buildAnimon(mon.sp, mon.shiny, { lod: 'mid' });
-  const sc = clamp(2.5 / M.height, 1.0, 2.6) * (sp.legend ? 0.75 : 1);
+  const sc = clamp(2.5 / M.height, 1.0, 2.6) * (sp.legend ? 0.75 : 1) * (M.rideBoost || 1);
   M.root.setScale(sc);
   P.rideM = M; P.rideSp = mon.sp; P.rideScale = sc; P.rideH = M.height * sc; P.rideUid = mon.uid;
   OW.mode = sp.ride;
@@ -548,7 +652,8 @@ function sparkleAt(x, y, z) {
 export function biomeHere() {
   if (OW.dungeon) return DUNGEONS[OW.dungeon.id].theme;
   const P = OW.player; const r = G.world.regionAt(P.x, P.z);
-  if (G.world.heightAt(P.x, P.z) < -0.6) return 'sea';
+  if (G.world.heightAt(P.x, P.z) < -0.6 && r !== 'lavaland') return 'sea';
+  if (ERA.ruin && RUINED.has(r)) return 'ruin_' + r;
   return r;
 }
 
@@ -692,6 +797,8 @@ export function updateOverworld(dt) {
   }
   for (const k in OW.spawned) { const s = OW.spawned[k]; if (s.M) animateAnimon(s.M, dt, s.M.sp.legend ? 'fly' : 'idle'); if (s.H) animateHuman(s.H, dt, 'idle'); }
   for (let i = sparks.length - 1; i >= 0; i--) { const s = sparks[i]; s.life -= dt; s.n.pos[1] += dt * 1.2; s.n.rot[2] += dt * 4; s.n.color[3] = Math.max(0, s.life / 0.8); if (s.life <= 0) { s.n.parent?.remove(s.n); sparks.splice(i, 1); } }
+  updateP2(dt);
+  if (OW.fx && OW.fx.length) OW.fx = OW.fx.filter(f => { try { return f(dt) !== false; } catch (e) { console.warn(e); return false; } });
   // アイテム・岩のゆらぎ
   for (const t of OW.trig) {
     if (t.kind === 'item' && t.node) { const h = W.groundAt(t.x, t.z); t.node.setPos(t.x, h + 0.7 + Math.sin(OW.t * 3 + t.x) * 0.15, t.z); }
@@ -710,7 +817,7 @@ export function updateOverworld(dt) {
     const town = TOWNS.find(t => Math.hypot(P.x - t.pos[0], P.z - t.pos[1]) < t.r + 4) || null;
     if (reg !== OW.region || (town?.id || null) !== (OW.inTown?.id || null)) onRegionChange(reg, town);
     // 空の色
-    const sky = SKY[reg] || SKY.plains;
+    const sky = OW.movieSky || (ERA.ruin && SKY_RUIN[reg]) || SKY[reg] || SKY.plains;
     if (!OW.skyCur) OW.skyCur = { bg: sky.bg.slice(), fog: sky.fog.slice() };
     for (let i = 0; i < 3; i++) { OW.skyCur.bg[i] = lerp(OW.skyCur.bg[i], sky.bg[i], dt); OW.skyCur.fog[i] = lerp(OW.skyCur.fog[i], sky.fog[i], dt); }
     OW.scene.bg = OW.skyCur.bg;
@@ -721,6 +828,8 @@ export function updateOverworld(dt) {
     // 見えている範囲（カメラは南から北を見下ろす）に合わせて、描画範囲の中心を少し北へ
     const fx = -Math.sin(OW.camYawS || 0), fz = -Math.cos(OW.camYawS || 0); // 見ている方向（地面）
     OW.scene.cullCenter = [P.x + fx * 26 * OW.zoom, 0, P.z + fz * 26 * OW.zoom]; OW.scene.cullRadius = (OW.mode === 'fly' ? 160 : (G.settings.light ? 105 : 125)) * Math.max(0.9, OW.zoom);
+    // ムービーで 遠くを 見せる ときは、見ている 場所の まわりを 広く 描く
+    { const co = OW.camOverride; if (co && co.wide) { OW.scene.cullCenter = [co.look[0], 0, co.look[2]]; OW.scene.cullRadius = co.wide; OW.scene.fogNear = co.wide * 0.7; OW.scene.fogFar = co.wide * 1.7; } }
     if (OW.scene.shadow) { const sh = OW.scene.shadow; sh.center = [P.x + fx * 6, W.heightAt(P.x, P.z), P.z + fz * 6]; sh.radius = 44 * Math.max(1, OW.zoom); sh.strength = OW.mode === 'fly' ? 0.5 : 0.85; }
     // 草むら・水上エンカウント
     if (moved > 0 && !G.busy && OW.encCool <= 0 && OW.mode !== 'fly' && !OW.noEnc && !repelOn()) {
@@ -757,6 +866,7 @@ export function updateOverworld(dt) {
   // カメラ
   if (OW.camOverride) {
     const co = OW.camOverride; co.t = Math.min(1, co.t + dt * 1000 / co.ms);
+    if (co.lookFn) { try { co.look = co.lookFn(); } catch (e) { /* */ } }
     const k = co.t * co.t * (3 - 2 * co.t);
     for (let i = 0; i < 3; i++) { OW.cam.pos[i] = lerp(co.fromPos[i], co.pos[i], k); OW.cam.target[i] = lerp(co.fromLook[i], co.look[i], k); }
   } else {
@@ -778,8 +888,9 @@ export function updateOverworld(dt) {
   // 空（カメラについてくる）・空気中を舞うもの
   if (!D && OW.sky) {
     OW.sky.update(dt, OW.cam);
-    if (OW.skyTheme) OW.sky.setTheme(OW.skyTheme, Math.min(1, dt * 1.5));
+    { const th = OW.movieTheme || OW.skyTheme; if (th) OW.sky.setTheme(th, Math.min(1, dt * 1.5)); }
     if (OW.amb) OW.amb.update(dt, [P.x - Math.sin(OW.camYawS || 0) * 4, (P.y || 0) + 0.5, P.z - Math.cos(OW.camYawS || 0) * 4], OW.scene.wind);
+    if (OW.ruinFx) try { OW.ruinFx.update(dt, P.x, P.z, OW.scene.wind); } catch (e) { console.warn(e); }
   }
   // 最後に 地面に立っていた場所（泳ぎ・飛行中に セーブしたとき用）
   if (!D && (OW.t * 4 | 0) !== (OW.lgT | 0)) { OW.lgT = OW.t * 4; if (W.heightAt(P.x, P.z) > -0.3 && !W.blockedByObst(P.x, P.z, 0.6)) OW.lastGround = [P.x, P.z]; }
@@ -857,8 +968,8 @@ function onRegionChange(reg, town) {
   }
   audio.playBgm(town ? 'town' : 'field');
   // 空の色・舞うもの（花びら・雪・火の粉など）を地域に合わせる
-  OW.skyTheme = (SKY[reg] || SKY.plains).theme || 'day';
-  if (OW.amb) OW.amb.setKind(G.settings.light && reg !== 'snow' ? null : (BIOME_AMBIENT[reg] ?? null));
+  OW.skyTheme = ((ERA.ruin && SKY_RUIN[reg]) || SKY[reg] || SKY.plains).theme || 'day';
+  { const ak = ERA.ruin && RUINED.has(reg) ? 'ruin_' + reg : reg; if (OW.amb) OW.amb.setKind(G.settings.light && reg !== 'snow' ? null : (BIOME_AMBIENT[ak] ?? null)); }
   if (prev !== null) save();
 }
 
@@ -890,7 +1001,7 @@ function updatePrompt() {
   let txt = '';
   if (t) {
     const btn = Input.touch ? 'A' : 'Space';
-    const verb = t.kind === 'harvest' ? t.verb : t.kind === 'friend' ? `${t.r.name}と 話す` : ({ door: '入る', stone: '岩にさわる', item: '拾う', dungeon: '入る', npcRef: '話す', exit: '外に出る', chest: '開ける', boss: '調べる' }[t.kind] || '調べる');
+    const verb = t.kind === 'harvest' ? t.verb : t.kind === 'friend' ? `${t.r.name}と 話す` : ({ door: '入る', stone: '岩にさわる', item: '拾う', dungeon: '入る', p2start: '調べる', gate: '時の扉に 入る', npcRef: '話す', exit: '外に出る', chest: '開ける', boss: '調べる' }[t.kind] || '調べる');
     txt = `${btn}：${verb}`;
   }
   if (p.textContent !== txt) p.textContent = txt;
@@ -918,6 +1029,8 @@ export function interact() {
       G.save.items[t.id] = true; addItem(t.item, 1); OW.scene.root.remove(t.node); audio.sfx('item');
       await say([`|${itemName(t.item)} を 拾った！`]); save();
     } else if (t.kind === 'dungeon') await dungeonEnter(t.id);
+    else if (t.kind === 'p2start') await SE.startPart2();
+    else if (t.kind === 'gate') await SE.useGate(t.id);
     else if (t.kind === 'exit') { if (await confirmBox('ダンジョンから 外に出ますか？')) await exitDungeon(); }
     else if (t.kind === 'chest') {
       if (OW.dungeon.opened.has(t.i)) { await say(['|からっぽだ。']); return; }
@@ -968,7 +1081,7 @@ async function stoneAction(t) {
   await MENU.openTravel(t.id);
 }
 export async function warpTo(stoneId) {
-  const s = STONES.find(x => x.id === stoneId); if (!s) return;
+  const s = STONES.find(x => x.id === stoneId) || STONES.find(x => x.id === 't_start'); if (!s) return;
   stopRide(true);
   audio.sfx('warp');
   await fade(true, 400);
@@ -991,6 +1104,7 @@ export async function warpTo(stoneId) {
 async function dungeonEnter(id) {
   const d = DUNGEONS[id];
   if (d.post && !G.save.postGame) { await say(['|強い力で 封印されている……。（ストーリークリア後に 入れる）']); return; }
+  if (d.p2 && !G.save.story.flags?.meteorOpen) { await say(['|むらさきの 光の 壁に はじかれた……。（第2部の ストーリーを 進めると 入れる）']); return; }
   const runs = dungeonRuns(id);
   if (!await confirmBox(runs ? `${d.name}（推奨Lv${d.rec + runBonus(id)}）に 入りますか？\n周回 ${runs + 1}回目：入るたびに 中の形が 変わり、主と 宝箱が 復活します（クリアするほど 少し強く、ごほうびも 良くなる）` : `${d.name}（推奨Lv${d.rec}）に 入りますか？`)) return;
   stopRide(true);
@@ -1179,6 +1293,13 @@ export function despawnActor(id) {
 }
 export function camTo(target) {
   if (!target) { OW.camOverride = null; return; }
+  // ムービー用：{ pos, look | lookFn, ms } や 名前つきの 場面（'meteor' 'legendsUp'）
+  if (typeof target === 'string' && FX.camShot(target)) target = FX.camShot(target);
+  if (target && !Array.isArray(target) && typeof target === 'object' && target.pos) {
+    const look = target.lookFn ? target.lookFn() : target.look;
+    OW.camOverride = { fromPos: OW.cam.pos.slice(), fromLook: OW.cam.target.slice(), pos: target.pos, look: look.slice(), lookFn: target.lookFn || null, t: 0, ms: target.ms || 1200 };
+    return;
+  }
   let look, pos;
   const W = G.world;
   if (Array.isArray(target)) { look = target; }

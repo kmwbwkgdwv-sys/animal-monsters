@@ -264,7 +264,7 @@ export function profileSummary() {
     crests: S.story?.crests || 0,
     clear: !!S.postGame,
     // ストーリーの 進み具合（第何章か。12 = クリア）
-    ch: S.postGame ? 12 : (STEPS[Math.min(S.story?.step || 0, STEPS.length - 1)]?.ch || 1),
+    ch: Math.max(S.postGame ? 12 : 1, STEPS[Math.min(S.story?.step || 0, STEPS.length - 1)]?.ch || 1),
     hours: Math.floor((S.playTime || 0) / 3600),
     party: uniqParty(S.party).slice(0, 6).map(m => ({ sp: m.sp, lv: m.lv, shiny: !!m.shiny, nick: String(m.nick || '').slice(0, 12), iv: IVK.reduce((a, k) => a + (m.iv?.[k] || 0), 0) })),
   };
@@ -393,7 +393,7 @@ export async function hostWorld() {
   await ensurePlayer();
   if (World.host === Online.pid) return;
   if (World.host) await leaveWorld();
-  await R.set(wref(Online.pid, 'meta'), { host: Online.pid, hostName: String(G.save.name).slice(0, 20), open: true, at: now() });
+  await R.set(wref(Online.pid, 'meta'), { host: Online.pid, hostName: String(G.save.name).slice(0, 20), open: true, at: now(), era: G.save.era === 'now' ? 'now' : 'past' });
   await enterWorld(Online.pid, G.save.name);
 }
 export async function inviteToWorld(friendPid) {
@@ -405,6 +405,8 @@ export async function joinWorld(hostPid) {
   try { await R.remove(ref('invites', Online.pid, 'w_' + hostPid)); } catch (e) { /* */ }
   const meta = await val('worlds', hostPid, 'meta');
   if (!meta || !meta.open) throw new Error('その ワールドは もう 閉じられています。');
+  // 第2部：隕石の あとの 大陸（現在）と、第1部・過去の 大陸は 地形が ちがうので いっしょに 遊べない
+  if ((meta.era || 'past') !== (G.save.era === 'now' ? 'now' : 'past')) throw new Error(meta.era === 'now' ? 'その ワールドは 隕石が 落ちた あとの 大陸（第2部）です。同じ 時代に いるときに 参加できます。' : 'その ワールドは 隕石が 落ちる 前の 大陸です。（第2部の 人は 時の扉で 過去へ 行くと 参加できます）');
   if (World.host && World.host !== hostPid) await leaveWorld();
   await enterWorld(hostPid, meta.hostName || '');
 }

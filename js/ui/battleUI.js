@@ -36,16 +36,23 @@ export async function startTrainerBattle(id, opts = {}) {
   let team = tr.team;
   if (typeof team === 'string') team = rivalTeam(team, G.save.story.starter ?? 0);
   const strong = tr.ai === 'boss';
-  const mons = team.map(([nm, lv, item], i) => createMon(BY_NAME[nm].id, lv, { item, iv: strong ? { atk: 10 + (i * 3) % 6, def: 9 + (i * 5) % 7, hp: 10 + i % 6, spe: 9 + (i * 7) % 7 } : undefined, shiny: false }));
+  const mons = team.map(([nm, lv, item], i) => createMon(BY_NAME[nm].id, lv, { item, iv: tr.elite ? { atk: 15, def: 15, hp: 15, spe: 15 } : strong ? { atk: 10 + (i * 3) % 6, def: 9 + (i * 5) % 7, hp: 10 + i % 6, spe: 9 + (i * 7) % 7 } : undefined, shiny: false }));
   // トレーナーの アニモンは なつかせられない（しるしを つけておく）
   for (const m of mons) { m.trainer = true; m.ot = tr.name; }
   // 最初のライバル戦は、レンの相棒がまだノーマル技しか覚えていない
   if (id === 'ren1') for (const m of mons) m.moves = m.moves.slice(0, 1);
   if (!G.save.party.some(m => m.hp > 0)) { toast('戦える アニモンが いない！'); return 'none'; }
   for (const m of mons) registerDex(m.sp, false);
+  // 共闘（タッグバトル）：tr.ally = 味方の トレーナー（TRAINERS の id）。自分は 左、味方は 右の 枠
+  let side0 = { name: G.save.name, team: G.save.party, ai: 'player' };
+  if (tr.ally && TRAINERS[tr.ally]) {
+    const A = TRAINERS[tr.ally];
+    const allyMons = A.team.map(([nm, lv, item], i) => { const m = createMon(BY_NAME[nm].id, lv, { item, iv: { atk: 14, def: 13, hp: 14, spe: 13 }, shiny: false }); m.trainer = true; m.ally = true; m.ot = A.name; return m; });
+    side0 = { name: G.save.name, team: [...G.save.party, ...allyMons], ai: 'player', allyFrom: G.save.party.length, allyName: A.name.replace(/^.*?\s/, '') };
+  }
   const res = await runBattle({
     kind: 'trainer', format: tr.format || 'single', biome: opts.biome || (await import('../game/overworld.js')).biomeHere(), boss: strong, trainerName: tr.name,
-    sides: [{ name: G.save.name, team: G.save.party, ai: 'player' }, { name: tr.name, team: mons, ai: tr.ai === 'boss' ? 'boss' : 'trainer' }],
+    sides: [side0, { name: tr.name, team: mons, ai: tr.ai === 'boss' ? 'boss' : 'trainer' }],
     reward: tr.reward || 0, story: opts.story, allowLose: opts.allowLose, noRun: opts.noRun,
     defeatId: opts.rematch ? null : (opts.route ? opts.route.id : id),
   });
@@ -90,7 +97,7 @@ async function runBattle(cfg) {
     if (cfg.trainerName) cutIn(`VS ${cfg.trainerName}`);
     else if (cfg.boss) cutIn('強敵 出現！');
     const seed = cfg.seed ?? Math.floor(Math.random() * 2 ** 31);
-    B = new Battle({ sides: cfg.sides, format: cfg.format, seed, kind: cfg.kind, lvOverride: cfg.lvOverride, postGame: G.save?.postGame, noCatch: !!cfg.noCatch, noRun: !!cfg.noRun });
+    B = new Battle({ sides: cfg.sides, format: cfg.format, seed, kind: cfg.kind, lvOverride: cfg.lvOverride, postGame: !!G.save?.story?.flags?.p2clear, noCatch: !!cfg.noCatch, noRun: !!cfg.noRun });
     for (const sd of B.sides) for (const b of sd.team) if (b.m.hp <= 0) downShown[sd.i].add(b.idx);
     if (cfg.trainerName) await msg(`${cfg.trainerName} が 勝負を しかけてきた！`);
     await play(B.start());
@@ -291,9 +298,11 @@ function renderPanel(side, slot) {
   const sp = SPECIES[m.sp];
   // 相手（と 自分）の のこりの 手持ち（トレーナー戦・フレンド対戦）
   let dots = '';
-  const team = B.sides[side].team;
+  const sd = B.sides[side];
+  // 共闘：自分の 手持ちだけ 数える（味方トレーナーの アニモンは のぞく）
+  const team = sd.allyFrom != null ? sd.team.slice(0, sd.allyFrom) : sd.team;
   if (slot === 0 && team.length > 1 && B.kind !== 'wild') {
-    const down = downShown[side];
+    const down = new Set([...downShown[side]].filter(i => sd.allyFrom == null || i < sd.allyFrom));
     const alive = team.length - down.size;
     dots = `<div class="tdots" title="のこりの 手持ち">${team.map(b => `<i class="${down.has(b.idx) ? 'dn' : ''}"></i>`).join('')}<small>のこり ${alive}/${team.length}匹</small></div>`;
   }
@@ -403,6 +412,8 @@ async function chooseFor(need, pvp) {
   try {
     for (let k = 0; k < need.slots.length; k++) {
       const slot = need.slots[k];
+      // 共闘：味方の 枠は 味方トレーナーが 自分で 決める
+      if (B.isAllySlot(mySide, slot)) { out.push(B.aiChoose(mySide, { kind: need.kind, slots: [slot] })[0]); continue; }
       if (need.kind === 'switch') {
         const used = out.map(o => o.idx);
         const idx = await pickParty(true, used, (f) => autoFire = f);
@@ -464,7 +475,8 @@ function chooseCommand(b, slot, pvp, already, setAuto) {
       const foe = aimFoe();
       b.m.moves.forEach((mm, i) => {
         const mv = MOVES[mm.id];
-        const locked = b.locked && (b.item === 'h_band' || b.item === 'h_shoes') && mm.id !== b.locked;
+        // いちずの 道具で 決まった 技の PP が なくなったら、ほかの 技も 使える（動けなく ならないように）
+        const locked = b.locked && (b.item === 'h_band' || b.item === 'h_shoes') && mm.id !== b.locked && b.m.moves.some(x => x.id === b.locked && x.pp > 0);
         const vest = b.item === 'h_vest' && mv.power === 0;
         let effTxt = '';
         if (mv.power > 0 && foe) { const e = typeEff(mv.type, foe.types); effTxt = e === 0 ? ' 効果なし' : e > 1 ? ' ◎ばつぐん' : e < 1 ? ' △いまひとつ' : ''; }
@@ -565,6 +577,7 @@ function partyMenu(b, pvp, used) {
     ov.querySelector('.close').onclick = () => close(null);
     const list = ov.querySelector('.mlist');
     s.team.forEach((tb, i) => {
+      if (s.allyFrom != null && i >= s.allyFrom) return;   // 共闘：味方の アニモンは 入れかえられない
       const m = tb.m, max = tb.maxhp, r = m.hp / max;
       const c = el('button', 'mcard' + (m.hp <= 0 ? ' fnt' : '') + (tb.slot >= 0 ? ' sel' : ''));
       c.innerHTML = `<img src="${portrait(m.sp, m.shiny)}"><div class="info"><div class="nm">${m.shiny ? '<span class="shiny">✨</span>' : ''}${esc(monName(m))} <span class="lv">Lv${tb.lv}</span>${m.status ? `<span class="st ${m.status}">${STATUS_JA[m.status]}</span>` : ''}${m.hp <= 0 ? '<span class="st fnt">ひんし</span>' : ''}</div><div class="hpbar"><i class="${hpClass(r)}" style="width:${r * 100}%"></i></div><div class="muted">${m.hp}/${max}${tb.slot >= 0 ? '　（戦闘中）' : ''}　${SPECIES[m.sp].types.map(typeBadge).join('')}${m.item && ITEMS[m.item] ? `<span class="bheld">🎁${esc(ITEMS[m.item].name)}</span>` : ''}</div>${movesRowHtml(m, mainFoe())}</div>`;
@@ -613,10 +626,12 @@ function pickParty(forced, used, setAuto) {
     ov.innerHTML = `<div class="head"><h2>次に 出す アニモンを 選んでください</h2><span class="muted bfoehint">${mainFoe() ? `◎ばつぐん △いまひとつ ×効果なし（相手：${esc(monName(mainFoe().m))}）` : ''}</span></div><div class="body"><div class="mlist"></div></div>`;
     root.appendChild(ov);
     const close = (v) => { ov.remove(); res(v); };
-    const firstOk = s.team.findIndex((tb, i) => tb.m.hp > 0 && tb.slot < 0 && !used.includes(i));
+    const mineOnly = (i) => s.allyFrom == null || i < s.allyFrom;   // 共闘：味方の アニモンは 選べない
+    const firstOk = s.team.findIndex((tb, i) => mineOnly(i) && tb.m.hp > 0 && tb.slot < 0 && !used.includes(i));
     setAuto(() => close(firstOk));
     const list = ov.querySelector('.mlist');
     s.team.forEach((tb, i) => {
+      if (!mineOnly(i)) return;
       const m = tb.m, r = m.hp / tb.maxhp;
       const ok = m.hp > 0 && tb.slot < 0 && !used.includes(i);
       const c = el('button', 'mcard' + (ok ? '' : ' fnt'));

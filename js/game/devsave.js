@@ -26,7 +26,7 @@ const TOWN_AT = { 1: 't_start', 2: 't_forest', 3: 't_forest', 4: 't_lake', 5: 't
 function simulate(clearedCh) {
   const target = STEPS.findIndex(s => s.ch > clearedCh);
   const end = target < 0 ? STEPS.length - 1 : target;
-  const R = { step: end, unlocked: ['start'], crests: 0, defeated: {}, lulu: 'none', legend: false, others: false, postGame: false, home: false, gifts: {} };
+  const R = { step: end, unlocked: ['start'], crests: 0, defeated: {}, lulu: 'none', legend: false, others: false, postGame: false, home: false, gifts: {}, p2: clearedCh >= 12, gates: false, meteorOpen: false, legend2: false, toki: false, p2clear: false };
   const run = (list) => {
     if (!list) return;
     if (typeof list === 'string') list = SCENES[list];
@@ -45,6 +45,12 @@ function simulate(clearedCh) {
         case 'postGame': R.postGame = true; if (!R.unlocked.includes('inner')) R.unlocked.push('inner'); break;
         case 'warpHome': R.home = true; break;
         case 'give': R.gifts[c.item] = (R.gifts[c.item] || 0) + (c.n || 1); break;
+        // 第2部
+        case 'gatesOpen': R.gates = true; break;
+        case 'meteorOpen': R.meteorOpen = true; break;
+        case 'giveOtherLegend': R.legend2 = true; break;
+        case 'giveToki': R.toki = true; break;
+        case 'p2Clear': R.p2clear = true; R.meteorOpen = true; break;
       }
     }
   };
@@ -101,6 +107,7 @@ export function chapterPool(cleared, starter = 0) {
 
 // opts: { starter: 0|1|2, legend: 199|200, look }
 export function buildStorySave(name = 'nekojita', cleared = 4, opts = {}) {
+  if (+cleared >= 12) return buildPart2Save(name, Math.min(21, Math.round(+cleared)), opts);
   cleared = Math.max(1, Math.min(11, Math.round(+cleared || 4)));
   const look = opts.look || { skin: 1, hair: 'short', hairCol: 1, shirt: 4, pants: 5, shoes: 6, hat: 'cap', hatCol: 8, bottom: 'pants' };
   const S = newState(name, look);
@@ -207,7 +214,7 @@ export function buildStorySave(name = 'nekojita', cleared = 4, opts = {}) {
   return S;
 }
 // 選択肢の 文字（管理サイト用）
-export const CLEAR_JA = (n) => n >= 11 ? `第11章「${CHAPTERS[11]}」クリア（ストーリー 全クリア）` : `第${n}章「${CHAPTERS[n]}」クリア まで（第${n + 1}章「${CHAPTERS[n + 1]}」が 始まる ところ）`;
+export const CLEAR_JA = (n) => n >= 21 ? `第2部 第9章「${CHAPTERS[21]}」クリア（第2部 全クリア）` : n === 12 ? '第1部 クリア・第2部 第1章「' + CHAPTERS[13] + '」から' : n >= 13 ? `第2部 第${n - 12}章「${CHAPTERS[n]}」クリア まで（第2部 第${n - 11}章「${CHAPTERS[n + 1]}」が 始まる）` : n >= 11 ? `第11章「${CHAPTERS[11]}」クリア（ストーリー 全クリア）` : `第${n}章「${CHAPTERS[n]}」クリア まで（第${n + 1}章「${CHAPTERS[n + 1]}」が 始まる ところ）`;
 
 // =============================================================
 //  今ある セーブの ストーリーの 進み具合を「第N章まで クリア」に そろえる（管理サイトの プレゼントで 使う）
@@ -216,14 +223,21 @@ export const CLEAR_JA = (n) => n >= 11 ? `第11章「${CHAPTERS[11]}」クリア
 //   ・次の 章が 始まる 町へ 移動（行けない 地域に 取り残されないように）
 // =============================================================
 export function applyProgress(S, cleared, opts = {}) {
-  cleared = Math.max(1, Math.min(11, Math.round(+cleared || 1)));
+  cleared = Math.max(1, Math.min(21, Math.round(+cleared || 1)));
   const R = simulate(cleared);
+  if (cleared >= 12) for (const r of ['crater', 'lavaland']) if (!R.unlocked.includes(r)) R.unlocked.push(r);
   const st = S.story;
   const storyTr = new Set(STEPS.filter(x => x.battle).map(x => x.battle));
   for (const t of storyTr) delete S.defeated[t];
   for (let n = 1; n <= 8; n++) delete S.defeated['g' + n];
   Object.assign(S.defeated, R.defeated);
-  st.step = R.step; st.crests = R.crests; st.flags = {};
+  st.step = R.step; st.crests = R.crests;
+  // 第2部の しるし（寄付・隠しミッションの しるしは 残す）
+  { const keep = {}; for (const k of ['don_gen', 'don_mitsu', 'skyq']) if (st.flags && st.flags[k]) keep[k] = st.flags[k]; st.flags = keep; }
+  if (R.p2) { S.era = 'now'; st.flags.p2 = true; } else delete S.era;
+  if (R.gates) st.flags.gates = true;
+  if (R.meteorOpen) st.flags.meteorOpen = true;
+  if (R.p2clear) st.flags.p2clear = true;
   S.unlocked = R.unlocked.slice();
   S.postGame = R.postGame;
   const all = () => [...S.party, ...S.box];
@@ -251,17 +265,46 @@ export function applyProgress(S, cleared, opts = {}) {
     st.othersGiven = true;
     for (const sp of [1, 4, 7]) if (sp !== [1, 4, 7][st.starter ?? 0]) S.box.push(createMon(sp, 5, { ot: S.name, metAt: 'はじまりの町' }));
   }
+  // 第2部 第9章：もう一匹の 伝説と トキワタリ
+  if (R.legend2 && !(st.legend2Uid && all().some(m => m.uid === st.legend2Uid))) {
+    const sp2 = (st.legend || 199) === 199 ? 200 : 199;
+    const m = createMon(sp2, 99, { ot: S.name, metAt: 'メテオクレーター', iv: { ...legendIv() } }); st.legend2Uid = m.uid; S.box.unshift(m);
+  }
+  if (R.toki && !(st.tokiUid && all().some(m => m.uid === st.tokiUid))) { const m = createMon(id('トキワタリ'), 90, { ot: S.name, metAt: 'みなとまち跡', iv: { hp: 12, atk: 12, def: 12, spe: 12 } }); st.tokiUid = m.uid; S.box.unshift(m); }
   for (const m of [...all(), ...(st.lulu ? [st.lulu] : [])]) { S.dex.caught[m.sp] = true; S.dex.seen[m.sp] = true; }
-  // 次の 章が 始まる 町へ
-  const home = TOWN_AT[cleared];
+  // 次の 章が 始まる 町へ（第2部は はじまりの町）
+  const home = cleared >= 12 ? 't_start' : TOWN_AT[cleared];
   S.lastHospital = home; S.stones = S.stones || {}; S.stones[home] = true;
   const stone = STONES.find(x => x.id === home);
   if (stone) { S.pos = [stone.pos[0], stone.pos[1] + 4]; S.ry = 0; }
+  if (cleared >= 12) { S.pos = [-6, 604]; S.ry = 0; }
   return { step: R.step, crests: R.crests, lulu: R.lulu, legend: R.legend, postGame: R.postGame };
 }
 // セーブから「いま 何章か」（管理サイトの 表示用）
 export function progressText(S) {
   const step = STEPS[S?.story?.step ?? 0];
   if (!step) return '？';
-  return step.ch > 11 ? 'ストーリー クリア後' : `第${step.ch}章「${CHAPTERS[step.ch]}」：${step.obj}`;
+  if (step.ch === 12) return 'ストーリー クリア後（第2部の 前）';
+  if (step.ch >= 22) return '第2部 クリア後';
+  if (step.ch >= 13) return `第2部 第${step.ch - 12}章「${CHAPTERS[step.ch]}」：${step.obj}`;
+  return `第${step.ch}章「${CHAPTERS[step.ch]}」：${step.obj}`;
+}
+
+// 第2部の 章まで すすめた アカウント（第1部 クリアの データ ＋ 第2部の 新しい アニモン・レベル）
+const LV2 = { 12: 82, 13: 84, 14: 86, 15: 88, 16: 90, 17: 95, 18: 98, 19: 99, 20: 99, 21: 99 };
+function buildPart2Save(name, cleared, opts) {
+  const S = buildStorySave(name, 11, opts);
+  applyProgress(S, cleared, opts);
+  const lv = LV2[cleared];
+  for (const m of S.party) { if (m.lv < lv) { const nm = createMon(grown(m.sp, lv), lv, { ot: m.ot, metAt: m.metAt, iv: m.iv, shiny: m.shiny, nick: m.nick, gift: m.gift }); nm.uid = m.uid; nm.caughtAt = m.caughtAt; Object.assign(m, nm); } }
+  // こわれた 地域で なつかせた 新しい アニモン（章に 合わせて）
+  const regs = ['forest', 'lake', 'swamp', 'highland', 'volcano', 'crater', 'lavaland'].slice(0, Math.max(1, Math.min(7, cleared - 11)));
+  let k = 0;
+  for (const reg of regs) for (const e of encounterTable(reg, false, true).slice(0, 2)) {
+    const l = Math.min(99, Math.max(lv - 8, 20) + (k % 5));
+    const m = createMon(grown(e.sp, l), l, { ot: name, metAt: { forest: 'くだけた森', lake: 'ひからびた湖畔', swamp: 'どくぬまの湿原', highland: '灰の高原', volcano: 'ふんかした火山', crater: 'メテオクレーター', lavaland: '溶岩の新大地' }[reg] });
+    m.caughtAt = Date.now() - (20 - k++) * 3600000; S.box.push(m); S.dex.caught[m.sp] = S.dex.seen[m.sp] = true;
+  }
+  S.money = Math.max(S.money || 0, 50000 + cleared * 5000);
+  return S;
 }

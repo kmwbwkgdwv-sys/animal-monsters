@@ -930,6 +930,8 @@ function planQuad(K, M, pv, Q) {
     K.add(j, front ? gF : gH);
     j.len = top; M.legs.push(j);
   }
+  // 変異種：まんなかにも もう1対の 脚（6本足）
+  if (Q.legs6) for (const sx of [1, -1]) { const top = (fTop + hTop) / 2; const j = K.joint(pv, [sx * (cR[0] + hR[0]) * 0.31, top, 0], [0, 0, sx * splay]); K.add(j, gF); j.len = top; M.legs.push(j); }
   // 頭
   const head = mammalHead(K, headR, { snout, flat: Q.flat, brow: Q.brow && s > 0.4, cheeks: Q.flat ? false : undefined });
   const hj = K.joint(pv, hp, [Q.flat ? 0.05 : 0, 0, 0]);
@@ -1264,6 +1266,8 @@ function planFish(K, M, pv, F) {
   if (F.hammer) { P.add(ell([0, by + R[1] * 0.1, R[2] * 0.85], [R[0] * 2.2, R[1] * 0.42, R[2] * 0.2], c1, { k: R[1] * 0.25 })); }
   if (F.flatHead) P.add(ell([0, by - R[1] * 0.1, R[2] * 0.55], [R[0] * 1.25, R[1] * 0.75, R[2] * 0.45], c1, { k: R[1] * 0.3 }));
   if (F.jaw) P.add(ell([0, by - R[1] * 0.35, R[2] * 0.6], [R[0] * 0.75, R[1] * 0.45, R[2] * 0.4], c1, { k: R[1] * 0.25 }));
+  if (F.bigJaw) { P.add(ell([0, by - R[1] * 0.42, R[2] * 0.42], [R[0] * 1.02, R[1] * 0.55, R[2] * 0.72], c1, { k: R[1] * 0.2 })); P.add(ell([0, by - R[1] * 0.18, R[2] * 1.05], [R[0] * 0.7, R[1] * 0.12, R[2] * 0.3], null, { op: 'sub', k: R[1] * 0.06 })); }
+  if (F.eyeTop) for (const sx of [-1, 1]) P.add(sph([sx * R[0] * 0.42, by + R[1] * 0.78, R[2] * 0.55], R[1] * 0.36, c1, { k: R[1] * 0.12 }));
   P.paint(ell([0, by - R[1] * 0.6, 0], [R[0] * 1.1, R[1] * 0.62, R[2] * 1.1]), K.belly, 0.04);
   if (F.grooves) for (let i = -3; i <= 3; i++) P.paint(box([i * R[0] * 0.18, by - R[1] * 0.85, R[2] * 0.3], [R[0] * 0.025, R[1] * 0.2, R[2] * 0.55], 0), mix(K.belly, K.dark, 0.25), R[0] * 0.02);
   if (F.gills) for (const sx of [-1, 1]) for (let i = 0; i < 3; i++) P.paint(box([sx * R[0] * 0.9, by, R[2] * (0.35 - i * 0.09)], [R[0] * 0.2, R[1] * 0.35, R[2] * 0.012], 0), mix(c1, K.dark, 0.5), R[0] * 0.015);
@@ -1289,12 +1293,12 @@ function planFish(K, M, pv, F) {
   if (tl === 'flow') for (const sy of [-1, 0, 1]) TP.add(cap([0, 0, 0], [sy * R[0] * 0.3, sy * R[1] * 0.9, -R[2] * 1.25], R[1] * 0.38, R[1] * 0.22, mix(c2, WHITE, 0.2), { k: R[1] * 0.12, sc: [0.25, 1, 1], pv: [0, 0, 0] }));
   else if (tl === 'fluke') for (const sx of [-1, 1]) TP.add(cap([0, 0, 0], [sx * R[0] * 1.1, R[1] * 0.1, -R[2] * 0.45], R[1] * 0.32, R[1] * 0.08, F.cloud ? WHITE : c1, { k: 0.03, sc: [1, 0.25, 1], pv: [0, 0, 0] }));
   else if (tl === 'shark') { TP.add(cap([0, 0, 0], [0, R[1] * 1.2, -R[2] * 0.55], R[1] * 0.35, R[1] * 0.04, c1, { k: 0.03, sc: [0.25, 1, 1], pv: [0, 0, 0] })); TP.add(cap([0, 0, 0], [0, -R[1] * 0.7, -R[2] * 0.35], R[1] * 0.3, R[1] * 0.04, c1, { k: 0.03, sc: [0.25, 1, 1], pv: [0, 0, 0] })); }
-  else TP.add(cap([0, 0, 0], [0, 0, -R[2] * 0.55], R[1] * 0.55, R[1] * 0.3, c2, { k: 0.03, sc: [0.25, 1, 1], pv: [0, 0, 0] }));
-  const tj = K.joint(pv, [0, by + 0.02, -R[2] * 1.12]); K.add(tj, K.mesh(TP, 'small')); M.tails.push(tj);
+  else if (tl !== 'none') TP.add(cap([0, 0, 0], [0, 0, -R[2] * 0.55], R[1] * 0.55, R[1] * 0.3, c2, { k: 0.03, sc: [0.25, 1, 1], pv: [0, 0, 0] }));
+  const tj = K.joint(pv, [0, by + 0.02, -R[2] * 1.12]); if (TP.shapes.length) K.add(tj, K.mesh(TP, 'small')); M.tails.push(tj);
   if (F.whisk) for (const sx of [-1, 1]) for (const k of [0, 1]) tailChain(K, M, pv, [sx * R[0] * 0.75, by - R[1] * 0.25, R[2] * 0.85], 3, R[1] * 0.35, R[1] * 0.06, K.dark, -1.2 - k * 0.5, -0.25, sx * 0.9, null, 0.5);
   M.tailBase = null;
   M.anchor = A;
-  M.eyeCfg = { dir: F.hammer ? [0.97, 0.12, 0.2] : F.flatHead ? [0.62, 0.45, 0.65] : [0.72, 0.22, 0.66], size: 0.5 * (F.eyeK || 1) * (F.hammer ? 0.7 : 1) };
+  M.eyeCfg = { dir: F.eyeTop ? [0.42, 0.78, 0.47] : F.hammer ? [0.97, 0.12, 0.2] : F.flatHead ? [0.62, 0.45, 0.65] : [0.72, 0.22, 0.66], size: 0.5 * (F.eyeK || 1) * (F.hammer ? 0.7 : 1) };
   if (F.hammer) head.c = [0, by + R[1] * 0.1, R[2] * 0.85];
   M.faceCfg = { nose: false, blush: !F.jaw, mouthY: -R[1] * 0.25 };
   return head;
@@ -1642,8 +1646,11 @@ function planBlob(K, M, pv, Bl) {
   const by = 0.6;
   let R = 0.5 * lerp(0.95, 1.05, s);
   const P = new Part();
-  let eyeDir = [0.36, 0.12, 0.92], eyeSize = 0.46, hc = [0, by + 0.05, 0], arms = true, mouthY = -R * 0.2;
-  if (sh === 'puff') {
+  let eyeDir = [0.36, 0.12, 0.92], eyeSize = 0.46, hc = [0, by + 0.05, 0], arms = true, mouthY = -R * 0.2, hr = 0;
+  if (typeof sh === 'function') {
+    const o = sh(K, M, pv, P, R, by) || {};
+    if (o.hc) hc = o.hc; if (o.eyeDir) eyeDir = o.eyeDir; if (o.eyeSize) eyeSize = o.eyeSize; if (o.arms !== undefined) arms = o.arms; if (o.mouthY !== undefined) mouthY = o.mouthY; if (o.hr) hr = o.hr;
+  } else if (sh === 'puff') {
     // わたあめのようなふわふわ
     P.add(sph([0, by, 0], R * 0.82, c1, { k: 0 }));
     for (let i = 0; i < 10; i++) { const a = i * 2.4, e = (i % 3 - 1) * 0.5; P.add(sph([Math.cos(a) * R * 0.62, by + e * R * 0.55, Math.sin(a) * R * 0.5 - R * 0.1], R * 0.42, i % 2 ? c1 : mix(c1, WHITE, 0.3), { k: R * 0.18 })); }
@@ -1794,7 +1801,7 @@ function planBlob(K, M, pv, Bl) {
   M.body = K.add(bj, K.mesh(P, 'body'), { mat: M.glossy || Bl.glossy ? MAT.glossy : MAT.char, alpha: sh === 'jelly' || sh === 'slime' ? 0.88 : 1 });
   if (M.body_emis) M.body.emis = M.body_emis;
   if (sh === 'jelly' || sh === 'slime') M.body.transparent = true;
-  const head = { part: P, R: R * (sh === 'drop' ? 0.75 : sh === 'conch' ? 0.5 : sh === 'chandelier' ? 0.55 : 0.7), c: hc, node: bj };
+  const head = { part: P, R: hr || R * (sh === 'drop' ? 0.75 : sh === 'conch' ? 0.5 : sh === 'chandelier' ? 0.55 : 0.7), c: hc, node: bj };
   M.head = null; M.headInfo = head;
   if (arms) for (const sx of [-1, 1]) {
     const AP = new Part([ell([0, -0.08, 0], [R * 0.2, R * 0.32, R * 0.2], c1, { k: 0 })]);
@@ -2042,9 +2049,12 @@ const TRT = { turtle: { k: 1 }, bigturtle: { k: 1.25, flat: 1 }, spiketurtle: { 
 function planTurtle(K, M, pv, Tt) {
   M.plan = 'turtle';
   const s = K.st, k = Tt.k;
-  const shellCol = ['leaf', 'bush', 'tree'].includes(K.f.back) ? [0.6, 0.45, 0.28] : K.c2;
+  const shellCol = Tt.rock ? mix(K.c1, [0.42, 0.36, 0.3], 0.35) : ['leaf', 'bush', 'tree'].includes(K.f.back) ? [0.6, 0.45, 0.28] : K.c2;
   const sw = lerp(0.44, 0.52, s) * k, sl = lerp(0.5, 0.62, s) * k, shY = lerp(0.4, 0.5, s) * (Tt.flat ? 1.1 : 1) * (Tt.tall || 1);
-  const P = new Part([ell([0, shY + (Tt.dome ? 0.1 : 0), -0.04], [sw, lerp(0.28, 0.34, s) * (Tt.flat ? 0.85 : 1) * (Tt.dome || 1), sl], shellCol, { k: 0 })]);
+  const P = new Part([ell([0, shY + (Tt.dome ? 0.1 : 0), -0.04], [sw, lerp(0.28, 0.34, s) * (Tt.flat ? 0.85 : 1) * (Tt.dome || 1), sl], shellCol, { k: 0 })], Tt.rock ? { noise: 0.022, noiseF: 7 } : {});
+  const shTop = shY + (Tt.dome ? 0.1 : 0) + lerp(0.28, 0.34, s) * (Tt.flat ? 0.85 : 1) * (Tt.dome || 1);
+  if (Tt.split) P.add(ell([0, shTop + 0.02, -0.04], [sw * 0.62, 0.16 * k, sl * 0.62], null, { op: 'sub', k: 0.05 }));
+  if (Tt.cracks) { const cc = mix(K.c2, WHITE, 0.1); for (let i = 0; i < 7; i++) { const a = i / 7 * Math.PI * 2 + 0.3; P.paint(box([Math.cos(a) * sw * 0.45, shTop - 0.1, -0.04 + Math.sin(a) * sl * 0.45], [0.022, 0.3, sw * 0.4], 0, null, { rot: [0, -a + (i % 2 ? 0.5 : -0.4), 0] }), cc, 0.012); } }
   P.add(tor([0, shY - 0.08, -0.04], sw * 0.92, 0.07, mix(shellCol, [0, 0, 0], 0.18), { k: 0.06, sc: [1, 1, sl / sw], pv: [0, shY - 0.08, -0.04] }));
   P.add(ell([0, shY - 0.14, 0.0], [sw * 0.86, 0.17, sl * 0.9], K.c1, { k: 0.06 }));
   for (let i = 0; i < 6; i++) { const a = i / 6 * Math.PI * 2; P.paint(ell([Math.cos(a) * sw * 0.55, shY + 0.22 * k, -0.04 + Math.sin(a) * sl * 0.5], [0.13 * k, 0.08, 0.15 * k]), mix(shellCol, [0, 0, 0], 0.22), 0.02); }
@@ -2072,11 +2082,1075 @@ function planTurtle(K, M, pv, Tt) {
   return head;
 }
 
+// ================= 第2部の 新種（図鑑201〜250）：1体ずつの 専用の 姿 =================
+//  1〜200 の 姿と かぶらないように、骨格の 寸法を 変えた うえで、体の 形そのものを 作りたす。
+const G2 = {};
+const G2_LAVA = [1, 0.5, 0.12], G2_CHAR = [0.17, 0.14, 0.15], G2_CRYS = [0.82, 0.52, 1];
+let G2_HEX = null;
+const hexGeo = () => G2_HEX || (G2_HEX = new GeoBuilder().cylinder(1, 1, 1, '#ffffff', 0, 0, 0, 6).build());
+// +Y を d の 向きへ 向ける 回転
+function dirRot(d) { const l = Math.hypot(d[0], d[1], d[2]) || 1; return [Math.acos(clamp(d[1] / l, -1, 1)), Math.atan2(d[0], d[2]), 0]; }
+function g2Spin(M, n, ax, sp) { n.spinAx = ax; n.spinSp = sp; (M.spin = M.spin || []).push(n); return n; }
+function g2Bob(M, n, a, f, ph = 0) { n.bobY = n.pos[1]; n.bobA = a; n.bobF = f; n.bobPh = ph; (M.bob = M.bob || []).push(n); return n; }
+function g2Glow(K, parent, geo, col, pos, scl, rot, k = 0.6, o = {}) { return K.prim(parent, geo, col, pos, scl, rot, { emis: col.map(v => v * k), mat: MAT.glossy, outline: 0.5, ...o }); }
+// 結晶：base から dir の 向きへ 長さ len
+function g2Gem(K, parent, col, base, dir, len, w, k = 0.5) {
+  const l = Math.hypot(dir[0], dir[1], dir[2]) || 1, d = [dir[0] / l, dir[1] / l, dir[2] / l];
+  return g2Glow(K, parent, PRIM.gem, col, [base[0] + d[0] * len * 0.45, base[1] + d[1] * len * 0.45, base[2] + d[2] * len * 0.45], [w, len * 0.55, w], dirRot(d), k);
+}
+// 両面の 板（中心 c から 点列 pts へ 扇形）
+function g2Fan(K, parent, c, pts, colA, colB, o = {}) {
+  const g = new GeoBuilder();
+  for (let i = 0; i < pts.length - 1; i++) { const col = i % 2 ? colA : colB; g.quad(c, pts[i], pts[i + 1], pts[i + 1], col); g.quad(c, pts[i + 1], pts[i], pts[i], col); }
+  const n = K.add(parent, g.build(), { outline: 0.8, mat: MAT.decor, ...o }); n.doubleSide = true; return n;
+}
+function g2Tail(K, M, pv, base, n, len, rad, col, rx0 = 2.0, curl = 0.15, yaw = 0, tipCol = null, taper = 0.55) { return tailChain(K, M, pv, base, n, len, rad, col, rx0, curl, yaw, tipCol, taper); }
+const fishR = (K, R) => R.map((v, i) => v * (i === 2 ? lerp(0.85, 1.05, K.st) : lerp(1.05, 1, K.st)));
+// 六角の 石の 柱（GeoBuilder にまとめて 1つの 形に）
+function hexCols(K, parent, cols, o = {}) {
+  const g = new GeoBuilder();
+  for (const c of cols) {
+    g.setMatrix(M4.fromTRS(c.p, c.rot || [0, c.ry || 0, 0], [1, 1, 1]));
+    g.cylinder(c.r, c.r * 1.02, c.h, c.col, 0, 0, 0, 6, true, c.top || null);
+  }
+  g.setMatrix(null);
+  return K.add(parent, g.build(), { outline: 0.9, ...o });
+}
+
+// 201 スミネズ：炭の とげを 背負った まんまるの 子ネズミ（とげの 先が 赤く 光る）
+G2['スミネズ'] = (K, M, pv) => {
+  K.ex.delete('shards');
+  const head = planQuad(K, M, pv, { L: .3, legH: .13, chest: [.31, .3, .3], hip: [.34, .33, .34], lift: .02, neck: .03, neckA: 1.0, head: .37, snout: .45, legR: .062, ears: 'round', tail: 'thin' });
+  const A = M.anchor, P = new Part(), zc = (A.z0 + A.z1) / 2;
+  const G = new Part();
+  for (let r = 0; r < 5; r++) for (let c = -3; c <= 3; c++) {
+    const z = lerp(A.z0 + 0.06, A.z1 - 0.12, r / 4), x = c * A.w * 0.3 + (r % 2) * A.w * 0.15;
+    if (Math.abs(x) > A.w * 1.0) continue;
+    const y = A.top(z) - 0.06 - x * x * 1.4;
+    const d = [x * 1.9, 0.75, (z - zc) * 1.2 - 0.55], l = Math.hypot(d[0], d[1], d[2]);
+    const L = 0.24 + (r >= 1 && r <= 3 ? 0.08 : 0) + (Math.abs(c) <= 1 ? 0.04 : 0);
+    const tip = [x + d[0] / l * L, y + d[1] / l * L, z + d[2] / l * L];
+    P.add(cap([x, y, z], tip, 0.07, 0.014, G2_CHAR, { k: 0.025 }));
+    G.add(cap([x + d[0] / l * L * 0.72, y + d[1] / l * L * 0.72, z + d[2] / l * L * 0.72], tip, 0.03, 0.012, G2_LAVA, { k: 0.005 }));
+  }
+  K.add(pv, K.mesh(P, 'small'));
+  K.add(pv, K.mesh(G, 'tiny'), { emis: [0.8, 0.32, 0.04], outline: 0.3 });
+  for (const s of [-1, 1]) g2Glow(K, M.head, PRIM.sphereLo, [1, 0.45, 0.15], headPoint(head, [s * 0.78, -0.32, 0.55]).p, [0.055, 0.035, 0.03], null, 0.7, { outline: 0 });
+  const tip = g2Tail(K, M, pv, M.tailBase, 5, 0.09, 0.03, K.c1, 1.9, 0.25);
+  addFlame(K, M, tip, [0, 0, 0], 0.4, [Math.PI, 0, 0]);
+  M.tailBase = null;
+  return head;
+};
+
+// 202 スミネズミ：背中に 燃える 炭の 板を 並べた 大ネズミ（板の すきまが 赤く 光る）
+G2['スミネズミ'] = (K, M, pv) => {
+  K.ex.delete('shards');
+  const head = planQuad(K, M, pv, { L: .8, legH: .3, chest: [.3, .33, .34], hip: [.32, .33, .35], lift: .03, hump: .1, neck: .1, neckA: 1.15, head: .3, snout: .95, legR: .088, paw: 1.4, claws: 1, ears: 'side', tail: 'thin', brow: 1 });
+  const A = M.anchor, P = new Part([], { noise: 0.01, noiseF: 9 }), G = new Part();
+  const N = 6, zAt = (i) => lerp(A.z0 + 0.02, A.z1 - 0.02, i / (N - 1));
+  for (let i = 0; i < N; i++) {
+    const z = zAt(i), t = A.top(z), h = 0.13 + Math.sin(i / (N - 1) * Math.PI) * 0.13;
+    P.add(box([0, t + h * 0.4, z], [0.04, h, 0.11], 0.025, G2_CHAR, { k: 0.02, rot: [0.4, 0, i % 2 ? 0.1 : -0.1] }));
+    for (const s of [-1, 1]) P.add(box([s * A.w * 0.5, t - 0.03 + h * 0.2, z - 0.03], [0.035, h * 0.6, 0.09], 0.02, mix(G2_CHAR, K.c1, 0.35), { k: 0.02, rot: [0.4, 0, s * 0.55] }));
+    if (i < N - 1) { const zm = (z + zAt(i + 1)) / 2, tm = A.top(zm); G.add(cap([0, tm - 0.02, zm], [0, tm + 0.08, zm - 0.02], 0.035, 0.015, G2_LAVA, { k: 0.01 })); for (const s of [-1, 1]) G.add(sph([s * A.w * 0.32, tm, zm], 0.03, G2_LAVA, { k: 0.01 })); }
+  }
+  K.add(pv, K.mesh(P, 'small'));
+  K.add(pv, K.mesh(G, 'tiny'), { emis: [0.9, 0.38, 0.05], outline: 0 });
+  const tip = g2Tail(K, M, pv, M.tailBase, 6, 0.13, 0.045, K.c1, 1.75, 0.12);
+  addFlame(K, M, tip, [0, 0, 0], 0.6, [Math.PI, 0, 0]);
+  M.tailBase = null;
+  return head;
+};
+
+// 203 カレハムー：くるんと まるまった 枯れ葉を ずきんのように かぶった イモムシ（しっぽに 青い 火）
+G2['カレハムー'] = (K, M, pv) => {
+  const head = planSerpent(K, M, pv, { n: 4, r: .27, dr: .03, gap: 1.12, legs: 1, rise: 1 });
+  const R = head.R, leafC = [0.95, 0.52, 0.16], leafD = [0.62, 0.24, 0.08];
+  const L = new Part([ell([0, R * 0.66, -R * 0.4], [R * 1.25, R * 0.14, R * 1.7], leafC, { k: 0, rot: [0.3, 0, 0] })]);
+  for (const s of [-1, 1]) L.add(ell([s * R * 0.92, R * 0.3, -R * 0.4], [R * 0.16, R * 0.5, R * 1.1], leafC, { k: R * 0.12, rot: [0.3, 0, s * 0.35] }));
+  L.add(cap([0, R * 0.95, R * 0.75], [0, R * 1.35, R * 1.05], R * 0.2, R * 0.1, leafC, { k: R * 0.1 }));
+  L.add(cap([0, R * 1.35, R * 1.05], [0, R * 1.62, R * 0.8], R * 0.1, R * 0.05, leafC, { k: R * 0.06 }));
+  L.paint(box([0, R * 0.8, -R * 0.3], [R * 0.05, R * 0.4, R * 1.6], 0, null, { rot: [0.3, 0, 0] }), leafD, R * 0.03);
+  for (const s of [-1, 1]) for (let i = 0; i < 3; i++) L.paint(box([s * R * 0.42, R * 0.75, R * 0.15 - i * R * 0.5], [R * 0.4, R * 0.4, R * 0.04], 0, null, { rot: [0.3, s * 0.7, 0] }), leafD, R * 0.025);
+  L.add(sph([R * 0.75, R * 0.7, -R * 1.2], R * 0.22, null, { op: 'sub', k: R * 0.04 }));
+  L.add(sph([-R * 0.4, R * 0.75, -R * 1.5], R * 0.16, null, { op: 'sub', k: R * 0.04 }));
+  K.add(M.head, K.mesh(L, 'small'));
+  const last = M.segs[M.segs.length - 1];
+  addFlame(K, M, last, [0, 0.12, -0.12], 0.5, [-1.1, 0, 0], true);
+  return head;
+};
+
+// 204 カレハマユ：小枝から 糸で ぶらさがる 枯れ葉の たば（すきまから 眠そうな 目）
+G2['カレハマユ'] = (K, M, pv) => { K.ex.delete('shards'); return planBlob(K, M, pv, { float: 1, shape: (K, M, pv, P, R, by) => {
+  const inner = mix(K.c1, [0.25, 0.15, 0.08], 0.35), cA = [0.64, 0.42, 0.2], cB = [0.48, 0.3, 0.14], cC = [0.75, 0.55, 0.28];
+  P.add(ell([0, by - R * 0.05, 0], [R * 0.52, R * 0.95, R * 0.52], inner, { k: 0 }));
+  for (let i = 0; i < 9; i++) {
+    const a = -Math.PI / 2 + (i + 0.5) / 9 * Math.PI * 1.55 + Math.PI * 0.73;
+    const rr = R * 0.42, x = Math.cos(a) * rr, z = Math.sin(a) * rr;
+    const col = [cA, cB, cC][i % 3];
+    P.add(ell([x, by - R * 0.05 + (i % 2) * R * 0.12, z], [R * 0.34, R * 0.98, R * 0.09], col, { k: R * 0.06, rot: [0, -a + Math.PI / 2, (i % 2 ? 0.18 : -0.18)] }));
+    P.paint(box([x * 1.25, by, z * 1.25], [R * 0.025, R * 0.9, R * 0.025], 0), mix(col, [0.2, 0.1, 0.05], 0.5), R * 0.02);
+  }
+  for (let i = 0; i < 3; i++) { const a = i * 2.1 + 0.5; P.add(cap([Math.cos(a) * R * 0.2, by - R * 0.85, Math.sin(a) * R * 0.2], [Math.cos(a) * R * 0.3, by - R * 1.25, Math.sin(a) * R * 0.3], R * 0.12, R * 0.03, [cA, cB, cC][i], { k: R * 0.05 })); }
+  // 小枝と 糸
+  const T = new Part([cap([-R * 0.95, by + R * 1.45, -R * 0.1], [R * 0.95, by + R * 1.55, -R * 0.05], R * 0.06, R * 0.045, [0.38, 0.26, 0.16], { k: 0 })]);
+  T.add(cap([R * 0.4, by + R * 1.52, -R * 0.06], [R * 0.6, by + R * 1.75, -R * 0.12], R * 0.04, R * 0.02, [0.38, 0.26, 0.16], { k: R * 0.02 }));
+  T.add(cap([0, by + R * 0.85, 0], [0, by + R * 1.5, -R * 0.08], R * 0.025, R * 0.02, [0.92, 0.9, 0.85], { k: R * 0.02 }));
+  K.add(pv, K.mesh(T, 'small'));
+  K.prim(pv, PRIM.leaf, [0.55, 0.42, 0.2], [R * 0.6, by + R * 1.75, -R * 0.12], [R * 0.5], [0.4, 0.5, 0.8], { outline: 0.6 });
+  for (let i = 0; i < 2; i++) g2Gem(K, pv, G2_CRYS, [(i ? -1 : 1) * R * 0.3, by + R * 0.45, -R * 0.3], [(i ? -1 : 1) * 0.6, 0.8, -0.4], R * 0.38, R * 0.07);
+  return { hc: [0, by, R * 0.1], eyeDir: [0.3, 0.12, 0.95], eyeSize: 0.42, arms: false, mouthY: -R * 0.25 };
+} }); };
+
+// 205 カレハゴースト：やぶれた 枯れ葉の 羽を もつ 幽霊の ガ（体の 下は すけた 布のよう）
+G2['カレハゴースト'] = (K, M, pv) => {
+  const head = planBug(K, M, pv, { body: 'fluffy', legs: 6, antenna: 2, float: 1 });
+  const by = 0.5, cols = [[0.66, 0.4, 0.18], [0.82, 0.55, 0.24], [0.52, 0.32, 0.16]];
+  for (const sx of [-1, 1]) {
+    const j = K.joint(pv, [sx * 0.12, by + 0.16, -0.05]);
+    const rib = new Part();
+    [[0.62, 0.95, 0.3], [0.08, 0.85, 0.26], [-0.48, 0.66, 0.2]].forEach(([ang, len, wd], k) => {
+      const d = [sx * Math.cos(ang), Math.sin(ang)], pp = [-d[1], d[0]];
+      const pts = [], N = 9;
+      for (let i = 0; i <= N; i++) { const t = i / N, w = wd * Math.pow(Math.sin(Math.PI * Math.min(1, t * 0.97 + 0.02)), 0.8) * (i % 3 === 1 ? 0.62 : 1); pts.push([d[0] * len * t + pp[0] * w, d[1] * len * t + pp[1] * w, -0.06 * k - 0.12 * t]); }
+      for (let i = N; i >= 0; i--) { const t = i / N, w = wd * Math.pow(Math.sin(Math.PI * Math.min(1, t * 0.97 + 0.02)), 0.8) * (i % 3 === 2 ? 0.55 : 1); pts.push([d[0] * len * t - pp[0] * w, d[1] * len * t - pp[1] * w, -0.06 * k - 0.12 * t]); }
+      const col = cols[k];
+      g2Fan(K, j, [0, 0, -0.06 * k], pts, col, mix(col, [0.3, 0.15, 0.08], 0.3));
+      rib.add(cap([0, 0, -0.06 * k], [d[0] * len * 0.92, d[1] * len * 0.92, -0.06 * k - 0.11], 0.02, 0.008, [0.35, 0.2, 0.1], { k: 0.005 }));
+    });
+    K.add(j, K.mesh(rib, 'tiny'));
+    j.side = sx; M.wings.push(j);
+  }
+  const S = new Part([cap([0, by - 0.05, -0.25], [0, by - 0.42, -0.62], 0.2, 0.04, [0.82, 0.78, 1], { k: 0 })]);
+  for (const s of [-1, 0, 1]) S.add(cap([s * 0.1, by - 0.3, -0.45], [s * 0.16, by - 0.58, -0.6 - Math.abs(s) * 0.05], 0.06, 0.012, [0.82, 0.78, 1], { k: 0.04 }));
+  const sn = K.add(pv, K.mesh(S, 'small'), { alpha: 0.6, emis: [0.12, 0.1, 0.22], outline: 0.3 }); sn.transparent = true;
+  return head;
+};
+
+// 206 ホシクズ：おすわりした 子ギツネ。くるんと 上がった しっぽの 先に 星の 結晶、ひたいに 星、まわりに 小さな 星
+G2['ホシクズ'] = (K, M, pv) => {
+  K.ex.delete('shards');
+  const head = planQuad(K, M, pv, { L: .38, legH: .25, chest: [.24, .27, .24], hip: [.28, .26, .28], lift: .2, neck: .14, neckA: .35, head: .4, snout: .55, legR: .058, ears: 'big', tail: 'none' });
+  const tip = g2Tail(K, M, pv, M.tailBase, 5, 0.15, 0.1, K.c1, 2.6, 0.3, 0.75, K.c2);
+  for (let i = 0; i < 5; i++) { const a = i / 5 * Math.PI * 2; g2Gem(K, tip, i % 2 ? G2_CRYS : [1, 0.85, 1], [0, 0.02, 0], [Math.cos(a) * 0.8, -1, Math.sin(a) * 0.8], 0.3, 0.07); }
+  g2Gem(K, tip, [1, 0.95, 0.7], [0, 0, 0], [0, -1, 0], 0.42, 0.1, 0.75);
+  const st = g2Glow(K, M.head, PRIM.star, [1, 0.92, 0.5], headPoint(head, [0, 0.55, 0.83]).p, [0.11], [-0.5, 0, 0], 0.7); st.doubleSide = true;
+  M.orbit = K.joint(pv, [0, 0.75, -0.05]);
+  for (let i = 0; i < 3; i++) { const a = i / 3 * Math.PI * 2 + 0.5; const n = g2Glow(K, M.orbit, PRIM.star, [1, 0.9, 1], [Math.cos(a) * 0.52, Math.sin(a * 2) * 0.1, Math.sin(a) * 0.52], [0.085], null, 0.8, { outline: 0.4 }); n.doubleSide = true; }
+  M.tailBase = null;
+  return head;
+};
+
+// 207 ホシクズリ：3本の しっぽ（先に 結晶）と ひたいの 結晶を もつ 星の キツネ
+G2['ホシクズリ'] = (K, M, pv) => {
+  K.ex.delete('shards');
+  const head = planQuad(K, M, pv, { L: .66, legH: .44, chest: [.24, .26, .28], hip: [.22, .24, .25], lift: .08, neck: .3, neckA: .6, head: .3, snout: 1.0, legR: .064, ears: 'big', tail: 'none' });
+  for (const yaw of [-0.6, 0, 0.6]) { const tip = g2Tail(K, M, pv, M.tailBase, 4, 0.16, 0.09, K.c1, yaw ? 2.05 : 2.4, 0.18, yaw, K.c2); g2Gem(K, tip, G2_CRYS, [0, 0, 0], [0, -1, 0], 0.28, 0.065, 0.6); }
+  g2Gem(K, M.head, [1, 0.85, 1], headPoint(head, [0, 0.62, 0.72]).p, [0, 0.75, 0.6], 0.24, 0.055);
+  M.tailBase = null;
+  return head;
+};
+
+// 208 メテオクズリ：肩に 隕石の 岩と 結晶の よろいを まとった 星の 獣。しっぽは ほうき星
+G2['メテオクズリ'] = (K, M, pv) => {
+  K.ex.delete('shards');
+  const head = planQuad(K, M, pv, { L: .95, legH: .6, chest: [.38, .43, .41], hip: [.25, .27, .28], lift: .16, neck: .3, neckA: .85, head: .3, snout: 1.15, legR: .1, paw: 1.25, claws: 1, ears: 'pointy', tail: 'none', brow: 1 });
+  const A = M.anchor, n = A.neck, D = K.joint(pv, [0, 0, 0]);
+  const rock = mix(K.c1, [0.22, 0.2, 0.26], 0.55);
+  const P = new Part([], { noise: 0.03, noiseF: 7 });
+  for (let i = 0; i < 7; i++) { const a = -1.35 + i / 6 * 2.7; P.add(sph([Math.sin(a) * A.w * 1.0, n[1] - 0.16 + Math.cos(a) * 0.1, n[2] - 0.12 - Math.cos(a) * 0.04], 0.14 + (i % 2) * 0.04, rock, { k: 0.07 })); }
+  K.add(D, K.mesh(P, 'small'));
+  for (let i = 0; i < 7; i++) { const a = -1.35 + i / 6 * 2.7; g2Gem(K, D, i % 2 ? [1, 0.78, 1] : G2_CRYS, [Math.sin(a) * A.w * 1.05, n[1] - 0.08 + Math.cos(a) * 0.1, n[2] - 0.16], [Math.sin(a) * 1.3, 0.85, -0.45], 0.36 + (i % 3) * 0.08, 0.075); }
+  const tip = g2Tail(K, M, pv, M.tailBase, 6, 0.17, 0.095, K.c1, 2.0, 0.1, 0, K.c2);
+  g2Gem(K, tip, [1, 0.95, 0.75], [0, 0, 0], [0, -1, 0], 0.42, 0.09, 0.8);
+  for (let i = 0; i < 3; i++) { const t = M.chains[M.chains.length - 1][2 + i]; g2Gem(K, t, G2_CRYS, [0, -0.08, -0.06], [0, 0.2, -1], 0.2, 0.045); }
+  M.seatSkip = [D];
+  M.tailBase = null;
+  return head;
+};
+
+// 209 ヒビガメ：高い 岩の こうらに ひびが 走り、てっぺんから 結晶が のぞく 子ガメ
+G2['ヒビガメ'] = (K, M, pv) => {
+  K.ex.delete('shards'); K.f.back = null;
+  const head = planTurtle(K, M, pv, { k: .95, dome: 1.55, tall: 1.2, rock: 1, cracks: 1 });
+  const t = M.anchor.top(-0.04);
+  for (let i = 0; i < 3; i++) { const a = i * 2.1 + 0.4; g2Gem(K, pv, i === 1 ? [0.75, 0.95, 1] : mix(K.c2, WHITE, 0.3), [Math.cos(a) * 0.07, t - 0.06, -0.04 + Math.sin(a) * 0.07], [Math.cos(a) * 0.55, 1, Math.sin(a) * 0.55], 0.24 + i * 0.05, 0.055); }
+  return head;
+};
+
+// 210 ヒビガメラ：こうらが 大きく 割れて、中から 結晶の 森（晶洞）が つき出た 大ガメ
+G2['ヒビガメラ'] = (K, M, pv) => {
+  K.ex.delete('shards'); K.ex.delete('spikes'); K.f.back = null;
+  const head = planTurtle(K, M, pv, { k: 1.3, flat: 1, rock: 1, cracks: 1, split: 1 });
+  const t = M.anchor.top(-0.04), rr = mulberry32(K.sp.id * 5 + 1);
+  for (let i = 0; i < 10; i++) {
+    const a = i / 10 * Math.PI * 2 + rr() * 0.3, r = i % 4 === 0 ? 0.02 : 0.12 + rr() * 0.14;
+    g2Gem(K, pv, i % 3 === 0 ? [0.72, 0.95, 1] : i % 3 === 1 ? mix(K.c2, WHITE, 0.2) : [0.85, 0.75, 1], [Math.cos(a) * r, t - 0.14, -0.04 + Math.sin(a) * r * 1.2], [Math.cos(a) * r * 2.4, 1, Math.sin(a) * r * 2.4], 0.38 + rr() * 0.32 + (r < 0.05 ? 0.3 : 0), 0.07 + rr() * 0.04, 0.45);
+  }
+  const R2 = new Part([], { noise: 0.03, noiseF: 6 });
+  for (let i = 0; i < 9; i++) { const a = i / 9 * Math.PI * 2; R2.add(box([Math.cos(a) * 0.4, t - 0.08, -0.04 + Math.sin(a) * 0.47], [0.1, 0.08, 0.07], 0.03, mix(K.c1, K.dark, 0.25), { k: 0.03, rot: [0.5 * Math.sin(a), -a, 0.6 * Math.cos(a)] })); }
+  K.add(pv, K.mesh(R2, 'small'));
+  return head;
+};
+
+// 211 ドロウオ：頭の 上に 目が とび出た 泥の 魚。背中に 大きな 帆の ひれ
+G2['ドロウオ'] = (K, M, pv) => {
+  const F = { R: [.22, .22, .5], tail: 'flow', eyeTop: 1 };
+  const head = planFish(K, M, pv, F);
+  const R = fishR(K, F.R), by = 0.6 + R[1] * 0.4;
+  const pts = [];
+  for (let i = 0; i <= 10; i++) { const a = 0.35 + i / 10 * 2.3; pts.push([0, by + R[1] * 0.55 + Math.sin(a) * R[1] * (1.25 + (i % 2) * 0.22), R[2] * 0.05 + Math.cos(a) * R[2] * 0.85]); }
+  g2Fan(K, pv, [0, by + R[1] * 0.4, R[2] * 0.05], pts, K.c2, mix(K.c2, WHITE, 0.3));
+  const SP = new Part();
+  for (let i = 1; i < 10; i += 2) SP.add(cap([0, by + R[1] * 0.5, R[2] * 0.05], pts[i], R[1] * 0.04, R[1] * 0.02, mix(K.c2, K.dark, 0.4), { k: 0.005 }));
+  K.add(pv, K.mesh(SP, 'tiny'));
+  return head;
+};
+
+// 212 ドロウオーガ：大きな あごの 毒アンコウ。ひたいの ちょうちんが 光り、背中に 毒の とげ
+G2['ドロウオーガ'] = (K, M, pv) => {
+  K.ex.delete('shards'); K.f.back = null;
+  const F = { R: [.42, .4, .55], tail: 'fan', bigJaw: 1 };
+  const head = planFish(K, M, pv, F);
+  const R = fishR(K, F.R), by = 0.6 + R[1] * 0.4;
+  const tip = tailChain(K, M, pv, [0, by + R[1] * 0.85, R[2] * 0.5], 3, 0.15, 0.025, mix(K.c1, K.dark, 0.3), 3.05, 0.5, 0, null, 0.4);
+  g2Glow(K, tip, PRIM.sphereHi, [0.85, 1, 0.45], [0, -0.05, 0], [0.085], null, 0.9);
+  for (let i = 0; i < 7; i++) {
+    const x = (i - 3) / 3 * R[0] * 0.62, z = R[2] * 1.02 - x * x * 1.6;
+    K.prim(pv, PRIM.cone, [0.98, 0.96, 0.88], [x, by - R[1] * 0.08, z], [0.035, 0.1, 0.035], [Math.PI, 0, 0], { mat: MAT.glossy, outline: 0.6 });
+    if (i % 2 === 0) K.prim(pv, PRIM.cone, [0.98, 0.96, 0.88], [x * 1.1, by - R[1] * 0.38, z + 0.02], [0.035, 0.12, 0.035], [0.2, 0, 0], { mat: MAT.glossy, outline: 0.6 });
+  }
+  const SP = new Part();
+  for (let i = 0; i < 6; i++) { const z = lerp(R[2] * 0.15, -R[2] * 0.85, i / 5), y = by + Math.sqrt(Math.max(0, 1 - (z / (R[2] * 1.05)) ** 2)) * R[1] * 0.95; SP.add(cap([0, y - 0.03, z], [0, y + 0.18 - i * 0.015, z - 0.1], 0.05, 0.008, mix(K.c2, K.dark, 0.2), { k: 0.02 })); }
+  K.add(pv, K.mesh(SP, 'small'));
+  return head;
+};
+
+// 213 サビクラゲ：さびた 潜水かぶとの ような かさ（びょう・のぞき窓・バルブ）と 鎖の 触手
+G2['サビクラゲ'] = (K, M, pv) => { K.ex.delete('shards'); return planBlob(K, M, pv, { float: 1, shape: (K, M, pv, P, R, by) => {
+  const rust = K.c1, rustD = mix(K.c1, [0.25, 0.12, 0.05], 0.45), brass = [0.86, 0.66, 0.32];
+  P.add(ell([0, by + R * 0.12, 0], [R * 0.82, R * 0.8, R * 0.82], rust, { k: 0 }));
+  P.add(tor([0, by - R * 0.4, 0], R * 0.8, R * 0.11, rustD, { k: R * 0.05 }));
+  P.add(box([0, by - R * 1.55, 0], [R * 2, R, R * 2], 0, null, { op: 'sub', k: R * 0.06 }));
+  for (let i = 0; i < 12; i++) { const a = i / 12 * Math.PI * 2; P.add(sph([Math.cos(a) * R * 0.86, by - R * 0.24, Math.sin(a) * R * 0.86], R * 0.06, brass, { k: R * 0.02 })); }
+  P.add(tor([0, by + R * 0.12, R * 0.74], R * 0.4, R * 0.07, brass, { k: R * 0.04, rot: [Math.PI / 2, 0, 0] }));
+  P.paint(sph([0, by + R * 0.12, R * 0.86], R * 0.4), mix(K.c2, WHITE, 0.35), R * 0.03);
+  for (let i = 0; i < 4; i++) { const a = i / 4 * Math.PI * 2 + 0.4; P.paint(box([Math.cos(a) * R * 0.5, by + R * 0.6, Math.sin(a) * R * 0.5], [R * 0.2, R * 0.25, R * 0.2], 0, null, { rot: [0, a, 0] }), mix(rust, [0.55, 0.3, 0.1], 0.5), R * 0.12); }
+  P.add(cap([0, by + R * 0.85, 0], [0, by + R * 1.12, 0], R * 0.08, R * 0.07, brass, { k: R * 0.03 }));
+  P.add(tor([0, by + R * 1.14, 0], R * 0.2, R * 0.045, [0.85, 0.3, 0.25], { k: R * 0.02 }));
+  for (let i = 0; i < 5; i++) {
+    const a = i / 5 * Math.PI * 2 + 0.3, b = [Math.cos(a) * R * 0.5, by - R * 0.45, Math.sin(a) * R * 0.5];
+    const tip = tailChain(K, M, pv, b, 4, R * 0.24, R * 0.07, rustD, 0.28, 0.1, Math.atan2(-Math.cos(a), -Math.sin(a)), null, 0.35);
+    K.prim(tip, hexGeo(), brass, [0, -R * 0.05, 0], [R * 0.09, R * 0.07, R * 0.09], null, { mat: MAT.glossy, outline: 0.6 });
+  }
+  return { hc: [0, by + R * 0.12, 0], eyeDir: [0.3, 0.06, 0.95], eyeSize: 0.4, arms: false, mouthY: -R * 0.25 };
+} }); };
+
+// 214 サビクラゲオン：3段に 重なった さびた 鐘の かさ。先に いかりの ついた 長い 鎖の 触手
+G2['サビクラゲオン'] = (K, M, pv) => { K.ex.delete('shards'); return planBlob(K, M, pv, { float: 1, shape: (K, M, pv, P, R, by) => {
+  const rust = K.c1, rustD = mix(K.c1, [0.25, 0.12, 0.05], 0.45), brass = [0.86, 0.66, 0.32], teal = mix(K.c2, WHITE, 0.2);
+  const tiers = [[by, 1.0, 0.5], [by + R * 0.52, 0.74, 0.42], [by + R * 0.92, 0.5, 0.34]];
+  tiers.forEach(([y, w, h], i) => {
+    P.add(ell([0, y, 0], [R * w, R * h, R * w], i % 2 ? mix(rust, teal, 0.25) : rust, { k: i ? R * 0.06 : 0 }));
+    P.add(tor([0, y - R * h * 0.55, 0], R * w * 0.98, R * 0.08, rustD, { k: R * 0.04 }));
+    for (let j = 0; j < 10 - i * 2; j++) { const a = j / (10 - i * 2) * Math.PI * 2; P.add(sph([Math.cos(a) * R * w * 1.0, y - R * h * 0.45, Math.sin(a) * R * w * 1.0], R * 0.05, brass, { k: R * 0.02 })); }
+  });
+  P.add(box([0, by - R * 1.25, 0], [R * 2, R, R * 2], 0, null, { op: 'sub', k: R * 0.06 }));
+  P.paint(sph([0, by + R * 0.05, R * 0.95], R * 0.42), mix(teal, WHITE, 0.3), R * 0.05);
+  const AP = new Part([cap([0, 0, 0], [0, -R * 0.42, 0], R * 0.045, R * 0.045, brass, { k: 0 }), tor([0, R * 0.02, 0], R * 0.08, R * 0.025, brass, { k: R * 0.01, rot: [Math.PI / 2, 0, 0] })]);
+  for (const s of [-1, 1]) { AP.add(cap([0, -R * 0.42, 0], [s * R * 0.2, -R * 0.32, 0], R * 0.045, R * 0.04, brass, { k: R * 0.03 })); AP.add(cap([s * R * 0.2, -R * 0.32, 0], [s * R * 0.24, -R * 0.15, 0], R * 0.04, R * 0.012, brass, { k: R * 0.02 })); }
+  AP.add(cap([-R * 0.13, -R * 0.08, 0], [R * 0.13, -R * 0.08, 0], R * 0.03, R * 0.03, brass, { k: R * 0.01 }));
+  const ag = K.mesh(AP, 'tiny');
+  for (let i = 0; i < 6; i++) {
+    const a = i / 6 * Math.PI * 2 + 0.25, b = [Math.cos(a) * R * 0.62, by - R * 0.35, Math.sin(a) * R * 0.62];
+    const tip = tailChain(K, M, pv, b, 6, R * 0.22, R * 0.075, i % 2 ? rustD : mix(rustD, teal, 0.3), 0.22, 0.06, Math.atan2(-Math.cos(a), -Math.sin(a)), null, 0.3);
+    K.add(tip, ag, { mat: MAT.glossy });
+  }
+  return { hc: [0, by + R * 0.05, 0], eyeDir: [0.3, 0.08, 0.95], eyeSize: 0.4, arms: false, mouthY: -R * 0.22 };
+} }); };
+
+// 215 カラカラス：ぼさぼさの とさかと 長い 2本の 尾羽の 子ガラス
+G2['カラカラス'] = (K, M, pv) => {
+  K.f.tail = 'none';
+  const head = planBird(K, M, pv, { body: [.25, .27, .33], by: .42, head: .33, legL: .2, wing: 1.0, beak: .8, tilt: .32 });
+  const R = head.R, C = new Part();
+  for (let i = 0; i < 9; i++) { const a = -1.1 + i * 0.275, L = R * (1.35 - Math.abs(a) * 0.4); C.add(cap([Math.sin(a) * R * 0.25, R * 0.6, R * 0.1 - Math.abs(a) * R * 0.1], [Math.sin(a) * R * 0.85, R * 0.6 + L, -R * 0.45 - Math.abs(a) * R * 0.25], R * 0.16, R * 0.025, i % 2 ? K.c1 : mix(K.c1, K.c2, 0.55), { k: R * 0.06 })); }
+  K.add(M.head, K.mesh(C, 'small'));
+  for (const s of [-1, 1]) { const tip = tailChain(K, M, pv, M.tailBase, 5, 0.16, 0.05, K.c1, 1.95, -0.1, s * 0.3, null, 0.35); K.add(tip, K.mesh(new Part([ell([0, -0.08, 0], [0.07, 0.15, 0.015], K.c2, { k: 0 })]), 'tiny')); }
+  M.tailBase = null;
+  return head;
+};
+
+// 216 カラカラスオー：マントの ような 翼を まとった 背の 高い 大ガラス。長い くちばしと 結晶の かんむり
+G2['カラカラスオー'] = (K, M, pv) => {
+  M.rideBoost = 1.5;
+  K.ex.delete('shards'); K.ex.delete('crest');
+  const head = planBird(K, M, pv, { body: [.3, .5, .32], by: .78, head: .27, neck: .04, legL: .32, wing: 1.35, beak: 1.6, hook: 1, tilt: -.12, talon: 1, cape: 1, ruff: 1 });
+  for (let i = 0; i < 5; i++) { const a = -0.8 + i * 0.4; g2Gem(K, M.head, [1, 0.32, 0.48], headPoint(head, [Math.sin(a) * 0.55, 0.82, -0.15]).p, [Math.sin(a) * 0.65, 1, -0.35], 0.22 + (i === 2 ? 0.12 : 0), 0.045); }
+  const A = M.anchor, P = new Part();
+  for (let i = 0; i < 6; i++) { const x = (i - 2.5) * A.w * 0.32; P.add(cap([x, A.y - 0.3, -A.w * 1.0], [x * 1.15, A.y - 0.62 - (i % 2) * 0.08, -A.w * 1.2], 0.07, 0.01, mix(K.c2, K.dark, 0.25), { k: 0.03 })); }
+  K.add(pv, K.mesh(P, 'small'));
+  return head;
+};
+
+// 217 ドクシズク：ソフトクリームのように 先が くるんと まがった 毒の しずく。足もとに 毒の 水たまり
+G2['ドクシズク'] = (K, M, pv) => planBlob(K, M, pv, { ground: 1, glossy: 1, shape: (K, M, pv, P, R, by) => {
+  const c1 = K.c1, c3 = mix(c1, K.c2, 0.45);
+  P.add(ell([0, R * 0.52, 0], [R * 0.78, R * 0.55, R * 0.72], c1, { k: 0 }));
+  P.add(cap([0, R * 0.75, -R * 0.05], [0, R * 1.22, -R * 0.08], R * 0.5, R * 0.24, c1, { k: R * 0.2 }));
+  P.add(cap([0, R * 1.22, -R * 0.08], [R * 0.2, R * 1.48, R * 0.02], R * 0.24, R * 0.11, c1, { k: R * 0.1 }));
+  P.add(cap([R * 0.2, R * 1.48, R * 0.02], [-R * 0.04, R * 1.62, R * 0.1], R * 0.11, R * 0.04, c1, { k: R * 0.06 }));
+  P.add(ell([0, R * 0.05, 0], [R * 1.25, R * 0.07, R * 1.15], c3, { k: R * 0.15 }));
+  P.paint(ell([-R * 0.32, R * 0.85, R * 0.35], [R * 0.16, R * 0.24, R * 0.12]), mix(c1, WHITE, 0.6), R * 0.06);
+  for (let i = 0; i < 3; i++) { const a = i * 2.2 + 0.6; P.add(sph([Math.cos(a) * R * 0.95, R * 0.1, Math.sin(a) * R * 0.85], R * 0.12, c3, { k: R * 0.08 })); }
+  return { hc: [0, R * 0.55, R * 0.05], eyeDir: [0.36, 0.08, 0.93], eyeSize: 0.5, arms: false, mouthY: -R * 0.22 };
+} });
+
+// 218 ドクシズクイン：キノコの 日がさを うかべた 毒の 女王（ドレスの すそから しずくが たれる）
+G2['ドクシズクイン'] = (K, M, pv) => {
+  K.ex.delete('shards');
+  const B = { hipY: .46, tH: .44, tw: .2, sh: 1.0, waist: .64, head: .31, snout: .15, aL: .44, ar: .05, fist: 1.0, robe: 2.25, float: 1 };
+  const head = planBiped(K, M, pv, B);
+  const s = K.st, hipY = B.hipY * lerp(0.78, 1.03, s), tw = B.tw * lerp(0.96, 1.05, s), floor = hipY * 0.35, rr = tw * B.robe;
+  const D = new Part();
+  for (let i = 0; i < 12; i++) { const a = i / 12 * Math.PI * 2, r = rr * 0.92; const L = 0.06 + (i % 3) * 0.04; D.add(cap([Math.cos(a) * r, floor + 0.05, Math.sin(a) * r], [Math.cos(a) * r * 1.02, floor - L, Math.sin(a) * r * 1.02], 0.03, 0.045, K.c2, { k: 0.02 })); }
+  K.add(pv, K.mesh(D, 'small'), { mat: MAT.glossy });
+  const hy = M.head.pos[1];
+  const U = K.joint(pv, [0.12, hy + 0.55, -0.05], [0.08, 0, -0.12]);
+  const C = new Part([ell([0, 0, 0], [0.48, 0.24, 0.48], K.c1, { k: 0 })]);
+  C.add(ell([0, -0.1, 0], [0.42, 0.18, 0.42], null, { op: 'sub', k: 0.03 }));
+  C.paint(ell([0, -0.08, 0], [0.42, 0.14, 0.42]), mix(K.c2, WHITE, 0.4), 0.02);
+  for (let i = 0; i < 6; i++) { const a = i / 6 * Math.PI * 2 + 0.3; C.paint(sph([Math.cos(a) * 0.3, 0.16, Math.sin(a) * 0.3], 0.07), mix(K.c2, WHITE, 0.55), 0.015); }
+  for (let i = 0; i < 10; i++) { const a = i / 10 * Math.PI * 2; C.add(cap([Math.cos(a) * 0.45, -0.06, Math.sin(a) * 0.45], [Math.cos(a) * 0.46, -0.14 - (i % 2) * 0.06, Math.sin(a) * 0.46], 0.025, 0.035, K.c2, { k: 0.02 })); }
+  C.add(cap([0, 0, 0], [0, -0.55, 0], 0.025, 0.02, [0.95, 0.88, 0.95], { k: 0.01 }));
+  K.add(U, K.mesh(C, 'small'), { mat: MAT.glossy });
+  g2Bob(M, U, 0.04, 1.6);
+  return head;
+};
+
+// 219 ミュータド：すけた 頭に 脳と 3つめの 目。おたまじゃくしの しっぽが のこった 変異ガエル
+G2['ミュータド'] = (K, M, pv) => {
+  K.ex.delete('shards');
+  const head = planBiped(K, M, pv, { hipY: .15, tH: .4, tw: .3, sh: .95, waist: 1.15, head: .42, snout: 0, aL: .26, ar: .065, fist: 1.3, lr: .09, foot: 1.8, frog: 1 });
+  const R = head.R, hd = M.head;
+  const Bn = new Part([ell([0, R * 0.6, -R * 0.28], [R * 0.56, R * 0.36, R * 0.5], [1, 0.62, 0.86], { k: 0 })]);
+  for (let i = 0; i < 4; i++) Bn.paint(tor([0, R * 0.6, -R * 0.28], R * (0.15 + i * 0.12), R * 0.025, WHITE, { rot: [0, 0, 0.15 * i] }), [0.85, 0.36, 0.62], R * 0.02);
+  Bn.paint(box([0, R * 0.95, -R * 0.28], [R * 0.025, R * 0.3, R * 0.6], 0), [0.8, 0.3, 0.55], R * 0.02);
+  K.add(hd, K.mesh(Bn, 'small'), { mat: MAT.glossy, emis: [0.12, 0.03, 0.1] });
+  const gl = K.prim(hd, PRIM.sphereHi, [0.85, 0.97, 1], [0, R * 0.6, -R * 0.26], [R * 0.68, R * 0.5, R * 0.62], null, { alpha: 0.32, mat: MAT.glossy, outline: 0.35 }); gl.transparent = true; gl.noDepthWrite = true;
+  const ep = headPoint(head, [0, 0.42, 0.9]).p;
+  K.prim(hd, PRIM.sphereHi, WHITE, ep, [R * 0.17, R * 0.2, R * 0.1], null, { outline: 0.7 });
+  g2Glow(K, hd, PRIM.sphereHi, [0.9, 0.3, 1], [ep[0], ep[1], ep[2] + R * 0.06], [R * 0.1, R * 0.13, R * 0.06], null, 0.6, { outline: 0 });
+  K.prim(hd, PRIM.sphereLo, [0.05, 0.02, 0.08], [ep[0], ep[1], ep[2] + R * 0.11], [R * 0.035, R * 0.08, R * 0.02], null, { outline: 0 });
+  M.tailBase = [0, M.anchor.belt + 0.06, -0.24]; M.tailType = 'fin';
+  return head;
+};
+
+// 220 ミュータントード：頭に 4本の 目玉の くき、背中に 光る いぼと 結晶の 大ガエル
+G2['ミュータントード'] = (K, M, pv) => {
+  K.ex.delete('shards');
+  const B = { hipY: .22, tH: .6, tw: .48, sh: 1.0, waist: 1.35, head: .42, snout: 0, aL: .46, ar: .1, fist: 1.4, lr: .12, foot: 1.7, frog: 1, belly: 1 };
+  const head = planBiped(K, M, pv, B);
+  const R = head.R, hd = M.head, s = K.st;
+  const ST = new Part();
+  [[-0.55, 0.15], [-0.2, -0.15], [0.2, -0.15], [0.55, 0.15]].forEach(([x, zz], i) => {
+    const b = [x * R, R * 0.55, zz * R], t = [x * R * 1.5, R * (1.45 + (i % 2) * 0.3), zz * R + R * 0.15];
+    ST.add(cap(b, t, R * 0.12, R * 0.08, K.c1, { k: R * 0.06 }));
+    K.prim(hd, PRIM.sphereHi, WHITE, t, [R * 0.17], null, { outline: 0.7 });
+    g2Glow(K, hd, PRIM.sphereHi, [1, 0.45, 1], [t[0], t[1], t[2] + R * 0.12], [R * 0.09, R * 0.09, R * 0.06], null, 0.8, { outline: 0 });
+  });
+  K.add(hd, K.mesh(ST, 'small'));
+  const hipY = B.hipY * lerp(0.78, 1.03, s), tH = B.tH * lerp(0.86, 1.03, s), tw = B.tw * lerp(0.96, 1.05, s);
+  const rr = mulberry32(K.sp.id);
+  for (let i = 0; i < 9; i++) { const a = -1.1 + rr() * 2.2, y = hipY + tH * (0.3 + rr() * 0.6); g2Glow(K, pv, PRIM.sphereHi, [0.95, 0.5, 1], [Math.sin(a) * tw * 1.05, y, -Math.cos(a) * tw * 0.75], [0.05 + rr() * 0.035], null, 0.7, { outline: 0.4 }); }
+  for (let i = 0; i < 4; i++) { const a = -0.6 + i * 0.4; g2Gem(K, pv, G2_CRYS, [Math.sin(a) * tw * 0.5, hipY + tH * 0.85, -tw * 0.62], [Math.sin(a) * 0.8, 0.8, -0.6], 0.3 + (i % 2) * 0.12, 0.06); }
+  return head;
+};
+
+// 221 キノコガイ：切りかぶに 3本の 光る キノコが 生えた 子
+G2['キノコガイ'] = (K, M, pv) => { K.f.back = null; return planBlob(K, M, pv, { ground: 1, shape: (K, M, pv, P, R, by) => {
+  const bark = mix(K.c1, [0.42, 0.3, 0.2], 0.6), barkD = mix(bark, [0.12, 0.08, 0.06], 0.4), wood = [0.86, 0.72, 0.5];
+  P.add(cap([0, R * 0.1, 0], [0, R * 0.95, 0], R * 0.7, R * 0.6, bark, { k: 0 }));
+  P.add(box([0, R * 2.0, 0], [R * 2, R, R * 2], 0, null, { op: 'sub', k: R * 0.04 }));
+  for (let i = 0; i < 5; i++) { const a = i / 5 * Math.PI * 2 + 0.6; P.add(cap([Math.cos(a) * R * 0.45, R * 0.35, Math.sin(a) * R * 0.45], [Math.cos(a) * R * 0.95, R * 0.04, Math.sin(a) * R * 0.95], R * 0.17, R * 0.07, bark, { k: R * 0.1 })); }
+  P.paint(box([0, R * 1.0, 0], [R * 2, R * 0.05, R * 2], 0), wood, R * 0.03);
+  for (let i = 1; i < 4; i++) P.paint(tor([0, R * 1.0, 0], R * 0.15 * i, R * 0.018, WHITE), mix(wood, [0.5, 0.35, 0.2], 0.5), R * 0.01);
+  for (let i = 0; i < 9; i++) { const a = i / 9 * Math.PI * 2; if (Math.sin(a) > 0.55) continue; P.paint(box([Math.cos(a) * R * 0.7, R * 0.55, Math.sin(a) * R * 0.7], [R * 0.035, R * 0.42, R * 0.035], 0, null, { rot: [0, -a, 0] }), barkD, R * 0.02); }
+  const S = new Part(), C = new Part();
+  [[0, 0.95, -0.15, 0.62, 0.45], [-0.38, 0.95, 0.12, 0.38, 0.28], [0.36, 0.95, 0.1, 0.32, 0.24]].forEach(([x, y, z, h, cr], i) => {
+    const b = [x * R, y * R, z * R], t = [x * R * 1.2, (y + h) * R, z * R];
+    S.add(cap(b, t, R * cr * 0.32, R * cr * 0.26, [0.92, 0.88, 0.82], { k: R * 0.05 }));
+    C.add(ell([t[0], t[1] + R * cr * 0.1, t[2]], [R * cr, R * cr * 0.55, R * cr], K.c1, { k: 0, rot: [0, 0, (x ? -x * 0.6 : 0)] }));
+    for (let j = 0; j < 4; j++) { const a = j / 4 * Math.PI * 2 + i; C.paint(sph([t[0] + Math.cos(a) * R * cr * 0.55, t[1] + R * cr * 0.42, t[2] + Math.sin(a) * R * cr * 0.55], R * cr * 0.2), K.c2, R * 0.02); }
+  });
+  K.add(pv, K.mesh(S, 'small'));
+  K.add(pv, K.mesh(C, 'small'), { emis: K.c2.map(v => v * 0.12) });
+  return { hc: [0, R * 0.55, 0], eyeDir: [0.34, 0.06, 0.94], eyeSize: 0.44, arms: false, mouthY: -R * 0.18 };
+} }); };
+
+// 222 キノコロッサス：体に サルノコシカケが 段々に 生え、頭に 大きな 光る キノコの かさを かぶった 巨人
+G2['キノコロッサス'] = (K, M, pv) => {
+  K.ex.delete('shards'); K.f.back = null;
+  const head = planGolem(K, M, pv, { kind: 'golem', k: 1.3 });
+  const k = 1.3 * lerp(0.9, 1.05, K.st), hipY = 0.38 * k, tH = 0.62 * k, tw = 0.38 * k, hR = 0.24 * k;
+  const C = new Part([ell([0, hR * 1.0, -hR * 0.1], [hR * 2.5, hR * 1.0, hR * 2.4], K.c1, { k: 0 })]);
+  C.add(ell([0, hR * 0.55, -hR * 0.1], [hR * 2.3, hR * 0.55, hR * 2.2], null, { op: 'sub', k: hR * 0.1 }));
+  C.paint(ell([0, hR * 0.6, -hR * 0.1], [hR * 2.4, hR * 0.25, hR * 2.3]), mix(K.c1, WHITE, 0.45), hR * 0.05);
+  for (let i = 0; i < 8; i++) { const a = i / 8 * Math.PI * 2; C.paint(sph([Math.cos(a) * hR * 1.5, hR * 1.75, -hR * 0.1 + Math.sin(a) * hR * 1.4], hR * 0.3), K.c2, hR * 0.05); }
+  K.add(M.head, K.mesh(C, 'small'), { emis: K.c2.map(v => v * 0.1) });
+  K.add(M.head, K.mesh(new Part([cap([0, hR * 0.3, -hR * 0.1], [0, hR * 0.9, -hR * 0.1], hR * 0.45, hR * 0.4, [0.88, 0.84, 0.78], { k: 0 })]), 'small'));
+  const shelf = mix(K.c2, [0.55, 0.45, 0.3], 0.55), Sh = new Part();
+  for (const sx of [-1, 1]) for (let i = 0; i < 3; i++) { const y = hipY + tH * (0.25 + i * 0.22), w = tw * (0.52 - i * 0.08); Sh.add(ell([sx * tw * 0.95, y, tw * 0.1 - i * 0.05], [w, tw * 0.07, w * 0.75], i % 2 ? shelf : mix(shelf, WHITE, 0.2), { k: tw * 0.04 })); }
+  for (let i = 0; i < 3; i++) Sh.add(ell([0, hipY + tH * (0.3 + i * 0.25), -tw * 0.78], [tw * (0.55 - i * 0.1), tw * 0.07, tw * 0.4], shelf, { k: tw * 0.04 }));
+  K.add(pv, K.mesh(Sh, 'small'));
+  for (const sx of [-1, 1]) for (let i = 0; i < 3; i++) {
+    const b = [sx * tw * (1.0 + i * 0.25), hipY + tH * 1.25, (i - 1) * tw * 0.3], h = tw * (0.35 + (i === 1 ? 0.2 : 0));
+    K.prim(pv, PRIM.cyl, [0.9, 0.86, 0.8], b, [tw * 0.06, h, tw * 0.06]);
+    g2Glow(K, pv, PRIM.sphereHi, K.c2, [b[0], b[1] + h, b[2]], [tw * 0.16, tw * 0.09, tw * 0.16], null, 0.45);
+  }
+  return head;
+};
+
+// 223 ハイカゼ：長い 脚と 長い 尾羽で 灰の 原を 駆ける 鳥（後ろへ なびく とさか）
+G2['ハイカゼ'] = (K, M, pv) => {
+  K.f.tail = 'none';
+  const head = planBird(K, M, pv, { body: [.2, .22, .38], by: .64, head: .25, neck: .14, legL: .44, wing: .9, beak: 1.35, tilt: .5 });
+  const R = head.R, C = new Part();
+  for (let i = 0; i < 3; i++) C.add(cap([0, R * 0.6, -R * 0.2 - i * R * 0.15], [0, R * (1.15 - i * 0.2), -R * (1.35 + i * 0.15)], R * 0.16, R * 0.02, i % 2 ? K.c2 : K.c1, { k: R * 0.08 }));
+  K.add(M.head, K.mesh(C, 'small'));
+  for (const yaw of [-0.18, 0, 0.18]) { const tip = tailChain(K, M, pv, M.tailBase, 4, 0.17, 0.045, K.c1, yaw ? 1.75 : 1.95, -0.06, yaw, null, 0.3); K.add(tip, K.mesh(new Part([ell([0, -0.07, 0], [0.05, 0.13, 0.014], K.c2, { k: 0 })]), 'tiny')); }
+  M.tailBase = null;
+  return head;
+};
+
+// 224 ハイカゼワシ：4枚の 翼を もつ 大ワシ。体の まわりを 灰の 渦が まわる
+G2['ハイカゼワシ'] = (K, M, pv) => {
+  M.rideBoost = 1.3;
+  const head = planBird(K, M, pv, { body: [.34, .4, .5], by: .8, head: .23, neck: .2, legL: .3, wing: 1.85, beak: 1.2, hook: 1, crest: 1, tilt: .45, talon: 1, spread: 1 });
+  const A = M.anchor;
+  addWings(K, M, pv, { ...A, top: () => A.y - 0.08, wingZ: A.z1 * 0.85, w: A.w * 1.3 });
+  const ring = K.joint(pv, [0, A.y - 0.15, -0.05]); g2Spin(M, ring, 1, 1.4);
+  for (let i = 0; i < 2; i++) { const t = K.prim(ring, PRIM.torus, [0.82, 0.78, 0.72], [0, i * 0.2 - 0.12, 0], [0.85 + i * 0.15, 0.7, 0.85 + i * 0.15], [0.18 * (i ? 1 : -1), 0, 0.12], { alpha: 0.38, outline: 0 }); t.transparent = true; t.noDepthWrite = true; }
+  return head;
+};
+
+// 225 デンジクモ：おなかの 上に テスラコイル（銅の 輪と 光る 玉）を 背負った 子グモ
+G2['デンジクモ'] = (K, M, pv) => {
+  K.ex.delete('shards');
+  const head = planBug(K, M, pv, { body: 'spider', legs: 8 });
+  const by = 0.36, top = [0, by + 0.44, -0.32], cu = [0.88, 0.52, 0.25];
+  const C = new Part([cap([0, top[1] - 0.06, top[2]], [0, top[1] + 0.3, top[2]], 0.05, 0.04, [0.32, 0.32, 0.4], { k: 0 })]);
+  for (let i = 0; i < 4; i++) C.add(tor([0, top[1] + 0.04 + i * 0.065, top[2]], 0.12 - i * 0.017, 0.024, cu, { k: 0.005 }));
+  K.add(pv, K.mesh(C, 'small'), { mat: MAT.glossy });
+  g2Glow(K, pv, PRIM.sphereHi, [0.6, 0.95, 1], [0, top[1] + 0.37, top[2]], [0.075], null, 0.9);
+  for (const s of [-1, 1]) { const Z = new Part([cap([0, 0, 0], [s * 0.06, 0.07, 0], 0.012, 0.012, WHITE, { k: 0 }), cap([s * 0.06, 0.07, 0], [s * 0.02, 0.1, 0], 0.012, 0.012, WHITE, { k: 0 }), cap([s * 0.02, 0.1, 0], [s * 0.1, 0.19, 0], 0.012, 0.004, WHITE, { k: 0 })]); K.add(K.joint(pv, [s * 0.08, top[1] + 0.38, top[2]]), K.mesh(Z, 'tiny'), { emis: [0.7, 0.9, 1], outline: 0 }); }
+  return head;
+};
+
+// 226 デンジグモン：背中に 光る 電磁の 巣（まわる 円盤）を ひろげた 長い 脚の 大グモ
+G2['デンジグモン'] = (K, M, pv) => {
+  K.ex.delete('shards');
+  const head = planBug(K, M, pv, { body: 'spider', legs: 8, legScale: 1.55 });
+  const W0 = K.joint(pv, [0, 1.02, -0.62], [-0.3, 0, 0]), W = K.joint(W0, [0, 0, 0]);
+  g2Spin(M, W, 2, 0.6);
+  const col = [0.55, 0.95, 1];
+  for (const r of [0.62, 0.42, 0.22]) g2Glow(K, W, PRIM.torus, col, [0, 0, 0], [r, r, r * 0.6], [Math.PI / 2, 0, 0], 0.7, { outline: 0 });
+  for (let i = 0; i < 8; i++) { const a = i / 8 * Math.PI * 2; g2Glow(K, W, PRIM.box, col, [Math.cos(a) * 0.32, Math.sin(a) * 0.32, 0], [0.64, 0.018, 0.018], [0, 0, a], 0.7, { outline: 0 }); }
+  g2Glow(K, W, PRIM.sphereHi, [1, 0.95, 0.5], [0, 0, 0], [0.08], null, 0.9);
+  K.prim(pv, PRIM.cyl, [0.3, 0.3, 0.38], [0, 0.72, -0.5], [0.03, 0.32, 0.03], [-0.3, 0, 0]);
+  for (const s of [-1, 1]) g2Glow(K, pv, PRIM.cone, col, [s * 0.06, 0.32, 0.46], [0.03, 0.12, 0.03], [Math.PI - 0.3, 0, 0], 0.6);
+  return head;
+};
+
+// 227 クラウドン：トゲトゲの 雷フグ。頭の 上に 小さな 雷雲、しっぽは いなずま形
+G2['クラウドン'] = (K, M, pv) => {
+  K.f.back = null;
+  const F = { R: [.36, .35, .38], tail: 'none' };
+  const head = planFish(K, M, pv, F);
+  const R = fishR(K, F.R), by = 0.6 + R[1] * 0.4;
+  const spike = mix(K.c2, WHITE, 0.15);
+  for (let i = 0; i < 26; i++) {
+    const a = i * 2.4, e = -0.75 + (i % 6) / 5 * 1.7;
+    const d = [Math.cos(e) * Math.sin(a), Math.sin(e), Math.cos(e) * Math.cos(a)];
+    if (d[2] > 0.55 && Math.abs(d[1]) < 0.55) continue;
+    K.prim(pv, PRIM.cone, spike, [d[0] * R[0] * 0.92, by + d[1] * R[1] * 0.92, 0.04 + d[2] * R[2] * 0.92], [0.035, 0.13, 0.035], dirRot(d), { outline: 0.6 });
+  }
+  const cl = K.joint(pv, [0, by + R[1] * 1.45, -0.05]); g2Bob(M, cl, 0.04, 2.2);
+  const CP = new Part();
+  for (const [x, y, z, r] of [[0, 0, 0, 0.16], [-0.15, -0.03, 0.02, 0.12], [0.16, -0.02, -0.02, 0.13], [0.05, 0.08, -0.06, 0.12]]) CP.add(sph([x, y, z], r, [0.62, 0.62, 0.7], { k: 0.05 }));
+  K.add(cl, K.mesh(CP, 'small'));
+  const BP = new Part([cap([0, 0.06, 0], [0.06, -0.08, 0], 0.035, 0.03, K.c2, { k: 0 }), cap([0.06, -0.08, 0], [-0.04, -0.1, 0], 0.03, 0.03, K.c2, { k: 0 }), cap([-0.04, -0.1, 0], [0.02, -0.26, 0], 0.03, 0.006, K.c2, { k: 0 })]);
+  K.add(cl, K.mesh(BP, 'tiny'), { emis: [0.6, 0.55, 0.1] });
+  const TB = new Part([cap([0, 0, 0], [0, 0.22, -0.12], 0.07, 0.05, K.c2, { k: 0, sc: [0.35, 1, 1], pv: [0, 0, 0] }), cap([0, 0.22, -0.12], [0, 0.05, -0.2], 0.05, 0.05, K.c2, { k: 0, sc: [0.35, 1, 1], pv: [0, 0.22, -0.12] }), cap([0, 0.05, -0.2], [0, 0.32, -0.36], 0.05, 0.008, K.c2, { k: 0, sc: [0.35, 1, 1], pv: [0, 0.05, -0.2] })]);
+  K.add(M.tails[0], K.mesh(TB, 'small'), { emis: [0.4, 0.36, 0.05] });
+  return head;
+};
+
+// 228 クラウドラン：飛行船のような 雲クジラ。横に まわる プロペラ、背に 避雷針、おなかに 雷雲
+G2['クラウドラン'] = (K, M, pv) => {
+  K.ex.delete('shards'); K.f.back = null;
+  const F = { R: [.4, .38, 1.05], tail: 'none' };
+  const head = planFish(K, M, pv, F);
+  const R = fishR(K, F.R), by = 0.6 + R[1] * 0.4, D = K.joint(pv, [0, 0, 0]);
+  const FP = new Part();
+  for (let i = 0; i < 4; i++) { const a = i / 4 * Math.PI * 2 + Math.PI / 4; FP.add(cap([0, 0, 0.12], [Math.cos(a) * R[0] * 1.2, Math.sin(a) * R[1] * 1.2, -R[2] * 0.42], R[1] * 0.42, R[1] * 0.1, i % 2 ? K.c2 : mix(K.c1, WHITE, 0.2), { k: 0.03, sc: [Math.abs(Math.sin(a)) * 0.75 + 0.25, Math.abs(Math.cos(a)) * 0.75 + 0.25, 1], pv: [0, 0, 0.12] })); }
+  K.add(M.tails[0], K.mesh(FP, 'small'));
+  for (const s of [-1, 1]) {
+    const pod = K.joint(D, [s * R[0] * 1.08, by - R[1] * 0.2, R[2] * 0.05]);
+    K.add(pod, K.mesh(new Part([cap([0, 0, 0.22], [0, 0, -0.22], 0.11, 0.08, [0.85, 0.85, 0.9], { k: 0 }), cap([-s * 0.11, 0, 0], [-s * 0.02, 0, 0], 0.05, 0.05, [0.6, 0.6, 0.68], { k: 0.02 })]), 'small'));
+    const pr = K.joint(pod, [0, 0, 0.27]); g2Spin(M, pr, 2, 9);
+    for (let b = 0; b < 3; b++) { const a = b / 3 * Math.PI * 2; K.prim(pr, PRIM.box, K.c2, [Math.cos(a) * 0.12, Math.sin(a) * 0.12, 0], [0.24, 0.05, 0.012], [0, 0, a], { outline: 0.6 }); }
+  }
+  K.prim(D, PRIM.cyl, [0.6, 0.6, 0.68], [0, by + R[1] * 0.9, R[2] * 0.45], [0.025, 0.42, 0.025]);
+  g2Glow(K, D, PRIM.sphereHi, [1, 0.95, 0.4], [0, by + R[1] * 0.9 + 0.44, R[2] * 0.45], [0.06], null, 0.9);
+  const CP = new Part();
+  for (let i = 0; i < 7; i++) { const z = lerp(R[2] * 0.6, -R[2] * 0.7, i / 6); CP.add(sph([((i % 2) - 0.5) * R[0] * 0.5, by - R[1] * 0.92, z], R[0] * (0.38 + (i % 3) * 0.06), [0.6, 0.6, 0.68], { k: 0.06 })); }
+  K.add(D, K.mesh(CP, 'small'));
+  M.seatSkip = [D];
+  return head;
+};
+
+// 229 ヨウガンボ：かたい 岩の からを かぶった 溶岩の かたまり。足もとに 溶岩が したたる
+G2['ヨウガンボ'] = (K, M, pv) => { K.ex.delete('shards'); return planBlob(K, M, pv, { ground: 1, shape: (K, M, pv, P, R, by) => {
+  const lava = [1, 0.42, 0.1];
+  P.add(ell([0, R * 0.62, 0], [R * 0.78, R * 0.62, R * 0.74], lava, { k: 0 }));
+  P.add(ell([0, R * 0.08, 0], [R * 1.0, R * 0.1, R * 0.95], mix(lava, [1, 0.75, 0.3], 0.3), { k: R * 0.2 }));
+  P.paint(sph([0, R * 0.5, R * 0.62], R * 0.42), [1, 0.78, 0.32], R * 0.15);
+  M.body_emis = [0.5, 0.17, 0.02];
+  const crust = mix(K.c1, G2_CHAR, 0.4);
+  const C = new Part([ell([0, R * 0.86, -R * 0.04], [R * 0.86, R * 0.56, R * 0.83], crust, { k: 0 })], { noise: 0.03, noiseF: 6 });
+  C.add(ell([0, R * 0.4, R * 0.98], [R * 0.72, R * 0.42, R * 0.52], null, { op: 'sub', k: R * 0.06 }));
+  C.add(ell([0, R * 0.2, 0], [R * 1.3, R * 0.4, R * 1.3], null, { op: 'sub', k: R * 0.04 }));
+  for (let i = 0; i < 6; i++) { const a = i / 6 * Math.PI * 2 + 0.4; C.add(box([Math.cos(a) * R * 0.6, R * 1.0, Math.sin(a) * R * 0.6], [R * 0.025, R * 0.5, R * 0.1], 0, null, { op: 'sub', k: R * 0.01, rot: [0, -a, 0.6] })); }
+  K.add(pv, K.mesh(C, 'small'));
+  for (let i = 0; i < 4; i++) { const a = i / 4 * Math.PI * 2 + 0.8; K.prim(pv, PRIM.drop, lava, [Math.cos(a) * R * 0.75, R * 0.25, Math.sin(a) * R * 0.72], [R * 0.08, R * 0.1, R * 0.08], [Math.PI, 0, 0], { emis: [0.6, 0.2, 0.02], outline: 0.5 }); }
+  return { hc: [0, R * 0.5, R * 0.05], eyeDir: [0.36, 0.05, 0.93], eyeSize: 0.42, arms: true, mouthY: -R * 0.2 };
+} }); };
+
+// 230 ヨウガンボルグ：胴が 火山に なった 巨人。肩の 火口から 炎が ふきだし、溶岩が 流れる
+G2['ヨウガンボルグ'] = (K, M, pv) => {
+  K.ex.delete('shards'); K.ex.delete('spikes');
+  const B = { hipY: .5, tH: .72, tw: .42, sh: 1.25, waist: .8, head: .22, snout: .2, aL: .7, ar: .15, fist: 2.1, lr: .16, foot: 1.5, hunch: .04, brow: 1 };
+  const head = planBiped(K, M, pv, B);
+  const s = K.st, hipY = B.hipY * lerp(0.78, 1.03, s), tH = B.tH * lerp(0.86, 1.03, s), tw = B.tw * lerp(0.96, 1.05, s);
+  const rock = mix(K.c1, [0.3, 0.26, 0.24], 0.3);
+  const yb = hipY - tH * 0.04, yt = hipY + tH * 1.12, rb = tw * 2.05, rt = tw * 0.95, rAt = (y) => lerp(rb, rt, (y - yb) / (yt - yb));
+  const V = new Part([], { noise: 0.025, noiseF: 5 });
+  for (let i = 0; i < 4; i++) { const y0 = lerp(yb, yt, i / 4), y1 = lerp(yb, yt, (i + 1) / 4); V.add(cap([0, y0, 0], [0, y1, 0.01], rAt(y0), rAt(y1), rock, { k: tw * 0.05 })); }
+  V.add(box([0, yt + 1, 0], [2, 1, 2], 0, null, { op: 'sub', k: tw * 0.04 }));
+  V.add(ell([0, yt + tH * 0.02, 0.01], [rt * 0.75, tH * 0.12, rt * 0.75], null, { op: 'sub', k: tw * 0.06 }));
+  V.add(box([0, yb - 1, 0], [2, 1, 2], 0, null, { op: 'sub', k: 0.03 }));
+  V.paint(ell([0, yt - tH * 0.02, 0.01], [rt * 0.85, tH * 0.08, rt * 0.85]), G2_LAVA, tw * 0.04);
+  K.add(pv, K.mesh(V, 'body'));
+  for (let i = 0; i < 8; i++) {
+    const LV = new Part();
+    let a = i / 8 * Math.PI * 2 + 0.2, prev = null; const yEnd = lerp(yb, yt, 0.12 + (i % 3) * 0.14);
+    for (let k = 0; k <= 5; k++) { const y = lerp(yt - tH * 0.02, yEnd, k / 5); a += Math.sin(k * 1.7 + i) * 0.08; const r = rAt(y) * 1.15 + 0.02; const q = [Math.sin(a) * r, y, Math.cos(a) * r + 0.01]; if (prev) LV.add(cap(prev, q, tw * 0.07, tw * 0.055, G2_LAVA, { k: tw * 0.03 })); prev = q; }
+    K.add(pv, K.mesh(LV, 'small'), { emis: [0.85, 0.32, 0.03], outline: 0.3 });
+  }
+  g2Glow(K, pv, PRIM.sphereHi, G2_LAVA, [0, yt - tH * 0.04, 0.01], [rt * 0.8, tH * 0.05, rt * 0.8], null, 0.9, { outline: 0 });
+  for (const sx of [-1, 1]) {
+    const b = [sx * tw * 1.05, hipY + tH * 0.72, -tw * 0.35];
+    const VP = new Part([cap(b, [b[0] * 1.08, b[1] + tw * 0.45, b[2] - tw * 0.1], tw * 0.3, tw * 0.17, rock, { k: 0 })], { noise: 0.02, noiseF: 7 });
+    VP.add(sph([b[0] * 1.08, b[1] + tw * 0.5, b[2] - tw * 0.1], tw * 0.13, null, { op: 'sub', k: tw * 0.04 }));
+    K.add(pv, K.mesh(VP, 'small'));
+    addFlame(K, M, pv, [b[0] * 1.08, b[1] + tw * 0.42, b[2] - tw * 0.1], 0.9);
+  }
+  return head;
+};
+
+// 231 ヒバチョウ：おしりが ランプのように 光る 火の粉の ホタル
+G2['ヒバチョウ'] = (K, M, pv) => {
+  K.f.back = null;
+  const head = planBug(K, M, pv, { body: 'round', wings: 'small', legs: 6, antenna: 1, float: 1, big: .85 });
+  g2Glow(K, pv, PRIM.sphereHi, [1, 0.86, 0.35], [0, 0.6, -0.52], [0.3, 0.27, 0.32], null, 0.95, { outline: 0.4 });
+  K.prim(pv, PRIM.torus, K.dark, [0, 0.58, -0.32], [0.24, 0.3, 0.24], [Math.PI / 2 - 0.35, 0, 0]);
+  M.orbit = K.joint(pv, [0, 0.5, -0.2]);
+  for (let i = 0; i < 4; i++) { const a = i / 4 * Math.PI * 2; g2Glow(K, M.orbit, PRIM.sphereLo, [1, 0.65, 0.2], [Math.cos(a) * 0.5, Math.sin(a * 3) * 0.12, Math.sin(a) * 0.5], [0.03], null, 1, { outline: 0 }); }
+  return head;
+};
+
+// 232 ヒバチョウガ：長い 燕尾の 先が 燃える 炎の アゲハ。羽の ふちにも 炎
+G2['ヒバチョウガ'] = (K, M, pv) => {
+  K.f.back = null;
+  const head = planBug(K, M, pv, { body: 'slim', wings: 'butterfly', legs: 6, antenna: 1, float: 1 });
+  const W = lerp(0.8, 1.2, K.st);
+  for (const wj of M.wings) {
+    const sx = wj.side;
+    const tip = tailChain(K, M, wj, [sx * 0.2 * W, -0.36 * W, -0.32], 4, 0.15, 0.035, K.c2, 0.4, 0.16, sx * -0.35, null, 0.45);
+    addFlame(K, M, tip, [0, 0, 0], 0.55, [Math.PI, 0, 0]);
+    for (const a of [0.55, 0.9, 1.25]) addFlame(K, M, wj, [sx * Math.cos(a - 0.5) * 0.75 * W, Math.sin(a) * 0.55 * W + 0.06, -0.05 - Math.sin(a * 0.6) * 0.1], 0.32, [0, 0, -sx * (a - 0.4)]);
+  }
+  return head;
+};
+
+// 233 ボルカニ：小さな 火山の からを 背負った ヤドカリ（火口に 炎）
+G2['ボルカニ'] = (K, M, pv) => {
+  const head = planBug(K, M, pv, { body: 'crab', legs: 6, claws: 1, stalks: 1 });
+  const by = 0.36, rock = [0.36, 0.3, 0.3];
+  const V = new Part([cap([0, by + 0.08, -0.14], [0, by + 0.62, -0.24], 0.38, 0.13, rock, { k: 0 })], { noise: 0.03, noiseF: 6 });
+  V.add(sph([0, by + 0.68, -0.24], 0.1, null, { op: 'sub', k: 0.03 }));
+  for (let i = 0; i < 5; i++) { const a = i / 5 * Math.PI * 2; V.paint(cap([Math.sin(a) * 0.1, by + 0.6, -0.24 + Math.cos(a) * 0.1], [Math.sin(a + 0.2) * 0.3, by + 0.25, -0.18 + Math.cos(a + 0.2) * 0.3], 0.025, 0.02), G2_LAVA, 0.015); }
+  K.add(pv, K.mesh(V, 'small'), { emis: [0.05, 0.015, 0] });
+  g2Glow(K, pv, PRIM.sphereLo, G2_LAVA, [0, by + 0.6, -0.24], [0.08, 0.025, 0.08], null, 0.9, { outline: 0 });
+  addFlame(K, M, pv, [0, by + 0.6, -0.24], 0.5);
+  return head;
+};
+
+// 234 ボルカニング：背中に 湯けむりを 上げる 溶岩の 城を 背負った 大ガニの 王（右の ハサミだけ 大きい）
+G2['ボルカニング'] = (K, M, pv) => {
+  K.ex.delete('shards'); K.ex.delete('crown');
+  const head = planBug(K, M, pv, { body: 'crab', legs: 6, claws: 1.25, stalks: 1 });
+  const by = 0.36, rock = [0.3, 0.24, 0.24], rockL = [0.42, 0.34, 0.32], D = K.joint(pv, [0, 0, 0]);
+  // 城の 土台と 城壁（でこぼこの 岩）
+  const C = new Part([box([0, by + 0.32, -0.08], [0.36, 0.13, 0.27], 0.05, rock, { k: 0 })], { noise: 0.012, noiseF: 9 });
+  for (let i = 0; i < 7; i++) { const x = -0.33 + i * 0.11; C.add(box([x, by + 0.48, 0.17], [0.035, 0.04, 0.035], 0.008, rockL, { k: 0.01 })); C.add(box([x, by + 0.48, -0.33], [0.035, 0.04, 0.035], 0.008, rockL, { k: 0.01 })); }
+  for (const sx of [-1, 1]) for (let i = 0; i < 5; i++) C.add(box([sx * 0.35, by + 0.48, 0.13 - i * 0.11], [0.035, 0.04, 0.035], 0.008, rockL, { k: 0.01 }));
+  // 天守（まんなかの 高い 塔）と 左右の 小さな 塔
+  C.add(box([0, by + 0.62, -0.1], [0.15, 0.2, 0.13], 0.03, rockL, { k: 0.02 }));
+  C.add(cap([0, by + 0.82, -0.1], [0, by + 1.02, -0.1], 0.16, 0.02, [0.62, 0.22, 0.16], { k: 0.01 }));
+  for (const sx of [-1, 1]) { C.add(cap([sx * 0.27, by + 0.4, -0.22], [sx * 0.27, by + 0.66, -0.22], 0.075, 0.07, rockL, { k: 0.02 })); C.add(cap([sx * 0.27, by + 0.66, -0.22], [sx * 0.27, by + 0.8, -0.22], 0.09, 0.01, [0.62, 0.22, 0.16], { k: 0.01 })); }
+  // 窓の 光（溶岩）
+  for (const [x, y, z] of [[0, by + 0.62, 0.035], [-0.07, by + 0.36, 0.2], [0.07, by + 0.36, 0.2], [0.27, by + 0.56, -0.15], [-0.27, by + 0.56, -0.15]]) C.paint(box([x, y, z], [0.03, 0.045, 0.03], 0), [1, 0.62, 0.18], 0.012);
+  K.add(D, K.mesh(C, 'small'), { emis: [0.06, 0.025, 0.01] });
+  // 煙突と 湯けむり
+  for (const [x, z, h] of [[0.18, -0.3, 0.36], [-0.16, -0.32, 0.3]]) {
+    K.prim(D, PRIM.cyl, [0.22, 0.2, 0.22], [x, by + 0.4, z], [0.045, h, 0.045]);
+    for (let k = 0; k < 3; k++) { const st = K.prim(D, PRIM.sphere, [0.95, 0.95, 0.98], [x + k * 0.03, by + 0.45 + h + k * 0.12, z - k * 0.02], [0.06 + k * 0.03], null, { alpha: 0.7 - k * 0.15, outline: 0 }); st.transparent = true; g2Bob(M, st, 0.03, 2 + k, k); }
+  }
+  // 城の 旗
+  K.prim(D, PRIM.cyl, [0.5, 0.4, 0.3], [0, by + 1.0, -0.1], [0.012, 0.22, 0.012]);
+  K.add(D, K.mesh(new Part([box([0.07, by + 1.17, -0.1], [0.07, 0.04, 0.008], 0.005, K.c1, { k: 0 })]), 'tiny'));
+  // 右の ハサミだけ 大きく（王の ハサミ）
+  if (M.pincers && M.pincers[1]) M.pincers[1].setScale(1.45);
+  if (M.pincers && M.pincers[0]) M.pincers[0].setScale(0.9);
+  // 足もとの 甲羅の ふちに 溶岩の すじ
+  K.add(D, K.mesh(new Part([tor([0, by + 0.05, 0], 0.46, 0.025, G2_LAVA, { k: 0, sc: [1, 1, 0.75], pv: [0, by + 0.05, 0] })]), 'tiny'), { emis: [0.85, 0.32, 0.03], outline: 0.2 });
+  return head;
+};
+
+// 235 メテオン：ころころの 小さな 隕石。うしろに ほうき星の 炎の しっぽ
+G2['メテオン'] = (K, M, pv) => { K.ex.delete('shards'); return planBlob(K, M, pv, { float: 1, shape: (K, M, pv, P, R, by) => {
+  P.noise = 0.045; P.noiseF = 4;
+  P.add(sph([0, by, 0], R * 0.62, K.c1, { k: 0 }));
+  for (const [x, y, z, r] of [[0.45, 0.35, -0.2, 0.17], [-0.5, 0.15, -0.15, 0.14], [0.1, 0.55, -0.35, 0.12], [-0.25, -0.45, 0.1, 0.13]]) P.add(sph([x * R, by + y * R, z * R], r * R, null, { op: 'sub', k: R * 0.05 }));
+  for (let i = 0; i < 5; i++) { const a = i * 1.3; P.paint(box([Math.cos(a) * R * 0.45, by + Math.sin(a * 2) * R * 0.3, -R * 0.3 + Math.sin(a) * R * 0.3], [R * 0.025, R * 0.35, R * 0.025], 0, null, { rot: [a, a * 2, 0.5] }), mix(K.c2, WHITE, 0.25), R * 0.02); }
+  addFlame(K, M, pv, [0, by + R * 0.3, -R * 0.4], 1.7, [-1.05, 0, 0]);
+  addFlame(K, M, pv, [R * 0.35, by + R * 0.05, -R * 0.35], 1.2, [-1.2, 0.55, 0]);
+  addFlame(K, M, pv, [-R * 0.35, by + R * 0.2, -R * 0.35], 1.2, [-1.0, -0.55, 0]);
+  const tr = K.prim(pv, PRIM.cone, [1, 0.6, 0.25], [0, by, -R * 0.35], [R * 0.45, R * 1.6, R * 0.45], [-Math.PI / 2, 0, 0], { alpha: 0.35, emis: [0.5, 0.25, 0.05], outline: 0 }); tr.transparent = true; tr.noDepthWrite = true;
+  return { hc: [0, by, 0], eyeDir: [0.34, 0.1, 0.93], eyeSize: 0.46, arms: false, mouthY: -R * 0.2 };
+} }); };
+
+// 236 メテオノイド：割れた 岩の からの すきまから 光る 核。まわりを 大きな 結晶の かけらが まわる
+G2['メテオノイド'] = (K, M, pv) => { K.ex.delete('shards'); return planBlob(K, M, pv, { float: 1, shape: (K, M, pv, P, R, by) => {
+  P.add(sph([0, by, 0], R * 0.42, mix(K.c2, WHITE, 0.25), { k: 0 }));
+  M.body_emis = K.c2.map(v => v * 0.3);
+  const rock = mix(K.c1, [0.25, 0.22, 0.3], 0.3);
+  for (const sy of [-1, 1]) {
+    const S = new Part([sph([0, by + sy * R * 0.18, -R * 0.05], R * 0.56, rock, { k: 0 })], { noise: 0.03, noiseF: 6 });
+    S.add(box([0, by - sy * R * 0.62, 0], [R, R * 0.62, R], 0, null, { op: 'sub', k: R * 0.04 }));
+    S.add(ell([0, by, R * 0.55], [R * 0.4, R * 0.35, R * 0.4], null, { op: 'sub', k: R * 0.05 }));
+    K.add(pv, K.mesh(S, 'small'));
+  }
+  M.orbit = K.joint(pv, [0, by, 0]);
+  for (let i = 0; i < 6; i++) { const a = i / 6 * Math.PI * 2, y = (i % 2 ? 0.25 : -0.2) * R; g2Gem(K, M.orbit, i % 2 ? G2_CRYS : mix(K.c2, WHITE, 0.3), [Math.cos(a) * R * 0.95, y, Math.sin(a) * R * 0.95], [Math.cos(a), (i % 2 ? 0.6 : -0.4), Math.sin(a)], R * (0.55 + (i % 3) * 0.12), R * 0.12, 0.55); }
+  for (const sx of [-1, 1]) {
+    const j = K.joint(pv, [sx * R * 0.7, by - R * 0.05, R * 0.1], [0, 0, sx * 0.55]);
+    for (let k = 0; k < 3; k++) g2Gem(K, j, G2_CRYS, [0, -R * 0.05 * k, 0], [sx * (k - 1) * 0.35, -1, 0.2], R * (0.45 - k * 0.08), R * 0.09);
+    j.r0 = j.rot.slice(); M.arms.push(j);
+  }
+  return { hc: [0, by, 0], eyeDir: [0.3, 0.08, 0.95], eyeSize: 0.4, arms: false, mouthY: -R * 0.2, hr: R * 0.5 };
+} }); };
+
+// 237 メテオロード：土星のような まわる 輪を まとった 隕石の 王。肩に 大きな 結晶、頭に 結晶の かんむり
+G2['メテオロード'] = (K, M, pv) => {
+  K.ex.delete('shards');
+  const head = planGolem(K, M, pv, { kind: 'golem', k: 1.35 });
+  const k = 1.35 * lerp(0.9, 1.05, K.st), hipY = 0.38 * k, tH = 0.62 * k, tw = 0.38 * k;
+  const ring = K.joint(pv, [0, hipY + tH * 0.55, 0], [0.3, 0, 0.16]), rj = K.joint(ring, [0, 0, 0]);
+  g2Spin(M, rj, 1, 0.7);
+  g2Glow(K, rj, PRIM.torus, mix(K.c2, [0.6, 0.3, 1], 0.4), [0, 0, 0], [tw * 2.0, tw * 0.22, tw * 2.0], null, 0.45);
+  g2Glow(K, rj, PRIM.torus, mix(K.c2, WHITE, 0.2), [0, 0, 0], [tw * 1.7, tw * 0.14, tw * 1.7], null, 0.35);
+  for (let i = 0; i < 5; i++) { const a = i / 5 * Math.PI * 2; K.prim(rj, PRIM.box, mix(K.c1, K.dark, 0.3), [Math.cos(a) * tw * 2.0, 0, Math.sin(a) * tw * 2.0], [tw * 0.14], [a, a * 2, 0.4], { outline: 0.6 }); }
+  for (const sx of [-1, 1]) for (let i = 0; i < 4; i++) { const a = (i - 1.5) * 0.45; g2Gem(K, pv, i % 2 ? G2_CRYS : mix(K.c2, WHITE, 0.3), [sx * tw * 1.15, hipY + tH * 1.1, (i - 1.5) * tw * 0.25], [sx * (0.45 + Math.abs(a) * 0.5), 1, a * 0.6], tw * (0.9 + (i % 2) * 0.35), tw * 0.16); }
+  const hR = 0.24 * k;
+  for (let i = 0; i < 5; i++) { const a = (i - 2) * 0.42; g2Gem(K, M.head, i === 2 ? [1, 0.9, 0.5] : G2_CRYS, [Math.sin(a) * hR * 0.7, hR * 0.7, -hR * 0.1], [Math.sin(a), 1.4, -0.2], hR * (0.6 + (i === 2 ? 0.4 : 0)), hR * 0.13); }
+  return head;
+};
+
+// 238 コスモドラ：星の 玉が ばらばらに つながって 飛ぶ 宇宙の 竜（玉ごとに 小さな 輪）
+G2['コスモドラ'] = (K, M, pv) => {
+  K.ex.delete('shards');
+  const Sd = { n: 9, r: .23, dr: .013, gap: 1.75, float: 1, legs4: 1, mane: 1 };
+  const head = planSerpent(K, M, pv, Sd);
+  const base = Sd.r * lerp(1.05, 1, K.st);
+  M.segs.forEach((sg, i) => { const r = Math.max(0.08, base - i * Sd.dr); if (i % 2 === 0) g2Glow(K, sg, PRIM.torus, mix(K.c2, [0.7, 0.5, 1], 0.3), [0, 0, 0], [r * 1.45, r * 0.45, r * 1.45], [0.7, i * 0.8, 0.35], 0.45, { outline: 0.3 }); });
+  const st = g2Glow(K, M.segs[M.segs.length - 1], PRIM.star, [1, 0.95, 0.6], [0, 0.05, -0.18], [0.16], null, 0.8); st.doubleSide = true;
+  return head;
+};
+
+// 239 ミュータイガ：6本足の 鋼の トラ。長い サーベルの キバと 刃の しっぽ、背中に 鋼の 板
+G2['ミュータイガ'] = (K, M, pv) => {
+  K.ex.delete('shards');
+  const head = planQuad(K, M, pv, { L: 1.12, legH: .46, chest: [.33, .35, .37], hip: [.3, .31, .33], lift: .04, neck: .2, neckA: 1.0, head: .31, snout: .55, legR: .1, paw: 1.3, ears: 'round', tail: 'none', brow: 1, legs6: 1 });
+  const R = head.R, A = M.anchor, steel = [0.8, 0.84, 0.92];
+  const FP = new Part();
+  for (const sx of [-1, 1]) { const p = headPoint(head, [sx * 0.3, -0.35, 0.9]).p; FP.add(cap(p, [p[0] + sx * R * 0.05, p[1] - R * 0.75, p[2] + R * 0.12], R * 0.1, R * 0.02, [0.98, 0.96, 0.9], { k: R * 0.03 })); }
+  K.add(M.head, K.mesh(FP, 'tiny'), { mat: MAT.glossy });
+  const D = K.joint(pv, [0, 0, 0]), SP = new Part();
+  for (let i = 0; i < 5; i++) { if (i === 2) continue; const z = lerp(A.z0, A.z1, i / 4), t = A.top(z); SP.add(box([0, t + 0.06, z], [0.03, 0.12 + (i % 2) * 0.03, 0.12], 0.02, steel, { k: 0.02, rot: [0.45, 0, 0] })); }
+  K.add(D, K.mesh(SP, 'small'), { mat: MAT.glossy });
+  const tip = g2Tail(K, M, pv, M.tailBase, 5, 0.17, 0.07, K.c1, 1.95, 0.08, 0, K.c2);
+  K.add(tip, K.mesh(new Part([cap([0, 0.02, 0], [0, -0.32, 0.04], 0.09, 0.008, steel, { k: 0, sc: [0.25, 1, 1], pv: [0, 0, 0] })]), 'small'), { mat: MAT.glossy });
+  M.seatSkip = [D];
+  M.tailBase = null;
+  return head;
+};
+
+// 240 ゼログラビ：交差して まわる 3つの 輪（ジャイロ）の 中に 浮かぶ 魂。まわりに 小石が 浮く
+G2['ゼログラビ'] = (K, M, pv) => { K.ex.delete('shards'); return planBlob(K, M, pv, { float: 1, shape: (K, M, pv, P, R, by) => {
+  P.add(sph([0, by, 0], R * 0.5, K.c1, { k: 0 }));
+  P.add(cap([0, by + R * 0.25, -R * 0.25], [R * 0.1, by + R * 1.05, -R * 0.6], R * 0.26, R * 0.02, K.c1, { k: R * 0.15 }));
+  P.paint(sph([0, by - R * 0.05, R * 0.4], R * 0.32), mix(K.c1, K.c2, 0.35), R * 0.08);
+  const col = K.c2;
+  for (let i = 0; i < 3; i++) { const o = K.joint(pv, [0, by, 0], [i * 1.05 + 0.3, i * 0.9, 0]); const j = K.joint(o, [0, 0, 0]); g2Spin(M, j, 0, 0.9 + i * 0.5); g2Glow(K, j, PRIM.torus, i === 1 ? mix(col, [0.7, 0.4, 1], 0.5) : col, [0, 0, 0], [R * (0.8 + i * 0.13), R * 0.32, R * (0.8 + i * 0.13)], null, 0.6, { outline: 0.3 }); }
+  M.orbit = K.joint(pv, [0, by, 0]);
+  for (let i = 0; i < 5; i++) { const a = i / 5 * Math.PI * 2; K.prim(M.orbit, PRIM.box, [0.32, 0.3, 0.36], [Math.cos(a) * R * 1.35, Math.sin(a * 3) * R * 0.3, Math.sin(a) * R * 1.35], [R * (0.08 + (i % 2) * 0.04)], [a, a * 1.5, 0.3], { outline: 0.6 }); }
+  return { hc: [0, by, 0], eyeDir: [0.32, 0.1, 0.94], eyeSize: 0.44, arms: false, mouthY: -R * 0.2, hr: R * 0.55 };
+} }); };
+
+// 241 バサルト：背中に 六角の 石の 柱が ならぶ 小さな センザンコウ（柱の 先が 赤く 光る）
+G2['バサルト'] = (K, M, pv) => {
+  K.ex.delete('shards');
+  const head = planQuad(K, M, pv, { L: .58, legH: .2, chest: [.3, .27, .3], hip: [.32, .29, .32], neck: .05, neckA: 1.3, head: .27, snout: .85, legR: .07, claws: 1, ears: 'small', tail: 'thick', noseHorn: 1 });
+  const A = M.anchor, cols = [], rr = mulberry32(K.sp.id), cA = [0.2, 0.2, 0.24], cB = [0.3, 0.29, 0.33];
+  for (let r = 0; r < 4; r++) for (let c = -1; c <= 1; c++) {
+    const z = lerp(A.z0 - 0.02, A.z1 + 0.02, r / 3) + (c ? 0.04 : 0), x = c * A.w * 0.5;
+    const y = A.top(z) - 0.1 - Math.abs(c) * 0.06, h = 0.13 + rr() * 0.09 + (c ? 0 : 0.05);
+    cols.push({ p: [x, y, z], r: 0.075, h, col: (r + c) % 2 ? cA : cB, top: rr() < 0.4 ? [1, 0.5, 0.15] : null, ry: rr() });
+  }
+  hexCols(K, pv, cols);
+  return head;
+};
+
+// 242 バサルトン：頭の うしろに 玄武岩の 柱で できた 大きな えりかざり（盾）を もつ 大きな 獣
+G2['バサルトン'] = (K, M, pv) => {
+  K.ex.delete('shards');
+  const head = planQuad(K, M, pv, { L: 1.05, legH: .5, chest: [.45, .46, .48], hip: [.4, .42, .44], lift: .04, neck: .14, neckA: 1.2, head: .34, snout: 1.0, legR: .16, hoof: 1, ears: 'small', tail: 'club', noseHorn: 1, brow: 1 });
+  const A = M.anchor, n = A.neck, rr = mulberry32(K.sp.id), cA = [0.2, 0.2, 0.24], cB = [0.32, 0.31, 0.36];
+  const D = K.joint(pv, [0, 0, 0]), cols = [];
+  for (let i = -5; i <= 5; i++) {
+    const a = i * 0.25, d = [Math.sin(a), Math.cos(a), -0.42], l = Math.hypot(d[0], d[1], d[2]);
+    const len = 0.55 + (5 - Math.abs(i)) * 0.06 + rr() * 0.08;
+    cols.push({ p: [n[0] + d[0] / l * 0.12, n[1] - 0.05 + d[1] / l * 0.05, n[2] - 0.05], rot: dirRot(d), r: 0.085, h: len, col: i % 2 ? cA : cB, top: (i + 5) % 3 === 0 ? [1, 0.5, 0.15] : null });
+  }
+  for (let r = 0; r < 2; r++) for (let c = -1; c <= 1; c++) { const z = lerp(A.z1 + 0.15, A.z1 - 0.05, r), y = A.top(z) - 0.12; cols.push({ p: [c * A.w * 0.45, y, z], r: 0.08, h: 0.2 + rr() * 0.12, col: (r + c) % 2 ? cA : cB, top: rr() < 0.4 ? [1, 0.5, 0.15] : null, ry: rr() }); }
+  hexCols(K, D, cols);
+  M.seatSkip = [D];
+  return head;
+};
+
+// 243 ヒノコリュウ：首の まわりに 炎の えりまきを ひろげた 平たい 竜の 子
+G2['ヒノコリュウ'] = (K, M, pv) => {
+  const head = planQuad(K, M, pv, { L: .7, legH: .2, chest: [.27, .23, .3], hip: [.26, .22, .28], lift: .03, neck: .14, neckA: 1.0, head: .36, snout: .7, flat: .8, legR: .07, splay: .6, ears: 'none', tail: 'thick', horn: 1 });
+  const R = head.R, pts = [];
+  for (let i = 0; i <= 10; i++) { const th = -1.75 + i / 10 * 3.5; pts.push([Math.sin(th) * R * 1.55, Math.cos(th) * R * 1.35 - R * 0.1, -R * 0.55 - (i % 2) * R * 0.08]); }
+  g2Fan(K, M.head, [0, -R * 0.1, -R * 0.35], pts, [1, 0.62, 0.2], [1, 0.45, 0.12], { emis: [0.2, 0.06, 0] });
+  for (let i = 0; i < 7; i++) { const th = -1.5 + i / 6 * 3.0; addFlame(K, M, M.head, [Math.sin(th) * R * 1.35, Math.cos(th) * R * 1.15 - R * 0.1, -R * 0.55], 0.42, [-0.35, 0, -th]); }
+  return head;
+};
+
+// 244 カザンリュウ：腰に 噴火する 火山を 背負った 岩の 翼の 竜（翼の 膜に 溶岩の すじ）
+G2['カザンリュウ'] = (K, M, pv) => {
+  K.ex.delete('shards'); K.f.back = null;
+  const head = planQuad(K, M, pv, { L: 1.1, legH: .55, chest: [.44, .45, .47], hip: [.4, .4, .42], lift: .08, neck: .4, neckA: .85, head: .3, snout: 1.15, legR: .15, claws: 1, ears: 'none', tail: 'thick', horn: 2, brow: 1 });
+  const A = M.anchor;
+  addWings(K, M, pv, { ...A, mem: [0.28, 0.17, 0.15], memIn: [1, 0.42, 0.1], memEmis: [0.2, 0.06, 0.01] });
+  const zv = lerp(A.z0, A.z1, 0.92), ty = A.top(zv), D = K.joint(pv, [0, 0, 0]), rock = [0.3, 0.22, 0.2];
+  const V = new Part([cap([0, ty - 0.12, zv], [0, ty + 0.42, zv - 0.06], 0.36, 0.13, rock, { k: 0 })], { noise: 0.03, noiseF: 6 });
+  V.add(sph([0, ty + 0.48, zv - 0.06], 0.1, null, { op: 'sub', k: 0.03 }));
+  for (let i = 0; i < 6; i++) { const a = i / 6 * Math.PI * 2; V.paint(cap([Math.sin(a) * 0.1, ty + 0.4, zv - 0.06 + Math.cos(a) * 0.1], [Math.sin(a + 0.25) * 0.32, ty, zv + Math.cos(a + 0.25) * 0.32], 0.03, 0.02), G2_LAVA, 0.015); }
+  K.add(D, K.mesh(V, 'small'), { emis: [0.06, 0.02, 0] });
+  g2Glow(K, D, PRIM.sphereLo, G2_LAVA, [0, ty + 0.4, zv - 0.06], [0.085, 0.025, 0.085], null, 0.95, { outline: 0 });
+  for (let i = 0; i < 3; i++) addFlame(K, M, D, [(i - 1) * 0.05, ty + 0.4, zv - 0.06], 0.8 - Math.abs(i - 1) * 0.25, [0, 0, (i - 1) * 0.3]);
+  M.seatSkip = [D];
+  return head;
+};
+
+// 245 マグマンタ：溶岩の すじが 光る 平たい エイ。頭に 角のような ひれ、長い むちの しっぽ
+G2['マグマンタ'] = (K, M, pv) => {
+  M.plan = 'fish'; M.floating = true;
+  const c1 = K.c1, by = 0;
+  // 体ごと 少し 前を 上げて ななめに（正面からも 平たい 背中が 見える）
+  const T = K.joint(pv, [0, 0.78, 0], [0.3, 0, 0.12]);
+  const P = new Part([ell([0, by, 0], [0.3, 0.17, 0.5], c1, { k: 0 })]);
+  P.add(ell([0, by - 0.01, -0.02], [0.72, 0.07, 0.36], c1, { k: 0.14 }));
+  for (const s of [-1, 1]) P.add(cap([s * 0.2, by, 0.4], [s * 0.26, by + 0.02, 0.7], 0.08, 0.035, c1, { k: 0.04, sc: [0.6, 1, 1], pv: [s * 0.2, by, 0.4] }));
+  P.paint(ell([0, by - 0.1, 0], [0.7, 0.08, 0.45]), mix(K.c2, WHITE, 0.55), 0.03);
+  const A = { y: by + 0.78, z0: 0.25, z1: -0.35, w: 0.3, top: topFn(P), neck: [0, by + 0.9, 0.38], wingZ: 0 };
+  M.body = K.add(T, K.mesh(P, 'body'));
+  for (let i = 0; i < 8; i++) { const a = -1.2 + i * 0.4; const LV = new Part([i < 7 ? cap([Math.sin(a) * 0.06, by + 0.165, 0.12], [Math.sin(a) * 0.55, by + 0.075, -0.02 - Math.cos(a) * 0.25], 0.03, 0.02, G2_LAVA, { k: 0.01 }) : cap([0, by + 0.175, 0.25], [0, by + 0.155, -0.4], 0.032, 0.02, G2_LAVA, { k: 0.01 })]); K.add(T, K.mesh(LV, 'tiny'), { emis: [0.85, 0.32, 0.03], outline: 0.2 }); }
+  for (const s of [-1, 1]) {
+    const j = K.joint(T, [s * 0.62, by, -0.04]);
+    const FP = new Part([ell([s * 0.32, 0, -0.06], [0.38, 0.05, 0.26], c1, { k: 0, rot: [0, s * 0.45, 0] })]);
+    FP.add(cap([s * 0.5, 0, -0.12], [s * 0.85, 0.04, -0.34], 0.065, 0.012, c1, { k: 0.04, sc: [1, 0.5, 1], pv: [s * 0.5, 0, -0.12] }));
+    K.add(j, K.mesh(FP, 'small'));
+    K.add(j, K.mesh(new Part([cap([s * 0.04, 0.05, 0], [s * 0.72, 0.05, -0.26], 0.02, 0.01, G2_LAVA, { k: 0 })]), 'tiny'), { emis: [0.85, 0.32, 0.03], outline: 0.2 });
+    j.side = s; M.fins.push(j);
+  }
+  tailChain(K, M, T, [0, by, -0.48], 6, 0.17, 0.035, c1, 1.62, 0.02, 0, K.c2, 0.65);
+  const head = { part: P, R: 0.22, c: [0, by + 0.02, 0.3], node: T };
+  M.head = null; M.headInfo = head;
+  M.anchor = A; M.tailBase = null; M.noEars = true;
+  M.eyeCfg = { dir: [0.72, 0.4, 0.56], size: 0.55 };
+  M.faceCfg = { nose: false, blush: false, mouthY: -0.07 };
+  return head;
+};
+
+// 246 トキワタリ：懐中時計の 体の 時の 精。文字盤が 顔で、時計の 針の 腕・時を あらわす 光の 羽・
+//   くさりの しっぽ（先に 小さな 砂時計）・まわりを 回る 砂時計と 歯車・ゆっくり 回る 時の 輪
+G2['トキワタリ'] = (K, M, pv) => { K.ex.delete('runes'); K.ex.delete('gem'); K.ex.delete('halo'); return planBlob(K, M, pv, { float: 1, shape: (K, M, pv, P, R, by) => {
+  const brass = mix(K.c1, [0.95, 0.74, 0.32], 0.45), brassL = mix(brass, WHITE, 0.3), brassD = mix(brass, [0.35, 0.22, 0.1], 0.45), cream = [1, 0.97, 0.88], cyan = K.c2, navy = [0.16, 0.2, 0.42];
+  // 時計の 本体（前後に 厚みの ある 丸）と 文字盤
+  P.add(ell([0, by, 0], [R * 0.64, R * 0.64, R * 0.34], brass, { k: 0 }));
+  P.add(tor([0, by, R * 0.2], R * 0.6, R * 0.075, brassL, { k: R * 0.03, rot: [Math.PI / 2, 0, 0] }));
+  P.add(tor([0, by, -R * 0.16], R * 0.58, R * 0.06, brassD, { k: R * 0.03, rot: [Math.PI / 2, 0, 0] }));
+  P.paint(cap([0, by, R * 0.05], [0, by, R * 0.6], R * 0.52, R * 0.52), cream, R * 0.02);
+  P.paint(cap([0, by, R * 0.05], [0, by, R * 0.6], R * 0.07, R * 0.07), brass, R * 0.01);
+  for (let i = 0; i < 12; i++) { const a = i / 12 * Math.PI * 2, big = i % 3 === 0; P.paint(box([Math.sin(a) * R * 0.44, by + Math.cos(a) * R * 0.44, R * 0.3], [R * (big ? 0.035 : 0.02), R * (big ? 0.07 : 0.04), R * 0.3], 0, null, { rot: [0, 0, -a] }), big ? navy : [0.5, 0.46, 0.55], R * 0.008); }
+  for (let i = 0; i < 16; i++) { const a = i / 16 * Math.PI * 2; P.add(sph([Math.sin(a) * R * 0.64, by + Math.cos(a) * R * 0.64, R * 0.02], R * 0.045, brassL, { k: R * 0.02 })); }
+  // りゅうず（上の つまみ）と つり輪
+  P.add(cap([0, by + R * 0.6, 0], [0, by + R * 0.76, 0], R * 0.08, R * 0.08, brassD, { k: R * 0.03 }));
+  P.add(sph([0, by + R * 0.82, 0], R * 0.12, brass, { k: R * 0.03 }));
+  for (let i = 0; i < 8; i++) { const a = i / 8 * Math.PI * 2; P.paint(box([Math.cos(a) * R * 0.12, by + R * 0.82, Math.sin(a) * R * 0.12], [R * 0.02, R * 0.12, R * 0.02], 0), brassD, R * 0.01); }
+  P.add(tor([0, by + R * 1.04, 0], R * 0.16, R * 0.035, brassL, { k: R * 0.01, rot: [Math.PI / 2, 0, 0] }));
+  for (const sx of [-1, 1]) P.add(cap([sx * R * 0.42, by + R * 0.45, 0], [sx * R * 0.52, by + R * 0.56, 0], R * 0.05, R * 0.05, brassD, { k: R * 0.02 }));
+  // 文字盤の ガラス
+  const gl = K.prim(pv, PRIM.sphereLo, WHITE, [-R * 0.26, by + R * 0.3, R * 0.27], [R * 0.09, R * 0.05, R * 0.02], [0, 0, 0.6], { alpha: 0.7, unlit: true, outline: 0 }); gl.transparent = true;
+  // 時計の 針の 腕（長い 針と 短い 針）
+  for (const [sx, L] of [[-1, 0.62], [1, 0.48]]) {
+    const j = K.joint(pv, [sx * R * 0.6, by - R * 0.05, R * 0.05], [0, 0, sx * 0.85]);
+    const AP = new Part([cap([0, 0, 0], [0, -R * L, 0], R * 0.045, R * 0.03, navy, { k: 0 }), sph([0, 0, 0], R * 0.075, brass, { k: R * 0.02 })]);
+    AP.add(ell([0, -R * L * 0.7, 0], [R * 0.08, R * 0.12, R * 0.025], navy, { k: R * 0.02 }));
+    K.add(j, K.mesh(AP, 'tiny'));
+    K.prim(j, PRIM.gem, cyan, [0, -R * (L + 0.07), 0], [R * 0.07, R * 0.1, R * 0.03], null, { emis: cyan.map(v => v * 0.6), mat: MAT.glossy, outline: 0.5 });
+    j.r0 = j.rot.slice(); M.arms.push(j);
+  }
+  // 時の 羽（すきとおった 光の 羽根）
+  for (const sx of [-1, 1]) {
+    const j = K.joint(pv, [sx * R * 0.3, by + R * 0.15, -R * 0.3]);
+    for (const [k, ang, len] of [[0, 0.75, 0.95], [1, 0.3, 0.8], [2, -0.12, 0.6]]) {
+      const d = [sx * Math.cos(ang), Math.sin(ang)], pp = [-d[1], d[0]], pts = [];
+      for (let i = 0; i <= 8; i++) { const t = i / 8, w = R * 0.16 * Math.sin(Math.PI * Math.min(1, t * 0.95 + 0.04)); pts.push([d[0] * R * len * t + pp[0] * w, d[1] * R * len * t + pp[1] * w, -R * 0.1 * t - k * R * 0.04]); }
+      for (let i = 8; i >= 0; i--) { const t = i / 8, w = R * 0.16 * Math.sin(Math.PI * Math.min(1, t * 0.95 + 0.04)); pts.push([d[0] * R * len * t - pp[0] * w, d[1] * R * len * t - pp[1] * w, -R * 0.1 * t - k * R * 0.04]); }
+      const n = g2Fan(K, j, [0, 0, -k * R * 0.04], pts, mix(cyan, WHITE, 0.45), mix(cyan, WHITE, 0.2), { alpha: 0.72, emis: cyan.map(v => v * 0.25), outline: 0.5 }); n.transparent = true;
+    }
+    j.side = sx; M.wings.push(j);
+  }
+  // くさりの しっぽ（先に 小さな 砂時計）
+  const tip = tailChain(K, M, pv, [0, by - R * 0.62, -R * 0.02], 5, R * 0.16, R * 0.03, brassD, 0.35, 0.22, 0, null, 0.2);
+  M.chains[M.chains.length - 1].forEach((j, i) => K.prim(j, PRIM.torus, brassL, [0, -R * 0.08, 0], [R * 0.07, R * 0.07, R * 0.07], [0, i % 2 ? Math.PI / 2 : 0, Math.PI / 2], { mat: MAT.glossy, outline: 0.4 }));
+  const hg = (parent, pos, s) => { const j = K.joint(parent, pos); K.prim(j, PRIM.cone, [0.85, 0.97, 1], [0, 0, 0], [s * 0.7, s, s * 0.7], null, { alpha: 0.5, outline: 0.4 }).transparent = true; K.prim(j, PRIM.cone, [0.85, 0.97, 1], [0, 0, 0], [s * 0.7, s, s * 0.7], [Math.PI, 0, 0], { alpha: 0.5, outline: 0.4 }).transparent = true; g2Glow(K, j, PRIM.cone, mix(cyan, WHITE, 0.3), [0, -s, 0], [s * 0.5, s * 0.55, s * 0.5], null, 0.5, { outline: 0 }); for (const y of [-1, 1]) K.prim(j, PRIM.cyl, brass, [0, y > 0 ? s : -s - s * 0.12, 0], [s * 0.8, s * 0.12, s * 0.8]); return j; };
+  hg(tip, [0, -R * 0.12, 0], R * 0.1);
+  // まわりを 回る 砂時計と 歯車
+  M.orbit = K.joint(pv, [0, by, 0]);
+  for (let i = 0; i < 2; i++) { const a = i * Math.PI + 0.6; hg(M.orbit, [Math.cos(a) * R * 1.2, (i ? 0.25 : -0.15) * R, Math.sin(a) * R * 1.2], R * 0.13); }
+  const GP = new Part([tor([0, 0, 0], R * 0.14, R * 0.035, brass, { k: 0, rot: [Math.PI / 2, 0, 0] })]);
+  for (let i = 0; i < 8; i++) { const a = i / 8 * Math.PI * 2; GP.add(box([Math.cos(a) * R * 0.19, Math.sin(a) * R * 0.19, 0], [R * 0.035, R * 0.035, R * 0.03], R * 0.008, brass, { k: R * 0.008, rot: [0, 0, a] })); }
+  const gg = K.mesh(GP, 'tiny');
+  for (let i = 0; i < 2; i++) { const a = i * Math.PI + 2.2; const g = K.joint(M.orbit, [Math.cos(a) * R * 1.15, (i ? -0.3 : 0.35) * R, Math.sin(a) * R * 1.15], [0, -a + Math.PI / 2, 0]); const sj = K.joint(g, [0, 0, 0]); g2Spin(M, sj, 2, i ? 2.2 : -2.2); K.add(sj, gg, { mat: MAT.glossy }); }
+  // 時の 輪（12の しるしが ついた 光の 輪）
+  const ring = K.joint(pv, [0, by - R * 0.05, 0], [0.32, 0, 0.18]), rj = K.joint(ring, [0, 0, 0]); g2Spin(M, rj, 1, 0.5);
+  g2Glow(K, rj, PRIM.torus, cyan, [0, 0, 0], [R * 1.12, R * 0.06, R * 1.12], null, 0.55, { outline: 0 });
+  for (let i = 0; i < 12; i++) { const a = i / 12 * Math.PI * 2; g2Glow(K, rj, PRIM.gem, i % 3 ? mix(cyan, WHITE, 0.5) : [1, 0.9, 0.5], [Math.cos(a) * R * 1.12, 0, Math.sin(a) * R * 1.12], [R * 0.035, R * (i % 3 ? 0.06 : 0.1), R * 0.035], null, 0.7, { outline: 0 }); }
+  return { hc: [0, by, R * 0.05], eyeDir: [0.3, 0.1, 0.95], eyeSize: 0.46, arms: false, mouthY: -R * 0.22, hr: R * 0.62 };
+} }); };
+
+// 247 ゼノドラグ：2つの 頭を もつ 宇宙の 竜。背に 光る 結晶、長い しっぽの 先にも 結晶
+G2['ゼノドラグ'] = (K, M, pv) => {
+  K.ex.delete('shards');
+  const head = planQuad(K, M, pv, { L: 1.05, legH: .62, chest: [.36, .4, .42], hip: [.3, .32, .34], lift: .16, neck: .55, neckA: .55, head: .27, snout: 1.25, legR: .11, claws: 1, ears: 'none', tail: 'none', horn: 2, wings: 1, brow: 1, back: 'crystal' });
+  const A = M.anchor, D = K.joint(pv, [0, 0, 0]), hp = M.head.pos;
+  const n0 = [-A.w * 0.45, A.neck[1] - 0.25, A.neck[2] - 0.05], n1 = [-0.42, hp[1] - 0.22, hp[2] - 0.12];
+  K.add(D, K.mesh(new Part([cap(n0, n1, 0.13, 0.1, K.c1, { k: 0 })]), 'limb'));
+  const R2 = head.R * 0.88;
+  const h2 = mammalHead(K, R2, { snout: 1.1, brow: true });
+  const hj2 = K.joint(D, [n1[0] - 0.05, n1[1] + R2 * 0.3, n1[2] + R2 * 0.3], [0.15, -0.35, 0.1]);
+  K.add(hj2, K.mesh(h2.part, 'head'));
+  h2.node = hj2;
+  addEyes(K, M, h2, { dir: [0.55, 0.22, 0.8], size: 0.5, style: 'glow', glow: true, iris: K.glow });
+  addHorns(K, h2, 2, 'sweep');
+  const tip = g2Tail(K, M, pv, M.tailBase, 7, 0.17, 0.09, K.c1, 1.75, 0.08, 0, null);
+  g2Gem(K, tip, G2_CRYS, [0, 0, 0], [0, -1, 0], 0.48, 0.1, 0.7);
+  for (let i = 0; i < 6; i++) { const z = lerp(A.z0, A.z1, i / 5); for (const s of [-1, 1]) g2Glow(K, D, PRIM.sphereLo, K.c2, [s * A.w * 0.75, A.y + 0.05 - i * 0.01, z], [0.03], null, 0.9, { outline: 0 }); }
+  M.seatSkip = [D];
+  M.tailBase = null;
+  return head;
+};
+
+// 248 ハザードン：毒の ドラム缶の 体（黄色と 黒の しま）、パイプの 腕、ガスマスクの 顔、もれる 毒
+G2['ハザードン'] = (K, M, pv) => {
+  K.ex.delete('shards'); K.ex.delete('spikes');
+  const B = { hipY: .42, tH: .62, tw: .36, sh: 1.25, waist: 1.15, head: .27, snout: 0, aL: .55, ar: .1, fist: 1.7, lr: .12, foot: 1.4, visor: 1 };
+  const head = planBiped(K, M, pv, B);
+  const s = K.st, hipY = B.hipY * lerp(0.78, 1.03, s), tH = B.tH * lerp(0.86, 1.03, s), tw = B.tw * lerp(0.96, 1.05, s);
+  const drum = mix(K.c1, [0.35, 0.4, 0.3], 0.2), y0 = hipY - 0.02, y1 = hipY + tH * 0.98, r = tw * 1.18;
+  const P = new Part([cap([0, y0 - 0.1, 0], [0, y1 + 0.1, 0], r, r, drum, { k: 0 })]);
+  P.add(box([0, y0 - 1, 0], [2, 1, 2], 0, null, { op: 'sub', k: 0.02 }));
+  P.add(box([0, y1 + 1, 0], [2, 1, 2], 0, null, { op: 'sub', k: 0.02 }));
+  for (const y of [y0 + 0.05, (y0 + y1) / 2, y1 - 0.05]) P.add(tor([0, y, 0], r * 1.0, 0.03, mix(drum, K.dark, 0.3), { k: 0.01 }));
+  const ym = (y0 + y1) / 2;
+  for (let i = 0; i < 10; i++) { const a = i / 10 * Math.PI * 2; P.paint(box([Math.sin(a) * r, ym + (y1 - ym) * 0.48, Math.cos(a) * r], [0.06, 0.07, 0.09], 0, null, { rot: [0, a, 0.7] }), i % 2 ? [0.12, 0.12, 0.12] : [1, 0.85, 0.15], 0.006); }
+  P.paint(sph([0, ym, r], 0.14), [1, 0.85, 0.15], 0.01);
+  P.paint(cap([0, ym + 0.06, r], [0, ym - 0.06, r], 0.03, 0.02), [0.12, 0.12, 0.12], 0.005);
+  K.add(pv, K.mesh(P, 'body'), { mat: MAT.glossy });
+  const goo = mix(K.c2, WHITE, 0.1);
+  for (const [a, h] of [[0.5, 0.35], [-0.9, 0.25], [2.4, 0.3]]) g2Glow(K, pv, PRIM.drop, goo, [Math.sin(a) * r * 1.02, y1 - h * 0.6, Math.cos(a) * r * 1.02], [0.05, h * 0.3, 0.05], [Math.PI, 0, 0], 0.6);
+  g2Glow(K, pv, PRIM.disc, goo, [0, y1 + 0.005, 0], [r * 0.8], null, 0.5, { outline: 0 });
+  const R = head.R;
+  K.add(M.head, K.mesh(new Part([cap([0, -R * 0.45, R * 0.7], [0, -R * 0.65, R * 1.25], R * 0.32, R * 0.3, [0.35, 0.36, 0.38], { k: 0 }), tor([0, -R * 0.68, R * 1.28], R * 0.26, R * 0.05, K.c2, { k: R * 0.02, rot: [Math.PI / 2 - 0.35, 0, 0] })]), 'small'), { mat: MAT.glossy });
+  for (const sx of [-1, 1]) tailChain(K, M, pv, [sx * r * 0.6, y1 - 0.02, -r * 0.55], 4, 0.14, 0.035, [0.45, 0.46, 0.5], 3.0, -0.35, sx * 0.4, null, 0.1);
+  return head;
+};
+
+// 249 フェニクシア：うしろに 大きく ひろげた クジャクのような 炎の 尾羽（光る 目玉もよう）
+G2['フェニクシア'] = (K, M, pv) => {
+  M.rideBoost = 1.45;
+  K.f.tail = 'none';
+  const head = planBird(K, M, pv, { body: [.27, .33, .4], by: .7, head: .24, neck: .26, legL: .32, wing: 1.45, beak: .85, hook: 1, crest: 1, tilt: .3, talon: 1 });
+  const F = K.joint(pv, M.tailBase, [-0.35, 0, 0]), P = new Part(), N = 11;
+  for (let i = 0; i < N; i++) {
+    const th = -1.4 + i / (N - 1) * 2.8, d = [Math.sin(th), Math.cos(th) * 0.95 + 0.1, -0.22], L = 1.45 - Math.abs(th) * 0.22;
+    const e = [d[0] * L, d[1] * L, d[2] * L];
+    P.add(cap([0, 0, 0], e, 0.025, 0.012, mix(K.c2, K.c1, 0.3), { k: 0.01 }));
+    P.add(ell([e[0] * 0.8, e[1] * 0.8, e[2] * 0.8], [0.15, 0.3, 0.025], i % 2 ? K.c1 : mix(K.c1, [1, 0.3, 0.2], 0.35), { k: 0.03, rot: [0, 0, -th] }));
+    P.paint(ell([e[0] * 0.84, e[1] * 0.84, e[2] * 0.84], [0.1, 0.15, 0.06], null, { rot: [0, 0, -th] }), [1, 0.85, 0.3], 0.02);
+    g2Glow(K, F, PRIM.sphereLo, [0.35, 0.9, 1], [e[0] * 0.85, e[1] * 0.85, e[2] * 0.85 + 0.03], [0.065, 0.09, 0.02], [0, 0, -th], 0.7, { outline: 0.5 });
+    if (i % 2 === 0) addFlame(K, M, F, [e[0] * 1.02, e[1] * 1.02, e[2] * 1.02], 0.45, [0, 0, -th]);
+  }
+  K.add(F, K.mesh(P, 'small'));
+  const R = head.R, HP = new Part();
+  for (let i = 0; i < 3; i++) { const a = (i - 1) * 0.35; const e = [Math.sin(a) * R * 0.6, R * 1.9, -R * 1.5]; HP.add(cap([0, R * 0.6, -R * 0.2], e, R * 0.07, R * 0.03, K.c2, { k: R * 0.04 })); HP.add(ell(e, [R * 0.14, R * 0.24, R * 0.06], mix(K.c1, [1, 0.3, 0.2], 0.3), { k: R * 0.04 })); }
+  K.add(M.head, K.mesh(HP, 'small'));
+  M.tailBase = null;
+  return head;
+};
+
 // 姿の種類 → 作り方
 const ARCH = {};
 for (const [tbl, fn] of [[QA, planQuad], [BA, planBiped], [BRD, planBird], [FSH, planFish], [SRP, planSerpent], [BUG, planBug], [BLB, planBlob], [PLT, planPlant], [GLM, planGolem], [TRT, planTurtle]]) for (const k in tbl) ARCH[k] = { fn, p: tbl[k] };
 // 設計表にない種の予備（体型ごと）
 const ARCH_FALLBACK = { quad: 'cat', biped: 'kid', plant: 'bud', golem: 'rockman', bird: 'songbird', fish: 'goldfish', serpent: 'snake', bug: 'beetle', blob: 'puff', turtle: 'turtle', dragon: 'wyvern' };
+
+// ---------------- 伝説：スカイドラゴン（蒼穹の竜） ----------------
+//  細く しなやかな 体・長い 首・羽根の ふちどりが ある 大きな 翼・後ろへ 流れる 白い たてがみ・
+//  金の 先を もつ 長い 角・長い しっぽの 先に 羽根の 扇と 風の 輪
+function planSkyDragon(K, M, pv) {
+  M.custom = true; M.dragon = true;
+  const blue = K.c1, white = K.c2, deep = mix(blue, [0.03, 0.08, 0.3], 0.5), sky = mix(blue, [0.55, 0.9, 1], 0.45);
+  const cyan = [0.5, 0.95, 1], ivory = [1, 0.97, 0.9], gold = [1, 0.84, 0.42];
+  // 胴：むねを 張り、腰へ 細く しまる
+  const P = new Part([ell([0, 1.2, 0.36], [0.4, 0.5, 0.5], blue, { k: 0, rot: [-0.38, 0, 0] })]);
+  P.add(ell([0, 1.06, -0.18], [0.31, 0.36, 0.5], blue, { k: 0.28 }));
+  P.add(ell([0, 1.03, -0.64], [0.35, 0.38, 0.4], blue, { k: 0.22 }));
+  for (const s of [-1, 1]) { P.add(ell([s * 0.36, 1.24, 0.42], [0.22, 0.29, 0.27], blue, { k: 0.15 })); P.add(ell([s * 0.3, 1.04, -0.66], [0.22, 0.31, 0.29], blue, { k: 0.16 })); }
+  // 首：長く S字に
+  const NK = [[0, 1.42, 0.62], [0, 1.86, 0.88], [0, 2.22, 0.96], [0, 2.48, 1.12]];
+  for (let i = 0; i < 3; i++) P.add(cap(NK[i], NK[i + 1], 0.28 - i * 0.05, 0.22 - i * 0.04, blue, { k: 0.14 }));
+  // おなか・首の 前は 白い うろこ、背中は 濃い 青の すじ
+  P.paint(ell([0, 0.82, 0.05], [0.28, 0.32, 0.95]), white, 0.04);
+  P.paint(cap([0, 1.28, 0.86], [0, 2.4, 1.26], 0.17, 0.11), white, 0.04);
+  for (let i = 0; i < 7; i++) P.paint(box([0, 0.74 + i * 0.012, 0.6 - i * 0.2], [0.42, 0.18, 0.01], 0, null, { rot: [0.5, 0, 0] }), mix(white, sky, 0.5), 0.01);
+  P.paint(cap([0, 1.62, 0.35], [0, 1.4, -0.82], 0.2, 0.18), deep, 0.12);
+  for (const s of [-1, 1]) for (let i = 0; i < 5; i++) P.paint(box([s * 0.3, 1.2 - i * 0.04, 0.3 - i * 0.24], [0.012, 0.16, 0.05], 0, null, { rot: [0.2, 0, s * 0.5] }), cyan, 0.012);
+  M.body = K.add(pv, K.mesh(P, 'body'));
+  // 背びれ：羽根のような 白い ひれ（首から しっぽの 付け根まで）
+  const FN = new Part();
+  const spine = [[0, 2.62, 1.12], [0, 2.38, 0.98], [0, 2.1, 0.9], [0, 1.82, 0.78], [0, 1.62, 0.5], [0, 1.52, 0.18], [0, 1.45, -0.14], [0, 1.4, -0.44], [0, 1.32, -0.72], [0, 1.2, -0.96]];
+  spine.forEach((b, i) => { const L = 0.3 - Math.abs(i - 4.5) * 0.022; FN.add(cap([b[0], b[1] - 0.1, b[2]], [b[0], b[1] + L * 0.7, b[2] - L * 1.1], 0.13, 0.012, i % 2 ? white : sky, { k: 0.03, sc: [0.3, 1, 1], pv: b })); });
+  K.add(pv, K.mesh(FN, 'small'));
+  // 脚：すらりと 長く、手首に 羽毛、白い 爪
+  const leg = (front) => {
+    const len = front ? 0.98 : 0.92, lr = 0.14;
+    const L = new Part([sph([0, 0, 0], lr * 1.65, blue, { k: 0 })]);
+    L.add(ell([0, -len * 0.2, front ? 0.03 : -0.08], [lr * 1.45, len * 0.32, lr * 1.6], blue, { k: lr * 0.6 }));
+    L.add(cap([0, -len * 0.38, front ? 0.05 : -0.12], [0, -len * 0.86, front ? 0.03 : -0.02], lr * 1.0, lr * 0.78, blue, { k: lr * 0.5 }));
+    L.add(ell([0, -len + lr * 0.45, lr * 0.45], [lr * 1.2, lr * 0.55, lr * 1.6], deep, { k: lr * 0.5 }));
+    for (const x of [-1, 0, 1]) L.add(cap([x * lr * 0.62, -len + lr * 0.38, lr * 1.5], [x * lr * 0.8, -len + lr * 0.02, lr * 2.45], lr * 0.26, lr * 0.02, ivory, { k: lr * 0.1 }));
+    for (let i = 0; i < 4; i++) { const a = (i - 1.5) * 0.5; L.add(cap([Math.sin(a) * lr * 0.8, -len * 0.62, -lr * 0.5], [Math.sin(a) * lr * 1.5, -len * 0.8, -lr * 2.2], lr * 0.32, lr * 0.03, white, { k: lr * 0.12 })); }
+    L.paint(box([0, -len * 0.5, 0], [1, 0.03, 1], 0), cyan, 0.01);
+    return K.mesh(L, 'limb');
+  };
+  const gF = leg(true), gH = leg(false);
+  for (const [sx, front] of [[-1, 1], [1, 1], [-1, 0], [1, 0]]) { const top = front ? 0.98 : 0.92; const j = K.joint(pv, [sx * (front ? 0.36 : 0.3), top, front ? 0.42 : -0.66]); K.add(j, front ? gF : gH); j.len = top; M.legs.push(j); }
+  // 頭：細長く りりしい 顔・まゆの 骨・ほおの 白い ひれ
+  const R = 0.34;
+  const H = new Part([ell([0, 0, 0], [R * 0.86, R * 0.74, R * 1.0], blue, { k: 0 })]);
+  H.add(ell([0, -R * 0.14, R * 1.12], [R * 0.52, R * 0.4, R * 1.05], blue, { k: R * 0.35 }));
+  H.add(ell([0, -R * 0.5, R * 0.95], [R * 0.48, R * 0.2, R * 0.95], white, { k: R * 0.2 }));
+  for (const s of [-1, 1]) {
+    H.add(cap([s * R * 0.25, R * 0.38, R * 1.02], [s * R * 0.58, R * 0.5, R * 0.0], R * 0.15, R * 0.09, blue, { k: R * 0.1 }));
+    for (let i = 0; i < 3; i++) H.add(cap([s * R * 0.62, -R * (0.15 + i * 0.22), R * 0.1], [s * R * (1.35 - i * 0.18), -R * (0.0 + i * 0.25), -R * (0.85 - i * 0.12)], R * (0.18 - i * 0.03), R * 0.02, i ? white : sky, { k: R * 0.08, sc: [1, 0.35, 1], pv: [s * R * 0.62, -R * (0.15 + i * 0.22), R * 0.1] }));
+  }
+  H.paint(ell([0, -R * 0.68, R * 0.9], [R * 0.44, R * 0.18, R * 0.85]), white, R * 0.06);
+  for (const s of [-1, 1]) H.paint(sph([s * R * 0.18, R * 0.05, R * 2.12], R * 0.07), deep, R * 0.02);
+  H.paint(cap([0, R * 0.62, R * 0.9], [0, R * 0.72, -R * 0.4], R * 0.08, R * 0.08), cyan, R * 0.02);
+  const head = { part: H, R, c: [0, R * 0.05, R * 0.2] };
+  const hj = K.joint(pv, [0, 2.62, 1.3], [0.16, 0, 0]);
+  K.add(hj, K.mesh(H, 'head'));
+  head.node = hj; M.head = hj; M.headInfo = head;
+  // 角：後ろへ 長く 流れる 2本（先は 金）＋ その下に 2本 ＋ 鼻先の 小さな 角
+  const HP = new Part();
+  const sweep = (s, base, segs, len, rad, up, out) => { let prev = base; for (let i = 1; i <= segs; i++) { const t = i / segs; const p = [base[0] + s * out * len * t, base[1] + Math.sin(t * Math.PI * 0.5) * up * len - t * t * len * 0.12, base[2] - len * t]; HP.add(cap(prev, p, rad * (1 - (i - 1) / segs * 0.85), rad * (1 - i / segs * 0.93), i > segs - 3 ? gold : ivory, { k: rad * 0.2 })); prev = p; } };
+  for (const s of [-1, 1]) { sweep(s, [s * R * 0.38, R * 0.56, -R * 0.05], 8, R * 3.9, R * 0.26, 0.55, 0.22); sweep(s, [s * R * 0.72, R * 0.18, -R * 0.15], 5, R * 2.0, R * 0.16, 0.25, 0.5); }
+  HP.add(cap([0, R * 0.3, R * 1.75], [0, R * 0.7, R * 1.55], R * 0.12, R * 0.02, ivory, { k: R * 0.06 }));
+  K.add(hj, K.mesh(HP, 'small'), { mat: MAT.glossy });
+  // ひたいの 宝石（かんむり）
+  K.prim(hj, PRIM.gem, cyan, [0, R * 0.72, R * 0.55], [R * 0.13, R * 0.22, R * 0.13], [Math.PI / 2 - 0.5, 0, 0], { emis: [0.25, 0.6, 0.75], mat: MAT.glossy, outline: 0.6 });
+  // 目（光る）・キバ
+  addEyes(K, M, head, { dir: [0.55, 0.38, 0.74], size: 0.42, style: 'sharp', iris: cyan, glow: true });
+  const FP = new Part();
+  for (const s of [-1, 1]) for (let i = 0; i < 2; i++) FP.add(cap([s * R * (0.36 - i * 0.08), -R * 0.36, R * (1.4 + i * 0.3)], [s * R * (0.36 - i * 0.08), -R * 0.72, R * (1.42 + i * 0.3)], R * 0.07, R * 0.01, WHITE, { k: 0.005 }));
+  K.add(hj, K.mesh(FP, 'tiny'), { mat: MAT.glossy, outline: 0.5 });
+  // たてがみ：頭の うしろから 首すじへ 流れる 白い 羽毛
+  const MN = new Part();
+  for (let i = 0; i < 6; i++) { const t = i / 5, b = [0, lerp(2.72, 1.75, t), lerp(1.08, 0.6, t)], L = 0.62 - t * 0.22; for (const s of [-1, 1]) MN.add(cap([s * 0.06, b[1], b[2]], [s * (0.22 - t * 0.08), b[1] - 0.04 - t * 0.04, b[2] - L], 0.11, 0.015, i % 2 ? mix(white, sky, 0.25) : white, { k: 0.05 })); }
+  K.add(pv, K.mesh(MN, 'small'));
+  // 翼：大きく 広げる（空色の 膜）＋ うしろの ふちに 白い 羽根
+  const nw = M.wings.length;
+  addWings(K, M, pv, { y: 1.5, z0: 0.45, z1: -0.3, w: 0.62, top: () => 1.58, wingZ: 0.22, mem: mix(blue, sky, 0.5), memIn: mix(white, sky, 0.35), memEmis: [0.03, 0.1, 0.16] });
+  const w = 0.62 * 2.0;
+  for (const j of M.wings.slice(nw)) {
+    const s = j.side, WP = new Part();
+    const tips = [[s * w * 1.45, w * 0.78, -w * 0.12], [s * w * 1.5, w * 0.28, -w * 0.55], [s * w * 1.18, -w * 0.05, -w * 0.88], [s * w * 0.72, -w * 0.12, -w * 1.0]];
+    const wr = [s * w * 0.78, w * 0.52, -w * 0.2], sh0 = [0, 0, 0], back = [s * w * 0.12, -w * 0.08, -w * 0.62];
+    const edges = [[tips[0], tips[1], wr], [tips[1], tips[2], wr], [tips[2], tips[3], wr], [tips[3], back, sh0]];
+    edges.forEach(([a, b, to], e) => { const n = e === 3 ? 4 : 5; for (let k = 0; k < n; k++) {
+      const t = (k + 0.5) / n, bow = Math.sin(t * Math.PI) * 0.28, q = [lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2], b[2], t)];
+      const p = [q[0] + (to[0] - q[0]) * bow, q[1] + (to[1] - q[1]) * bow, q[2] + (to[2] - q[2]) * bow];
+      const d = [p[0] - wr[0] * 0.7, p[1] - wr[1] * 0.7 - 0.25, p[2] - wr[2] * 0.7 - 0.2], l = Math.hypot(d[0], d[1], d[2]);
+      const L = (e === 3 ? 0.3 : 0.42) * (1 - Math.abs(t - 0.5) * 0.3);
+      WP.add(cap([p[0] - d[0] / l * 0.1, p[1] - d[1] / l * 0.1, p[2] - d[2] / l * 0.1], [p[0] + d[0] / l * L, p[1] + d[1] / l * L, p[2] + d[2] / l * L], 0.075, 0.03, (k + e) % 2 ? white : mix(white, sky, 0.4), { k: 0.025 }));
+    } });
+    K.add(j, K.mesh(WP, 'small'));
+    K.prim(j, PRIM.gem, cyan, tips[0], [0.05, 0.1, 0.05], [0, 0, -s * 0.6], { emis: [0.25, 0.6, 0.75], mat: MAT.glossy, outline: 0.5 });
+  }
+  // しっぽ：長く しなやか。先に 羽根の 扇と 風の 輪
+  const tip = tailChain(K, M, pv, [0, 1.08, -0.95], 9, 0.24, 0.24, blue, 1.95, 0.06, 0, null, 0.82);
+  M.chains[M.chains.length - 1].forEach((j, i) => { if (i < 8) K.add(j, K.mesh(new Part([cap([0, -0.05, -0.04], [0, -0.16, -0.2 + i * 0.008], 0.07 - i * 0.005, 0.01, i % 2 ? white : sky, { k: 0.02, sc: [0.3, 1, 1], pv: [0, -0.05, -0.04] })]), 'tiny')); });
+  const TF = new Part();
+  for (let i = 0; i < 5; i++) { const a = (i - 2) * 0.32; TF.add(ell([Math.sin(a) * 0.3, -0.32 * Math.cos(a), 0], [0.09, 0.36, 0.03], i % 2 ? white : mix(white, sky, 0.4), { k: 0.03, rot: [0, 0, a] })); }
+  TF.paint(sph([0, -0.6, 0], 0.18), sky, 0.05);
+  K.add(tip, K.mesh(TF, 'small'));
+  const ring = K.joint(tip, [0, -0.25, 0]); g2Spin(M, ring, 1, 2.2);
+  for (let i = 0; i < 2; i++) { const n = K.prim(ring, PRIM.torus, [0.85, 0.97, 1], [0, -i * 0.12, 0], [0.32 - i * 0.08, 0.18, 0.32 - i * 0.08], [0, 0, 0.2], { alpha: 0.45, emis: [0.2, 0.35, 0.45], outline: 0 }); n.transparent = true; n.noDepthWrite = true; }
+  // 体の まわりを 流れる 風の 帯
+  // むねの 風の 宝玉
+  M.orb = K.prim(pv, PRIM.gem, cyan, [0, 1.3, 0.84], [0.11, 0.17, 0.11], [Math.PI / 2, 0, 0], { emis: [0.3, 0.7, 0.85], mat: MAT.glossy, outline: 0.5 });
+  M.anchor = { y: 1.15, z0: 0.55, z1: -0.7, w: 0.5, top: () => 1.58, neck: [0, 2.2, 1.0] };
+  return head;
+}
 
 // ---------------- 伝説：エンテイオウ（炎の王竜） ----------------
 //  胸を張った 王の姿勢・長い首・大きく広げた翼・金の鎧と 王冠のような角・首すじの炎
@@ -2337,6 +3411,15 @@ function addExtras(K, M, head) {
   if (ex.has('sunball')) { if (M.sunTop) { const sb = K.prim(pv, PRIM.sphereHi, [1, 0.65, 0.18], M.sunTop, [0.36], null, { emis: [0.95, 0.5, 0.08], outline: 0.6 }); for (let i = 0; i < 6; i++) addFlame(K, M, pv, [M.sunTop[0] + Math.cos(i) * 0.3, M.sunTop[1] + Math.sin(i) * 0.3, M.sunTop[2]], 0.55, [0, 0, -i + Math.PI / 2]); void sb; } else K.prim(pv, PRIM.sphereHi, [1, 0.65, 0.18], [0, A.y - A.w * 0.2, A.z0 + A.w * 1.2], [A.w * 0.6], null, { emis: [0.85, 0.4, 0.05], outline: 0.6 }); }
   if (ex.has('bubbles')) for (let i = 0; i < 5; i++) K.prim(pv, PRIM.sphereHi, [0.8, 0.95, 1], [Math.sin(i * 2) * A.w * 2, A.y + A.w * (0.5 + i * 0.4), Math.cos(i * 2) * A.w * 1.6], [A.w * (0.18 + (i % 3) * 0.06)], null, { alpha: 0.45, mat: MAT.glossy, outline: 0 }).noDepthWrite = true;
   if (ex.has('glow')) M.body && (M.body.emis = K.glow.map(v => v * 0.14));
+  // 第2部の 新種：隕石の 結晶が 背中から 生えている（光る むらさき）
+  if (ex.has('shards')) {
+    const col = mix(K.glow, [0.78, 0.42, 1], 0.6);
+    for (let i = 0; i < 5; i++) {
+      const z = lerp(A.z0, A.z1, 0.12 + i * 0.19), sd = (i % 2 ? 1 : -1) * A.w * (0.18 + (i % 3) * 0.08);
+      const t = A.top ? A.top(z) : A.y + A.w;
+      K.prim(pv, PRIM.gem, col, [sd, t + A.w * 0.08, z], [A.w * 0.1, A.w * (0.26 + (i % 3) * 0.08), A.w * 0.1], [-0.25, 0, sd > 0 ? -0.45 : 0.45], { emis: col.map(v => v * 0.55), mat: MAT.glossy, outline: 0.6 });
+    }
+  }
   if (ex.has('tentacles')) { const nT = M.longTentacles ? 8 : 6; for (let i = 0; i < nT; i++) { const a = i / nT * Math.PI * 2; tailChain(K, M, pv, [Math.cos(a) * A.w * 0.85, A.y - A.w * 0.75, (A.z0 + A.z1) / 2 + Math.sin(a) * A.w * 0.85], M.longTentacles ? 5 : 3, A.w * 0.5, A.w * 0.13, K.c2, 0.25 * Math.cos(a), 0.18, 0, null, 0.6); } }
   const hand = M.arms[1];
   if (hand && ex.has('sword')) { const P = new Part([box([0, 0, R * 1.3], [R * 0.06, R * 0.14, R * 1.1], R * 0.03, [0.88, 0.92, 1], { k: 0 }), box([0, 0, R * 0.12], [R * 0.32, R * 0.08, R * 0.08], R * 0.03, [0.7, 0.5, 0.2], { k: 0.01 })]); K.add(K.joint(hand, [0, -hand.len - 0.04, 0.1]), K.mesh(P, 'tiny'), { mat: MAT.glossy, emis: [0.08, 0.1, 0.18] }); }
@@ -2358,9 +3441,11 @@ function buildTemplate(spId, shiny, q) {
   const root = new Node(), pivot = new Node(); root.add(pivot);
   const M = { root, pivot, legs: [], arms: [], wings: [], tails: [], fins: [], segs: [], chains: [], flames: [], eyes: [], ears: [], plan: sp.plan, sp, floating: false, height: 1, fierce: K.fierce, cute: K.cute };
   const f = K.f;
-  const legendPlan = sp.name === 'エンテイオウ' ? planEnteiou : sp.name === 'ナルメクシア' ? planNarumexia : null;
+  const legendPlan = sp.name === 'エンテイオウ' ? planEnteiou : sp.name === 'ナルメクシア' ? planNarumexia : sp.name === 'スカイドラゴン' ? planSkyDragon : null;
   let head;
+  const g2 = !legendPlan && G2[sp.name];
   if (legendPlan) head = legendPlan(K, M, pivot);
+  else if (g2) head = g2(K, M, pivot);
   else {
     const ar = ARCH[D.a] || ARCH[ARCH_FALLBACK[sp.plan]] || ARCH.cat;
     head = ar.fn(K, M, pivot, ar.p);
@@ -2378,7 +3463,7 @@ function buildTemplate(spId, shiny, q) {
   if (M.tailBase && !M.custom) addTail(K, M, pivot, M.tailBase, M.tailType ?? f.tail, 1);
   if (!M.custom) addExtras(K, M, head);
   // 大きさ：伝説はそのまま。ほかは設計表の大きさ（s）に合わせて全体を拡大縮小
-  if (sp.legend) M.size = sp.scale || 1;
+  if (sp.legend && (legendPlan || M.custom)) M.size = sp.scale || 1;
   else {
     root.update(null);
     const b = treeBounds(root);
@@ -2407,7 +3492,7 @@ function computeSeat(M, root, sp) {
     const upright = sp.plan === 'biped' || sp.plan === 'golem' || sp.plan === 'plant';
     // 2本足の子は 背中だと 頭と 重なるので、頭の 上に 乗る（肩車）。4本足などは 背中
     if (M.head && !upright && sp.plan !== 'fish' && sp.plan !== 'blob') mark(M.head);
-    for (const k of ['wings', 'tails', 'flames', 'ears']) for (const n of (M[k] || [])) mark(n);
+    for (const k of ['wings', 'tails', 'flames', 'ears', 'seatSkip']) for (const n of (M[k] || [])) mark(n);
     let z0 = 1e9, z1 = -1e9, xm = 0;
     const pts = [];
     root.traverse(n => {
@@ -2518,6 +3603,8 @@ export function animateAnimon(M, dt, state = 'idle', speed = 1) {
   if (M.clam) M.clam.rot[0] = 0.5 + Math.max(0, Math.sin(t * 1.2)) * 0.25;
   if (M.orb) M.orb.rot[1] += dt * 2;
   if (M.orbit) M.orbit.rot[1] += dt * 2.4;
+  if (M.spin) for (const n of M.spin) n.rot[n.spinAx] += dt * n.spinSp;
+  if (M.bob) for (const n of M.bob) n.pos[1] = n.bobY + Math.sin(t * n.bobF + n.bobPh) * n.bobA;
   if (M.pincers) M.pincers.forEach((pc, i) => { pc.rot[0] = Math.sin(t * (battle ? 6 : 2) + i) * 0.15; });
 }
 

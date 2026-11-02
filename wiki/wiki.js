@@ -1,11 +1,12 @@
 // アニモン図鑑 まとめサイト
 //  ゲームの データ（js/data）を そのまま 読みこんで 作るので、ゲームを 更新すると ここも 新しくなる
-import { SPECIES, BY_NAME, RARITY_JA, rarityStars } from '../js/data/species.js';
+import { SPECIES, BY_NAME, RARITY_JA, rarityStars, REGION_JA } from '../js/data/species.js';
 import { MOVES, moveEffects } from '../js/data/moves.js';
 import { ABILITIES } from '../js/data/abilities.js';
 import { ITEMS, CAT_JA } from '../js/data/items.js';
 import { TYPES, TYPE_JA, TYPE_COLOR, typeEff } from '../js/data/types.js';
-import { REGIONS, ORDER, DUNGEONS, DUNGEON_BOSS, encounterTable, howToGet, hiddenInDex } from '../js/data/world.js';
+import { REGIONS, ORDER, PAST_DUNGEONS, DUNGEON_BOSS, encounterTable, howToGet, hiddenInDex, RUINED, RUIN_NAMES, NEW_REGIONS, NEW_DUNGEONS } from '../js/data/world.js';
+const DUNGEONS = { ...PAST_DUNGEONS, ...NEW_DUNGEONS };
 import { portraitAsync, clearPortraitQueue, BLANK } from '../js/render/portrait.js';
 
 // ---------------- 下ごしらえ ----------------
@@ -18,7 +19,7 @@ const img = (sp, shiny = false, alt = '') => `<img data-sp="${sp}"${shiny ? ' da
 const RIDE = { land: ['🐎', '陸を 走れる'], swim: ['🌊', '水を 泳げる'], fly: ['🕊️', '空を 飛べる'] };
 const STAT = [['hp', 'HP'], ['atk', '攻撃'], ['def', '防御'], ['spe', '素早さ']];
 const BOSS_OF = {};   // 種類 → [ダンジョン, Lv]
-for (const [did, [nm, lv]] of Object.entries(DUNGEON_BOSS)) if (BY_NAME[nm]) BOSS_OF[BY_NAME[nm].id] = [did, lv];
+for (const [did, [nm, lv]] of Object.entries({ ...DUNGEON_BOSS, meteor: ['ゼノドラグ', 99] })) if (BY_NAME[nm]) BOSS_OF[BY_NAME[nm].id] = [did, lv];
 
 function tagsOf(s) {
   const t = [];
@@ -29,23 +30,36 @@ function tagsOf(s) {
   if (s.side) t.push(['side', 'サイドストーリー']);
   if (s.rare && !s.legend) t.push(['rare', 'めずらしい']);
   if (s.ride) t.push(['ride', `${RIDE[s.ride][0]} ライド`]);
+  if (s.gen2 && !s.legend) t.push(['gen2', '第2部']);
   return t;
 }
 const tagHtml = (s) => tagsOf(s).map(([k, v]) => `<span class="tag ${k}">${v}</span>`).join('');
 
 // 場所ごとの 出現（陸・水上・ダンジョン）
-const SEA_W = encounterTable('sea', true);
+//  era：past＝第1部の 大陸（隕石の 前・時の扉の 向こう）／ now＝第2部（隕石の あと）
+const SEA_W = encounterTable('sea', true, false);
 const PLACES = [];
 for (const rid of ORDER) {
   const R = REGIONS[rid]; if (!R) continue;
   const tables = [];
-  const land = encounterTable(rid, false); if (land.length) tables.push(['草むら・陸', land]);
-  const water = encounterTable(rid, true); if (water.length && water !== SEA_W) tables.push(['水上', water]);
-  PLACES.push({ id: rid, name: R.name, kind: 'region', lv: R.lv, tables });
+  const land = encounterTable(rid, false, false); if (land.length) tables.push(['草むら・陸', land]);
+  const water = encounterTable(rid, true, false); if (water.length && water !== SEA_W) tables.push(['水上', water]);
+  PLACES.push({ id: rid, era: 'past', name: REGION_JA[rid], kind: 'region', lv: R.lv, tables, ruined: RUINED.has(rid) });
 }
-PLACES.push({ id: 'sea', name: REGIONS.sea.name, kind: 'region', lv: REGIONS.sea.lv, tables: [['水上', SEA_W]] });
-for (const [did, D] of Object.entries(DUNGEONS)) {
-  PLACES.push({ id: did, name: D.name, kind: 'dungeon', lv: D.lv, post: !!D.post, near: REGIONS[D.region]?.name, tables: [['ダンジョンの 中', encounterTable(did)]], boss: DUNGEON_BOSS[did] });
+PLACES.push({ id: 'sea', era: 'past', name: REGION_JA.sea, kind: 'region', lv: REGIONS.sea.lv, tables: [['水上', SEA_W]] });
+for (const [did, D] of Object.entries(PAST_DUNGEONS)) {
+  PLACES.push({ id: did, era: 'past', name: D.name, kind: 'dungeon', lv: D.lv, post: !!D.post, near: REGION_JA[D.region], tables: [['ダンジョンの 中', encounterTable(did, false, false)]], boss: DUNGEON_BOSS[did], ruined: did === 'ruins' });
+}
+// 第2部：隕石の あと（こわれた 地域・新しい 場所）
+for (const rid of [...RUINED, ...Object.keys(NEW_REGIONS)]) {
+  const R = REGIONS[rid] || NEW_REGIONS[rid];
+  const tables = [];
+  const land = encounterTable(rid, false, true); if (land.length) tables.push(['草むら・陸', land]);
+  const water = encounterTable(rid, true, true); if (water.length) tables.push(['水上', water]);
+  PLACES.push({ id: 'now_' + rid, era: 'now', name: RUIN_NAMES[rid] || R.name, kind: 'region', lv: R.lv, tables, was: RUIN_NAMES[rid] ? REGION_JA[rid] : '' });
+}
+for (const [did, D] of Object.entries(NEW_DUNGEONS)) {
+  PLACES.push({ id: did, era: 'now', name: D.name, kind: 'dungeon', lv: D.lv, near: NEW_REGIONS[D.region]?.name, tables: [['ダンジョンの 中', encounterTable(did, false, true)]], boss: ['ゼノドラグ', 99], post: true });
 }
 const PLACE = Object.fromEntries(PLACES.map(p => [p.id, p]));
 // 出現の 一覧（出現率・レベル）と 種類ごとの 生息地
@@ -95,7 +109,7 @@ function viewMons() {
       <input type="search" class="q" placeholder="名前で さがす（ひらがなでも OK）" value="${esc(f.q)}">
       <select class="type"><option value="">すべての タイプ</option>${TYPES.map(t => `<option value="${t}" ${f.type === t ? 'selected' : ''}>${TYPE_JA[t]}</option>`).join('')}</select>
       <select class="place"><option value="">すべての 場所</option>${PLACES.map(p => `<option value="${p.id}" ${f.place === p.id ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select>
-      <select class="tag"><option value="">しぼりこみ なし</option>${[['legend', '伝説'], ['boss', 'ダンジョンの主'], ['starter', '最初の相棒'], ['ride', 'ライドできる'], ['rare', 'めずらしい'], ['side', 'サイドストーリー'], ['final', '最終進化'], ['noevo', '進化しない']].map(([k, v]) => `<option value="${k}" ${f.tag === k ? 'selected' : ''}>${v}</option>`).join('')}</select>
+      <select class="tag"><option value="">しぼりこみ なし</option>${[['gen2', '第2部の 新しい アニモン'], ['legend', '伝説'], ['boss', 'ダンジョンの主'], ['starter', '最初の相棒'], ['ride', 'ライドできる'], ['rare', 'めずらしい'], ['side', 'サイドストーリー'], ['final', '最終進化'], ['noevo', '進化しない']].map(([k, v]) => `<option value="${k}" ${f.tag === k ? 'selected' : ''}>${v}</option>`).join('')}</select>
       <select class="sort">${[['no', '図鑑番号順'], ['bst', '能力の 合計が 高い順'], ['hp', 'HPが 高い順'], ['atk', '攻撃が 高い順'], ['def', '防御が 高い順'], ['spe', '素早さが 高い順'], ['name', '名前順']].map(([k, v]) => `<option value="${k}" ${f.sort === k ? 'selected' : ''}>${v}</option>`).join('')}</select>
       <label><input type="checkbox" class="hide" ${spoilHide ? 'checked' : ''}> ネタバレ防止（伝説・かくれた アニモンを かくす）</label>
     </div><div class="count"></div><div class="mgrid"></div>`;
@@ -133,7 +147,7 @@ function viewMon(id) {
   const where = (WHERE.get(s.id) || []).slice().sort((a, b2) => (a.place.kind === b2.place.kind ? 0 : a.place.kind === 'region' ? -1 : 1) || a.lv[0] - b2.lv[0]);
   const boss = BOSS_OF[s.id];
   const get = howToGet(s).filter(t => !t.startsWith('生息地：') && t !== '？？？');
-  const whereHtml = (where.length ? `<div class="tw"><table><tr><th>場所</th><th>どこで</th><th>レベル</th><th>出現率</th></tr>${where.map(w => `<tr class="link" data-go="#/place/${w.place.id}"><td><b>${esc(w.place.name)}</b>${w.place.post ? ' <span class="tag">クリア後</span>' : ''}</td><td>${esc(w.label)}</td><td class="n">${lvTxt(w.lv)}</td><td class="n">${pct(w.rate)}</td></tr>`).join('')}</table></div>` : '')
+  const whereHtml = (where.length ? `<div class="tw"><table><tr><th>場所</th><th>どこで</th><th>レベル</th><th>出現率</th></tr>${where.map(w => `<tr class="link" data-go="#/place/${w.place.id}"><td><b>${esc(w.place.name)}</b>${w.place.era === 'now' ? ' <span class="tag gen2">第2部</span>' : ''}${w.place.post ? ' <span class="tag">クリア後</span>' : ''}</td><td>${esc(w.label)}</td><td class="n">${lvTxt(w.lv)}</td><td class="n">${pct(w.rate)}</td></tr>`).join('')}</table></div>` : '')
     + (boss ? `<p>👑 <a href="#/place/${boss[0]}"><b>${esc(DUNGEONS[boss[0]].name)}</b></a> の ダンジョンの主（Lv${boss[1]}）として 待ちかまえている。</p>` : '')
     + (get.length ? `<ul>${get.map(t => `<li>${esc(t)}</li>`).join('')}</ul>` : '')
     + (!where.length && !boss && !get.length ? '<p class="muted">野生では 出てこない。</p>' : '');
@@ -236,13 +250,15 @@ function viewPlaces() {
   const card = (p) => {
     const faces = p.rows.flatMap(([, rows]) => rows).sort((a, b) => b.rate - a.rate).filter(r => !isHidden(SPECIES[r.sp])).slice(0, 8);
     const n = new Set(p.rows.flatMap(([, rows]) => rows.map(r => r.sp))).size;
-    return `<a class="pl" href="#/place/${p.id}"><div class="nm">${p.kind === 'dungeon' ? '⛩ ' : '🌿 '}${esc(p.name)}${p.post ? ' <span class="tag">クリア後</span>' : ''}</div>
+    return `<a class="pl" href="#/place/${p.id}"><div class="nm">${p.kind === 'dungeon' ? '⛩ ' : p.era === 'now' ? '☄️ ' : '🌿 '}${esc(p.name)}${p.post ? ' <span class="tag">クリア後</span>' : ''}${p.ruined ? ' <span class="tag">第2部では こわれる</span>' : ''}${p.was ? ` <span class="small muted">（もとの ${esc(p.was)}）</span>` : ''}</div>
       <div class="small muted">${lvTxt(p.lv)}・${n}種類${p.near ? `・${esc(p.near)}の 近く` : ''}${p.boss ? `・主 ${esc(p.boss[0])}` : ''}</div>
       <div class="faces">${[...new Map(faces.map(r => [r.sp, r])).values()].map(r => img(r.sp)).join('')}</div></a>`;
   };
   app.innerHTML = `<h2>入手場所</h2><p class="muted small">場所を 押すと、そこに 出る アニモンと 出現率・レベルが 見られます（出現率は 目安。レベルが 足りない 進化後の アニモンは 出ない ことも あります）。</p>
-    <h3>大陸の 地域</h3><div class="plist">${PLACES.filter(p => p.kind === 'region').map(card).join('')}</div>
-    <h3>ダンジョン</h3><div class="plist">${PLACES.filter(p => p.kind === 'dungeon').map(card).join('')}</div>`;
+    <h3>第2部：隕石の あとの 大陸（現在）</h3><p class="muted small">こわれた 地域と 新しい 場所には、隕石の あとに 生まれた 新しい アニモン だけが 出ます（レベルは もとの 場所と 同じくらい）。こわれていない 地域（砂漠・渓谷・氷山・聖域など）は 第1部と 同じです。</p>
+    <div class="plist">${PLACES.filter(p => p.era === 'now').map(card).join('')}</div>
+    <h3>第1部の 大陸（第2部では 時の扉で 行ける「過去」）</h3><div class="plist">${PLACES.filter(p => p.era === 'past' && p.kind === 'region').map(card).join('')}</div>
+    <h3>ダンジョン（第1部）</h3><div class="plist">${PLACES.filter(p => p.era === 'past' && p.kind === 'dungeon').map(card).join('')}</div>`;
   loadImgs(app);
 }
 
@@ -257,7 +273,7 @@ function viewPlace(id) {
   }).join('');
   app.innerHTML = `<a class="back" href="#/places">← 入手場所</a>
     <h1 class="dname">${p.kind === 'dungeon' ? '⛩ ' : '🌿 '}${esc(p.name)}</h1>
-    <p class="muted">野生の レベル ${lvTxt(p.lv)}${p.near ? `・${esc(p.near)}の 近くに ある ダンジョン` : ''}${p.post ? '・ストーリー クリア後に 入れる' : ''}${hid ? `（ネタバレ防止で ${hid}種類 かくしています）` : ''}</p>
+    <p class="muted">${p.era === 'now' ? '第2部（隕石の あと）・' : ''}野生の レベル ${lvTxt(p.lv)}${p.near ? `・${esc(p.near)}の 近くに ある ダンジョン` : ''}${p.post ? (p.era === 'now' ? '・第2部 クリア後に 入れる' : '・ストーリー クリア後に 入れる') : ''}${p.ruined ? '・第2部では こわれて 新しい アニモンの 場所に なる（時の扉で 過去へ 行けば 会える）' : ''}${hid ? `（ネタバレ防止で ${hid}種類 かくしています）` : ''}</p>
     ${bossSp && !isHidden(bossSp) ? `<h3>👑 ダンジョンの主</h3><div class="enc"><a href="#/mon/${bossSp.id}">${img(bossSp.id)}<div class="nm">${esc(bossSp.name)}</div><div>${bossSp.types.map(tb).join('')}</div><div class="rt">Lv${p.boss[1]}</div></a></div>` : ''}
     ${sec || '<p class="muted">野生の アニモンは 出ない。</p>'}`;
   loadImgs(app);

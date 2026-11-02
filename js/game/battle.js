@@ -51,6 +51,8 @@ export class Battle {
     this.sides = cfg.sides.map((s, i) => ({
       i, name: s.name, ai: s.ai, team: s.team.map((m, k) => new BMon(m, i, k, cfg.lvOverride || null)),
       active: new Array(this.n).fill(null), choices: null, runTries: 0,
+      // 共闘（タッグ）：team の allyFrom 番目から あとは 味方トレーナーの アニモン（右の 枠・AIが 動かす）
+      allyFrom: s.allyFrom ?? null, allyName: s.allyName || '',
     }));
     this.turn = 0; this.over = false; this.result = null; this.ev = [];
     this.phase = 'start'; this.pendingMoves = []; this.evos = []; this.caught = null; this.expLog = [];
@@ -67,12 +69,15 @@ export class Battle {
     return '相手の ' + base;
   }
 
+  // 共闘：左の 枠は 自分の アニモン、右の 枠は 味方の アニモン
+  owns(s, slot, b) { if (s.allyFrom == null) return true; return slot === 1 ? b.idx >= s.allyFrom : b.idx < s.allyFrom; }
+  isAllySlot(sideI, slot) { const s = this.sides[sideI]; return s.allyFrom != null && slot === 1; }
   // ---------- 開始 ----------
   start() {
     this.ev = [];
     for (const s of [this.sides[1], this.sides[0]]) {
       for (let k = 0; k < this.n; k++) {
-        const b = s.team.find(x => x.alive && x.slot < 0);
+        const b = s.team.find(x => x.alive && x.slot < 0 && this.owns(s, k, x));
         if (b) this._sendIn(s, k, b, true);
       }
     }
@@ -84,7 +89,8 @@ export class Battle {
 
   _sendIn(s, slot, b, initial = false) {
     s.active[slot] = b; b.slot = slot; b.reset(); b.slot = slot;
-    if (s.ai === 'player') this.msg(`ゆけっ！ ${monName(b.m)}！`);
+    if (s.ai === 'player' && s.allyFrom != null && b.idx >= s.allyFrom) this.msg(`${s.allyName} は ${monName(b.m)} を くりだした！`);
+    else if (s.ai === 'player') this.msg(`ゆけっ！ ${monName(b.m)}！`);
     else if (s.ai === 'wild') { if (initial) { this.msg(`野生の ${monName(b.m)} が あらわれた！`); if (SPECIES[b.m.sp].rarity >= 4 && !this.cfg?.boss) this.msg('めずらしい アニモンだ！ 逃がさないように しよう！'); } }
     else this.msg(`${s.name} は ${monName(b.m)} を くりだした！`);
     this.emit({ t: 'send', side: s.i, slot, idx: b.idx, hp: b.m.hp, max: b.maxhp, status: b.m.status || null, lv: b.lv });
@@ -107,6 +113,10 @@ export class Battle {
         return slots.length ? { kind: 'move', slots } : null;
       }
       if (this.phase === 'switch') {
+        if (s.allyFrom != null) {
+          const slots = s.active.map((b, k) => (!b || !b.alive) && s.team.some(x => x.alive && x.slot < 0 && this.owns(s, k, x)) ? k : -1).filter(k => k >= 0);
+          return slots.length ? { kind: 'switch', slots } : null;
+        }
         const bench = s.team.filter(b => b.alive && b.slot < 0).length;
         const slots = s.active.map((b, k) => (!b || !b.alive) ? k : -1).filter(k => k >= 0).slice(0, bench);
         return slots.length && bench ? { kind: 'switch', slots } : null;
@@ -140,7 +150,7 @@ export class Battle {
         return;
       }
     }
-    const needSwitch = this.sides.some(s => s.active.some(b => !b || !b.alive) && s.team.some(b => b.alive && b.slot < 0));
+    const needSwitch = this.sides.some(s => s.active.some((b, k) => (!b || !b.alive) && s.team.some(x => x.alive && x.slot < 0 && this.owns(s, k, x))));
     this.phase = needSwitch ? 'switch' : 'move';
   }
 
@@ -151,7 +161,7 @@ export class Battle {
       n[s.i].slots.forEach((slot, k) => {
         let idx = ch[k]?.idx;
         let b = s.team[idx];
-        if (!b || !b.alive || b.slot >= 0) b = s.team.find(x => x.alive && x.slot < 0);
+        if (!b || !b.alive || b.slot >= 0 || !this.owns(s, slot, b)) b = s.team.find(x => x.alive && x.slot < 0 && this.owns(s, slot, x));
         if (b) {
           const old = s.active[slot]; if (old) old.slot = -1;
           this._sendIn(s, slot, b);
@@ -259,7 +269,7 @@ export class Battle {
     // PP消費
     const slotMove = b.m.moves.find(x => x.id === mv.id);
     if (slotMove) slotMove.pp = Math.max(0, slotMove.pp - 1);
-    if ((b.item === 'h_band' || b.item === 'h_shoes') && !b.locked && mv.id !== 'struggle') b.locked = mv.id;
+    if ((b.item === 'h_band' || b.item === 'h_shoes') && mv.id !== 'struggle' && (!b.locked || !b.m.moves.some(x => x.id === b.locked && x.pp > 0))) b.locked = mv.id;
     this.msg(`${this.nm(b)} の ${mv.name}！`);
 
     if (mv.protect) {
@@ -673,13 +683,13 @@ export class Battle {
     const s = this.sides[sideI];
     if (need.kind === 'switch') {
       const used = new Set();
-      return need.slots.map(() => {
+      return need.slots.map((slot) => {
         const foes = this.sides[1 - sideI].active.filter(x => x && x.alive);
         let best = null, bs = -1e9;
         for (const b of s.team) {
-          if (!b.alive || b.slot >= 0 || used.has(b.idx)) continue;
+          if (!b.alive || b.slot >= 0 || used.has(b.idx) || !this.owns(s, slot, b)) continue;
           let sc = b.m.hp / b.maxhp * 10;
-          if (s.ai === 'boss' || s.ai === 'trainer') for (const f of foes) { sc += this._bestMoveScore(b, f).score / 40; sc -= Math.max(...f.types.map(t2 => typeEff(t2, b.types))) * 3; }
+          if (s.ai === 'boss' || s.ai === 'trainer' || s.allyFrom != null) for (const f of foes) { sc += this._bestMoveScore(b, f).score / 40; sc -= Math.max(...f.types.map(t2 => typeEff(t2, b.types))) * 3; }
           if (sc > bs) { bs = sc; best = b; }
         }
         if (best) used.add(best.idx);
@@ -701,7 +711,7 @@ export class Battle {
       for (const f of foes) {
         b.m.moves.forEach((mm, mi) => {
           if (mm.pp <= 0) return;
-          if (b.locked && mm.id !== b.locked && (b.item === 'h_band' || b.item === 'h_shoes')) return;
+          if (b.locked && mm.id !== b.locked && (b.item === 'h_band' || b.item === 'h_shoes') && b.m.moves.some(x => x.id === b.locked && x.pp > 0)) return;
           const mv = MOVES[mm.id];
           let sc;
           if (mv.power === 0) {

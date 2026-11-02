@@ -3,11 +3,12 @@
 //  {P}=主人公 {S}=最初の相棒 {L}=選んだ伝説
 // =============================================================
 import { TOWNS, DUNGEONS, polar, ALTAR } from './world.js';
+import { CHAPTERS2, STEPS2, SCENES2, LOOKS2, NPCS2, QUESTS2 } from './story2.js';
 
 const T = (id) => TOWNS.find(t => t.id === id).pos;
 const at = (id, dx, dz) => { const p = T(id); return [p[0] + dx, p[1] + dz]; };
 
-export const CHAPTERS = { 1: 'はじまりの朝', 2: 'そよかぜの道', 3: '森のささやき', 4: 'みなとの風', 5: '砂に眠る記憶', 6: '岩の試練', 7: '凍てつく約束', 8: '霧の向こう', 9: '天空へ', 10: '紅蓮の山', 11: 'さいはての聖域' };
+export const CHAPTERS = { ...CHAPTERS2, 1: 'はじまりの朝', 2: 'そよかぜの道', 3: '森のささやき', 4: 'みなとの風', 5: '砂に眠る記憶', 6: '岩の試練', 7: '凍てつく約束', 8: '霧の向こう', 9: '天空へ', 10: '紅蓮の山', 11: 'さいはての聖域' };
 
 // trig: talk(npc) / reach(pos,r) / region / catch(n) / battle(trainer) / auto
 export const STEPS = [
@@ -41,8 +42,17 @@ export const STEPS = [
   { id: 's28', ch: 11, obj: 'さいはての聖域へ向かおう（火山側の門から）', trig: { t: 'reach', pos: polar(50, 235), r: 26 }, scene: 'ren4Before', battle: 'ren4', after: 'ren4After' },
   { id: 's29', ch: 11, obj: '聖域の中央「いにしえの祭壇」へ向かおう', trig: { t: 'reach', pos: ALTAR, r: 22 }, scene: 'awakening', chain: true },
   { id: 's30', ch: 11, obj: 'ヴァルドとの最終決戦！（いにしえの祭壇）', trig: { t: 'reach', pos: ALTAR, r: 26 }, battle: 'vald2', after: 'ending' },
-  { id: 'end', ch: 12, obj: 'ストーリークリア！ 自由に大陸を冒険しよう（聖域の奥地・深淵の迷宮が解放）', trig: { t: 'none' } },
+  { id: 'end', ch: 12, obj: 'ストーリークリア！ 自由に大陸を冒険しよう（聖域の奥地・深淵の迷宮が解放）……はじまりの町の 北の 丘で、何かが 光っている', trig: { t: 'none' } },
+  // 第2部（クリア後に 丘に 落ちてくる 流れ星の かけらから）
+  ...STEPS2,
 ];
+// 章の 表示（第1部 1〜11章・クリア後・第2部 1〜9章）
+export function chLabel(ch, long = false) {
+  if (ch <= 11) return long ? `第${ch}章「${CHAPTERS[ch]}」` : `第${ch}章`;
+  if (ch === 12) return 'クリア後';
+  if (ch <= 21) return long ? `第2部 第${ch - 12}章「${CHAPTERS[ch]}」` : `第2部 第${ch - 12}章`;
+  return '第2部 クリア後';
+}
 export const STEP_INDEX = Object.fromEntries(STEPS.map((s, i) => [s.id, i]));
 export const GUARDIAN_STEP = { 1: 's6', 2: 's9', 3: 's12', 4: 's15', 5: 's18', 6: 's21', 7: 's23', 8: 's27' };
 export const CREST_JA = ['森の紋章', '湖の紋章', '砂漠の紋章', '渓谷の紋章', '氷山の紋章', '湿原の紋章', '高原の紋章', '火山の紋章'];
@@ -314,7 +324,6 @@ export const SCENES = {
     { do: 'postGame' },
     { fade: 'in', ms: 800 },
     '|聖域の奥地と 深淵の迷宮が 解放された！',
-    '|これからは 経験値が 2倍（+100%）もらえるようになった！',
     '|研究所のアルマ博士が、最後の挑戦者を 待っているらしい……',
     { bgm: 'town' },
   ],
@@ -370,7 +379,7 @@ export const NPCS = [
   { id: 'n_c1', name: '山男', look: 'r7', pos: at('canyon', -16, 18), talk: ['山男|同じアニモンは パーティーに 2匹 入れられないぞ。', '山男|いろんな アニモンを 育てるのが 強さの ひけつだ！'] },
   { id: 'n_w1', name: '占いの弟子', look: 'r8', pos: at('swamp', 14, 16), talk: ['占いの弟子|ダブルバトルでは「プラス」と「マイナス」の 特性を持つ アニモンを 組ませると 強いらしいよ。', '占いの弟子|「おとりのさけび」で 相手の攻撃を 引きつける 作戦も あるんだって。'] },
   { id: 'n_h1', name: '気象予報士', look: 'r9', pos: at('highland', -14, 16), talk: ['気象予報士|空を飛べる アニモンに 乗れば、大陸を 一気に 見渡せますよ。', '気象予報士|メニューの「ライド」から 乗れます。'] },
-  { id: 'n_v1', name: '里の子ども', look: 'r10', pos: at('volcano', 14, 16), talk: ['里の子ども|ストーリーを クリアすると、もらえる経験値が 2倍になるんだって！'] },
+  { id: 'n_v1', name: '里の子ども', look: 'r10', pos: at('volcano', 14, 16), talk: ['里の子ども|第2部の ストーリーを ぜんぶ クリアすると、もらえる経験値が 2倍に なるんだって！'] },
 ];
 
 // ---------------- サイドストーリー ----------------
@@ -431,3 +440,11 @@ export const QUESTS = [
       { obj: 'アルマ博士に 報告しよう（はじまりの町）', trig: { t: 'talk' }, scene: ['アルマ博士|……そうか。ステラは そんなことを……。', 'アルマ博士|ありがとう、{P}。30年分の 心の重さが、やっと 下ろせたよ。', 'アルマ博士|これは わたしからの 感謝の しるしだ。'] }],
     reward: { money: 10000, items: [['food5', 3], ['maxrevive', 5]] } },
 ];
+
+// ---------------- 第2部を まとめる ----------------
+Object.assign(SCENES, SCENES2);
+Object.assign(LOOKS, LOOKS2);
+NPCS.push(...NPCS2);
+QUESTS.push(...QUESTS2);
+// 第1部の クリア後の 博士（殿堂の 勝負）は、第2部の あいだは 研究所で 第2部の 話を する
+{ const a = NPCS.find(n => n.id === 'almaPost'); if (a) a.show = ['end', 'p2_1']; }

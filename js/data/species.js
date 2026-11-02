@@ -1,6 +1,6 @@
 // アニモン200種のデータ
 // 体型 p: quad(四足) biped(二足) bird(鳥) fish(魚) serpent(ヘビ) bug(虫) blob(浮遊/スライム) dragon(竜) turtle(亀) plant(植物) golem(岩人形) leviathan(伝説の海竜)
-import { POOLS, COVERAGE, MOVES } from './moves.js';
+import { POOLS, POOLS2, COVERAGE, MOVES } from './moves.js';
 import { mulberry32 } from '../engine/util.js';
 
 export const ARCH = {
@@ -13,6 +13,9 @@ export const REGION_JA = {
   start: 'はじまりの町周辺', plains: 'そよかぜ平原', forest: 'こもれびの森', lake: 'せせらぎ湖畔', sea: '海', desert: 'サンドラ砂漠', canyon: 'いわさき渓谷',
   snow: 'フロスト氷山', swamp: 'よどみの湿原', highland: 'てんくう高原', volcano: 'ほむら火山', sanctuary: 'さいはての聖域', inner: '聖域の奥地',
   ruins: '古代の遺跡', pyramid: '砂の王墓', icecave: '氷晶の洞窟', skytower: '天空の塔', lavacave: '溶岩洞', abyss: '深淵の迷宮',
+  // 第2部（隕石が 落ちた あとの 大陸）
+  r_forest: 'くだけた森', r_lake: 'ひからびた湖畔', r_swamp: 'どくぬまの湿原', r_highland: '灰の高原', r_volcano: 'ふんかした火山',
+  crater: 'メテオクレーター', lavaland: '溶岩の新大地', meteor: 'メテオコア',
 };
 
 const LINES = [
@@ -334,6 +337,106 @@ const LEGENDS = [
     d: ['天と海をつかさどる伝説の女王。嵐の中を誰よりも速く飛ぶ。攻撃と素早さに優れるが、耐久力はやや低い。'] },
 ];
 
+// ===== 第2部：隕石の あとに 生まれた 新しい アニモン（図鑑201〜250） =====
+//  h：住む 場所（r_〜 は 災害の あとの 地域。過去の 大陸には いない）  w：水の 上に 出る
+const LINES2 = [
+  // ----- くだけた森（隕石が 落ちた 森の 跡） -----
+  { n: ['スミネズ', 'スミネズミ'], t: [['fire'], ['fire', 'dark']], evo: [22], a: ['speedster', 'attacker'], p: 'quad', h: ['r_forest', 'r_lake'], bst: 1.02,
+    f: { ears: 'round', tail: 'long', face: 'whiskers', extra: ['shards'] }, fs: [{}, { ears: 'big', extra: ['shards', 'scar'] }], ab: ['flashfire', 'moxie'], c: ['#4a4040', '#ff8a3a'],
+    d: ['焼けこげた 森で 生まれた 炭色の ネズミ。体の すきまで 火の粉が くすぶっている。', '燃えのこりの 炭を 食べて 育った。怒ると 全身の 割れ目が 赤く 光る。'] },
+  { n: ['カレハムー', 'カレハマユ', 'カレハゴースト'], t: [['bug', 'ghost']], evo: [10, 30], a: ['hp', 'wall', 'glass'], p: ['serpent', 'blob', 'bug'], h: ['r_forest'], bst: 1.02,
+    f: { extra: ['antenna'] }, fs: [{}, { extra: ['shards'] }, { back: 'batwings', extra: ['antenna', 'ghostfire'] }], ab: ['shielddust', 'shedskin', 'levitate'], c: ['#8a6a40', '#b080ff'],
+    d: ['枯れ葉に まぎれる イモムシ。隕石の 光を 浴びて 体が 少し すけてきた。', '枯れ葉の マユ。中から ときどき 青白い 声が 聞こえる。', '枯れ葉の 羽を もつ 幽霊の ガ。なくなった 森の 記憶を 運ぶと いわれる。'] },
+  { n: ['ホシクズ', 'ホシクズリ', 'メテオクズリ'], t: [['rock', 'fairy']], evo: [18, 38], a: ['balanced', 'speedster', 'attacker'], p: 'quad', h: ['r_forest', 'crater'], bst: 1.04,
+    f: { ears: 'pointy', tail: 'fluffy', extra: ['shards'] }, fs: [{}, { back: 'crystal', extra: ['shards'] }, { back: 'crystal', horn: 2, extra: ['shards', 'glow'] }], ab: ['clearbody', 'clearbody', 'sniper'], ride: [0, 0, 'land'], c: ['#6a5a9a', '#ffd8ff'],
+    d: ['隕石の かけらを 体に 宿した 子ギツネ。夜に なると 星のように またたく。', '背中の 結晶で 星の 光を 集める。とても すばしっこい。', '隕石の 力を 自在に あやつる 星の 獣。背に 乗れば 夜空の 下を 駆けぬける。'] },
+  // ----- ひからびた湖畔 -----
+  { n: ['ヒビガメ', 'ヒビガメラ'], t: [['ground', 'water']], evo: [30], a: ['tank', 'wall'], p: 'turtle', h: ['r_lake'],
+    f: { back: 'shell', extra: ['shards'] }, fs: [{}, { back: 'spikes', extra: ['shards', 'spikes'] }], ab: ['solidshell', 'sturdy'], c: ['#a08a6a', '#60c0e0'],
+    d: ['干上がった 湖の 底で 生まれた カメ。甲羅は ひび割れた 泥で できている。', 'ひび割れた 甲羅の すきまに 水を ためこむ。雨を 呼ぶと いわれる。'] },
+  { n: ['ドロウオ', 'ドロウオーガ'], t: [['water', 'poison']], evo: [32], a: ['balanced', 'attacker'], p: 'fish', h: ['r_lake'], w: true,
+    f: { tail: 'fin', extra: ['spots'] }, fs: [{}, { back: 'fins', face: 'teeth', extra: ['spots', 'shards'] }], ab: ['swiftswim', 'strongjaw'], c: ['#6a7a50', '#c070e0'],
+    d: ['にごった 水たまりに 住む 魚。毒の 泥でも 平気で 泳ぐ。', 'にごった 湖の 主。毒の キバで 何でも かみくだく。'] },
+  { n: ['サビクラゲ', 'サビクラゲオン'], t: [['water', 'steel']], evo: [34], a: ['wall', 'tank'], p: 'blob', h: ['r_lake'], w: true,
+    f: { extra: ['shards'] }, fs: [{}, { extra: ['shards', 'crown'] }], ab: ['clearbody', 'regen'], c: ['#9a7a5a', '#80e0d0'],
+    d: ['しずんだ 船の 金属を 取りこんだ クラゲ。かさが さびている。', '鋼の かさを もつ 大クラゲ。さびた 触手は 鉄も 溶かす。'] },
+  { n: ['カラカラス', 'カラカラスオー'], t: [['flying', 'dark']], evo: [32], a: ['speedster', 'attacker'], p: 'bird', h: ['r_lake', 'r_forest', 'r_swamp'],
+    f: { face: 'beak', tail: 'feather' }, fs: [{}, { extra: ['crest', 'shards'] }], ab: ['keeneye', 'moxie'], ride: [0, 'fly'], c: ['#2a2a3a', '#ff5070'],
+    d: ['がれきの 上で 光る ものを 集める カラス。', '廃墟の 空を 支配する 大ガラス。背に 乗れば 灰の 空を 飛べる。'] },
+  // ----- どくぬまの湿原 -----
+  { n: ['ドクシズク', 'ドクシズクイン'], t: [['poison'], ['poison', 'fairy']], evo: [46], a: ['hp', 'balanced'], p: ['blob', 'biped'], h: ['r_swamp'],
+    f: { extra: ['bubbles'] }, fs: [{}, { extra: ['crown', 'shards'] }], ab: ['poisonheal', 'poisonheal'], c: ['#9a50d0', '#f0a0ff'],
+    d: ['毒の 雨から 生まれた しずく。ぷるぷる ゆれて 近づく。', '毒の 沼を おさめる 女王。毒を 力に 変えて 仲間を 守る。'] },
+  { n: ['ミュータド', 'ミュータントード'], t: [['poison', 'psychic']], evo: [48], a: ['bruiser', 'bruiser'], p: 'biped', h: ['r_swamp'],
+    f: { ears: 'none', tail: 'none', extra: ['spots', 'shards'] }, fs: [{}, { extra: ['spots', 'shards', 'glow'] }], ab: ['immunity', 'guts'], c: ['#5a8a40', '#e060ff'],
+    d: ['隕石の 力で 変異した カエル。3つめの 目で 心を 読む。', '巨大に 変異した 大ガエル。念力で 沼の 水を 持ち上げる。'] },
+  { n: ['キノコガイ', 'キノコロッサス'], t: [['grass', 'dark']], evo: [50], a: ['tank', 'tank'], p: ['blob', 'golem'], h: ['r_swamp', 'r_forest'],
+    f: { back: 'mushroom' }, fs: [{}, { back: 'mushroom', extra: ['shards'] }], ab: ['regen', 'thickfat'], c: ['#4a3a5a', '#70ff90'],
+    d: ['倒れた 木から 生えた 光る キノコ。夜に 胞子を まく。', '森を まるごと 飲みこんだ 巨人キノコ。歩くたび 新しい キノコが 生える。'] },
+  // ----- 灰の高原 -----
+  { n: ['ハイカゼ', 'ハイカゼワシ'], t: [['flying', 'ground']], evo: [52], a: ['speedster', 'attacker'], p: 'bird', h: ['r_highland'],
+    f: { face: 'beak', tail: 'feather' }, fs: [{}, { extra: ['crest'] }], ab: ['keeneye', 'sniper'], ride: [0, 'fly'], c: ['#8a8a8a', '#f0c060'],
+    d: ['灰の 風に 乗って 飛ぶ 鳥。羽が 灰色に 染まっている。', '灰の 嵐の 中でも 目が きく 大ワシ。背に 乗れば 高原を 一気に わたれる。'] },
+  { n: ['デンジクモ', 'デンジグモン'], t: [['electric', 'bug']], evo: [52], a: ['glass', 'attacker'], p: 'bug', h: ['r_highland', 'r_swamp'],
+    f: { extra: ['shards'] }, fs: [{}, { extra: ['shards', 'glow'] }], ab: ['staticbody', 'speedboost'], c: ['#3a3a5a', '#60f0ff'],
+    d: ['雷雲から 落ちてきた クモ。電気の 糸を 張る。', '電磁の 巣で 灰の 高原を おおう 大グモ。'] },
+  { n: ['クラウドン', 'クラウドラン'], t: [['normal', 'electric']], evo: [54], a: ['hp', 'hp'], p: 'fish', h: ['r_highland'],
+    f: { back: 'cloud', tail: 'fin' }, fs: [{}, { back: 'cloud', tail: 'fin', extra: ['shards'] }], ab: ['voltabsorb', 'friendguard'], ride: [0, 'fly'], c: ['#9a9aa8', '#ffe060'],
+    d: ['灰の 雲から 生まれた 雷の 雲クジラ。ゴロゴロ 鳴く。', '雷雲を 背負って 空を 泳ぐ 大クジラ。背に 乗れば 空の 旅が できる。'] },
+  // ----- ふんかした火山 -----
+  { n: ['ヨウガンボ', 'ヨウガンボルグ'], t: [['fire', 'ground']], evo: [60], a: ['tank', 'bruiser'], p: ['golem', 'biped'], h: ['r_volcano', 'lavaland'],
+    f: { extra: ['lava', 'shards'] }, fs: [{}, { extra: ['lava', 'shards', 'spikes'] }], ab: ['flamebody', 'solidshell'], c: ['#3a2a28', '#ff5a20'],
+    d: ['噴火で 飛んできた 溶岩の かたまりが 生きものに なった。', '溶岩の 巨人。体の 中を 流れる マグマで 大地を 作りかえる。'] },
+  { n: ['ヒバチョウ', 'ヒバチョウガ'], t: [['fire', 'bug']], evo: [58], a: ['speedster', 'glass'], p: 'bug', h: ['r_volcano'],
+    f: { back: 'wings', extra: ['antenna'] }, fs: [{}, { back: 'wings', extra: ['antenna', 'glow'] }], ab: ['flashfire', 'serenegrace'], c: ['#ff7040', '#ffe080'],
+    d: ['噴煙の 熱で 羽化した チョウ。羽から 火の粉が 舞う。', '炎の りんぷんを まく 大きな ガ。噴火の 夜に 群れで 飛ぶ。'] },
+  { n: ['ボルカニ', 'ボルカニング'], t: [['fire', 'water']], evo: [60], a: ['wall', 'bruiser'], p: 'bug', h: ['r_volcano', 'lavaland'],
+    f: { face: 'pincers' }, fs: [{}, { face: 'pincers', extra: ['crown', 'shards'] }], ab: ['thickfat', 'solidshell'], c: ['#d04a30', '#f0f0f0'],
+    d: ['熱い 湯の わく 岩場に 住む カニ。湯気を ふきだす。', '溶岩と 海の 力を あわせもつ 大ガニ。ハサミから 蒸気を 噴く。'] },
+  // ----- メテオクレーター -----
+  { n: ['メテオン', 'メテオノイド', 'メテオロード'], t: [['rock', 'psychic']], evo: [30, 55], a: ['wall', 'balanced', 'attacker'], p: ['blob', 'golem', 'golem'], h: ['crater', 'r_forest'], bst: 1.05,
+    f: { extra: ['shards', 'glow'] }, fs: [{}, { extra: ['shards', 'glow', 'runes'] }, { extra: ['shards', 'glow', 'runes', 'crown'] }], ab: ['levitate', 'clearbody', 'magicguard'], sig: 'sig_meteorlord', c: ['#4a3a6a', '#c080ff'],
+    d: ['隕石の かけらに 宿った 小さな 命。ふわふわ 浮いている。', '隕石の 力で 体を 組み上げた 星の 人形。', '隕石そのものの 化身。体から あふれる 光で 大地を 変異させる。'] },
+  { n: ['コスモドラ'], t: [['dragon', 'psychic']], a: ['glass'], p: 'serpent', h: ['crater'], rare: true, bstAbs: [372],
+    f: { horn: 2, extra: ['shards', 'glow'] }, ab: ['multiscale'], ride: ['fly'], c: ['#2a2a6a', '#80c0ff'],
+    d: ['隕石と いっしょに 宇宙から やってきたと いわれる 竜。星の 海を 泳ぐように 飛ぶ。'] },
+  { n: ['ミュータイガ'], t: [['dark', 'steel']], a: ['attacker'], p: 'quad', h: ['crater', 'lavaland'], rare: true, bstAbs: [366],
+    f: { ears: 'round', tail: 'long', extra: ['stripes', 'shards'] }, ab: ['moxie'], ride: ['land'], c: ['#3a3a48', '#ff3a60'],
+    d: ['変異した 鋼の 毛を もつ トラ。クレーターの ふちを 王のように 歩く。'] },
+  { n: ['ゼログラビ'], t: [['psychic', 'ghost']], a: ['speedster'], p: 'blob', h: ['crater'], bstAbs: [352],
+    f: { extra: ['shards', 'ghostfire'] }, ab: ['levitate'], c: ['#1a1a2a', '#a0ffe0'],
+    d: ['重さを なくした 魂。まわりの 小石を 宙に 浮かせて 遊ぶ。'] },
+  // ----- 溶岩の新大地（噴火で できた 新しい 陸） -----
+  { n: ['バサルト', 'バサルトン'], t: [['rock', 'steel']], evo: [65], a: ['tank', 'bruiser'], p: 'quad', h: ['lavaland'],
+    f: { horn: 1, extra: ['shards'] }, fs: [{}, { horn: 2, extra: ['shards', 'armor'] }], ab: ['sturdy', 'rockhead'], ride: [0, 'land'], c: ['#2a2a30', '#ff7040'],
+    d: ['冷えた 溶岩の 岩で できた 子サイ。ころころ 転がって 遊ぶ。', '玄武岩の よろいを まとう 大サイ。背に 乗れば 溶岩の 大地も 走れる。'] },
+  { n: ['ヒノコリュウ', 'カザンリュウ'], t: [['fire', 'dragon']], evo: [70], a: ['attacker', 'attacker'], p: ['quad', 'dragon'], h: ['lavaland', 'r_volcano'], rare: true, bst: 1.07,
+    f: { tail: 'flame', horn: 1 }, fs: [{}, { back: 'wings', tail: 'flame', horn: 2, extra: ['lava', 'shards'] }], ab: ['flashfire', 'soul_dragon'], sig: 'sig_kazan', ride: [0, 'fly'], c: ['#5a2018', '#ffb030'],
+    d: ['噴火の 熱で かえった 竜の 子。火の粉を くしゃみする。', '火山の 怒りを 宿した 竜。翼を ひろげると 溶岩の 雨が 降る。'] },
+  { n: ['マグマンタ'], t: [['fire', 'water']], a: ['balanced'], p: 'fish', h: ['lavaland'], w: true, bstAbs: [352],
+    f: { tail: 'fin', extra: ['lava'] }, ab: ['thickfat'], ride: ['swim'], c: ['#2a1a1a', '#ff6030'],
+    d: ['溶岩が 海に 流れこむ 場所で 生まれた エイ。熱い 湯気の 中を 泳ぐ。'] },
+  // ----- とくべつ -----
+  { n: ['トキワタリ'], t: [['psychic', 'steel']], a: ['balanced'], p: 'blob', story: true, rare: true, bstAbs: [360],
+    f: { extra: ['halo', 'runes', 'gem'] }, ab: ['magicguard'], sig: 'sig_toki', c: ['#d8c890', '#60e0ff'],
+    d: ['隕石の 衝撃で 生まれた 時の ゆがみから あらわれた。時の 扉を ひらく ことが できる。'] },
+  { n: ['ゼノドラグ'], t: [['dragon', 'dark']], a: ['attacker'], p: 'dragon', h: [], rare: true, bstAbs: [374],
+    f: { horn: 2, back: 'wings', tail: 'long', extra: ['shards', 'glow'] }, ab: ['moxie'], sig: 'sig_xeno', ride: ['fly'], c: ['#1a1428', '#d040ff'],
+    d: ['メテオコアの 奥で 眠る 宇宙の 竜。隕石を この星に 呼んだのは この竜だと いわれる。'] },
+  { n: ['ハザードン'], t: [['poison', 'steel']], a: ['tank'], p: 'golem', h: ['r_swamp', 'crater'], bstAbs: [356],
+    f: { extra: ['shards', 'spikes'] }, ab: ['immunity'], c: ['#5a6040', '#c0ff40'],
+    d: ['がれきと 毒が まざりあって 生まれた。体の パイプから 毒の けむりを はく。'] },
+  { n: ['フェニクシア'], t: [['fire', 'fairy']], a: ['balanced'], p: 'bird', h: ['lavaland'], rare: true, bstAbs: [368],
+    f: { face: 'beak', tail: 'flame', extra: ['halo'] }, ab: ['regen'], sig: 'sig_saisei', ride: ['fly'], c: ['#ff9050', '#fff0c0'],
+    d: ['新しい 大地に 最初に 舞い降りた 再生の 火の鳥。灰の 中から 何度でも よみがえる。'] },
+];
+// 隠しミッションの 伝説（図鑑250）
+const LEGENDS2 = [
+  { n: ['スカイドラゴン'], t: [['flying', 'dragon']], a: ['custom'], stats: [90, 110, 82, 94], p: 'dragon', legend: true, scale: 2.6, hiddenQuest: true,
+    f: { back: 'wings', horn: 3, tail: 'long', extra: ['crown', 'mane', 'glow'] }, ab: 'multiscale', ride: ['fly'], sig: 'sig_soukyuu', c: ['#2f7fe8', '#f4fbff'],
+    d: ['大空の 果てに 住む 伝説の 竜。雲の 上を 流れる 風そのものと いわれ、その姿を 見た 者は ほとんど いない。'] },
+];
+
 // ---------- 種族テーブル生成 ----------
 // ---- レア度（出現しやすさ） ----
 //  1 よく見る / 2 ふつう / 3 少ない / 4 めずらしい / 5 まぼろし（伝説）
@@ -357,7 +460,7 @@ const STARTER_BST = [228, 300, 364];
 function arr(v, i) { return Array.isArray(v) ? (v[i] ?? v[v.length - 1]) : v; }
 
 let lineId = 0;
-function addLine(L, isLegend = false) {
+function addLine(L, isLegend = false, gen2 = false) {
   lineId++;
   const len = L.n.length;
   const ids = [];
@@ -384,6 +487,7 @@ function addLine(L, isLegend = false) {
       story: !!L.story, side: L.side || null, rare: !!L.rare, scale: L.scale || 1, short: !!L.short,
       sig: L.sig && MOVES[L.sig] && MOVES[L.sig].sig === L.n[i] ? L.sig : null,
       sigSlot: L.sigSlot || 8, support: L.support || null,
+      gen2: !!gen2, waterSp: !!L.w, hiddenQuest: !!L.hiddenQuest,
     };
     // 捕まえやすさ・経験値
     if (sp.legend) { sp.catchRate = 0; sp.baseExp = 320; }
@@ -393,27 +497,30 @@ function addLine(L, isLegend = false) {
     // 出現しやすさ（レア度）：種族値の合計が高い＝強いほど 出にくい
     sp.bst = stats[0] + stats[1] + stats[2] + stats[3];
     sp.rarity = sp.legend ? 5 : rarityOf(sp.bst, sp.rare);
-    sp.moves = buildLearnset(sp, lineId);
+    sp.moves = buildLearnset(sp, lineId, gen2);
     SPECIES.push(sp);
     BY_NAME[sp.name] = sp;
   }
   return ids;
 }
 
-function buildLearnset(sp, seed) {
+function buildLearnset(sp, seed, gen2 = false) {
   const r = mulberry32(seed * 7919 + 13);
   const ch = (a) => a[Math.floor(r() * a.length)];
   const used = new Set();
+  // 第2部の アニモンは 新しい 技を 先に 覚える（前の アニモンは 今までと 同じ）
   const take = (...lists) => {
     for (const l of lists) {
       if (!l) continue;
       const c = l.filter(x => !used.has(x));
-      if (c.length) { const m = ch(c); used.add(m); return m; }
+      const nw = gen2 ? c.filter(x => MOVES[x]?.g2) : [];
+      if (c.length) { const m = ch(nw.length ? nw : c); used.add(m); return m; }
     }
     return null;
   };
   const [t1, t2] = sp.types;
-  const P = (t, tier) => POOLS[t]?.[tier];
+  const POOL = gen2 ? POOLS2 : POOLS;
+  const P = (t, tier) => POOL[t]?.[tier];
   const cov = t2 || ch(COVERAGE[t1]);
   const cov2 = t2 ? ch(COVERAGE[t1]) : ch(COVERAGE[t1].filter(x => x !== cov));
   const list = [];
@@ -434,11 +541,14 @@ function buildLearnset(sp, seed) {
 
 for (const L of LINES) addLine(L);
 for (const L of LEGENDS) addLine(L, true);
+for (const L of LINES2) addLine(L, false, true);
+for (const L of LEGENDS2) addLine(L, true, true);
 
 // 伝説の技は特別技を含む強力なものに
 for (const sp of SPECIES) {
   if (!sp) continue;
   if (sp.name === 'エンテイオウ') sp.moves = [['sig_haou', 1], ['dragonclaw', 1], ['earthrage', 1], ['kindle', 1], ['heatflow', 60], ['dragonrage', 70], ['magmaground', 80], ['infernoshot', 90]].map(([id, lv]) => ({ id, lv }));
+  if (sp.name === 'スカイドラゴン') sp.moves = [['sig_soukyuu', 1], ['dragonclaw', 1], ['skydive', 1], ['tailwind', 1], ['windblade', 60], ['dragonmeteor', 70], ['ashwing', 80], ['tornado', 90]].map(([id, lv]) => ({ id, lv }));
   if (sp.name === 'ナルメクシア') sp.moves = [['sig_tenkai', 1], ['skydive', 1], ['frostbreath', 1], ['tailwind', 1], ['windblade', 60], ['bigwave', 70], ['aquacannon', 80], ['tornado', 90]].map(([id, lv]) => ({ id, lv }));
 }
 

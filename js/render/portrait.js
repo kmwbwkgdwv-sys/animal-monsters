@@ -77,6 +77,7 @@ function pump() {
   if (queue.length) requestAnimationFrame(pump); else busy = false;
 }
 export function clearPortraitQueue() { queue.length = 0; }
+export function clearPortraitCache() { cache.clear(); bigCache.clear(); }
 export const BLANK = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 
 // 人物のプレビュー（キャラ作成用）

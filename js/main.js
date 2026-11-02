@@ -100,6 +100,14 @@ async function boot() {
   G.onDupFixed = (mv) => toast(`パーティーに 同じ アニモンが いたので ${mv.map(x => x.nick || SPECIES[x.sp]?.name || '').join('・')} を ボックスに 送りました`, 4200);
   G.onSaved = () => { import('./online.js').then(m => { m.scheduleCloudSave(); m.publishRanking(); }); };
   import('./online.js').then(m => { m.Online.onConflict = () => cloudResume(); });
+  // 時の扉・第2部の はじまりで 読みこみ なおした ときは、タイトルを とばして すぐ 続きから
+  let fast = false; try { fast = sessionStorage.getItem('animon_fastcont') === '1'; sessionStorage.removeItem('animon_fastcont'); } catch (e) { /* */ }
+  if (fast && hasSave()) {
+    loadingProgress(1, ''); hideLoading();
+    requestAnimationFrame(loop); startWatchdog();
+    await startGame(loadGame(), false);
+    return;
+  }
   // タイトルの3D（風景とアニモン）を読み込み画面のあいだに作る
   title = await buildTitleScene((p) => loadingProgress(0.1 + p * 0.9, 'タイトルを 準備中…'));
   loadingProgress(1, '');
@@ -335,6 +343,8 @@ async function characterCreate() {
 async function startGame(state, isNew) {
   if (!state) { toast('セーブデータが 読み込めませんでした'); showTitle(); return; }
   G.save = state;
+  // 第2部：隕石の あとの 大陸（現在）か、過去（第1部の 大陸）か
+  { const W = await import('./data/world.js'); W.applyEra(state.era === 'now'); if (!W.STONES.some(s => s.id === state.lastHospital)) state.lastHospital = 't_start'; }
   // 旧データ互換
   state.cleared ||= {}; state.quests ||= {}; state.items ||= {};
   // パーティーに 同じ アニモンが 2匹 いる（前の 版で 進化して 重なった）ときは 片方を ボックスへ
@@ -378,7 +388,10 @@ async function startGame(state, isNew) {
     // 連携コードの 準備が まだ 終わっていない データは、もう一度 案内する
     if (state.needLink) setTimeout(() => runFlow(async () => { try { await linkOnboarding(); } catch (e) { console.warn(e); } }), 1500);
     audio.playBgm('field');
-    toast(`おかえりなさい、${state.name}さん！`);
+    // 第2部：時の扉・隕石の あとに 読みこみ なおした ときは その 続きの ムービー／ストーリー
+    const pend = state.pendingScene; delete state.pendingScene;
+    if (pend) setTimeout(() => runFlow(async () => { await SE.runScene(pend); save(); if (!(await SE.checkEraStep())) { /* */ } }), 700);
+    else { toast(`おかえりなさい、${state.name}さん！`); setTimeout(() => runFlow(() => SE.checkEraStep()), 2000); }
     // すでに 条件を 満たしている データには 王冠を あとから わたす（1つずつだけ）
     setTimeout(async () => {
       if ((state.story.crests || 0) >= SE.CROWN_SILVER_CRESTS) await SE.grantCrown('s', true);

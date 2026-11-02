@@ -1,16 +1,17 @@
 // =============================================================
 //  ストーリー進行・ムービー（カットシーン）・サイドストーリー
 // =============================================================
-import { STEPS, STEP_INDEX, SCENES, CHAPTERS, QUESTS, GUARDIAN_STEP, CREST_JA, NPCS } from '../data/story.js';
-import { TOWNS, TRAINERS, REGIONS, DUNGEONS } from '../data/world.js';
+import { STEPS, STEP_INDEX, SCENES, CHAPTERS, QUESTS, GUARDIAN_STEP, CREST_JA, NPCS, chLabel } from '../data/story.js';
+import { TOWNS, TRAINERS, REGIONS, DUNGEONS, ERA, IMPACT, CRATER_R, VOLCANO_C, TIME_GATES, polar } from '../data/world.js';
 import { SPECIES, BY_NAME } from '../data/species.js';
-import { createMon, legendIv } from './mon.js';
-import { G, giveMon, addItem, addMoney, healParty, save, itemName, registerDex, monCap } from './state.js';
+import { createMon, legendIv, monName, ivTotal } from './mon.js';
+import { G, giveMon, addItem, addMoney, healParty, save, itemName, registerDex, monCap, itemCount } from './state.js';
 import { ITEMS, SHOP_FOODS, SHOP_HELD } from '../data/items.js';
-import { UI, $, say, sayLine, hideDialog, narrate, fade, flash, letterbox, chapterTitle, toast, ask } from '../ui/ui.js';
+import { UI, $, say, sayLine, hideDialog, narrate, fade, flash, letterbox, chapterTitle, toast, ask, confirmBox } from '../ui/ui.js';
 import { audio } from '../audio.js';
 import { OW, spawnActor, despawnActor, camTo, buildBarriers, refreshActors, refreshFollower, runFlow } from './overworld.js';
 import { startTrainerBattle, startWildBattle } from '../ui/battleUI.js';
+import * as FX from './movieFx.js';
 import * as MENU from '../ui/menus.js';
 import * as ER from './errands.js';
 
@@ -18,7 +19,7 @@ export function currentStep() { return STEPS[Math.min(G.save.story.step, STEPS.l
 export function stepIdx(id) { return STEP_INDEX[id]; }
 export function objective() {
   const st = currentStep();
-  const ch = st.ch <= 11 ? `第${st.ch}章　${CHAPTERS[st.ch]}` : 'クリア後';
+  const ch = st.ch <= 11 || (st.ch >= 13 && st.ch <= 21) ? chLabel(st.ch, false) + '　' + CHAPTERS[st.ch] : chLabel(st.ch);
   let quest = '';
   const act = activeQuest();
   if (act) quest = `◆${act.q.name}：${act.q.steps[act.st.stage].obj}`;
@@ -34,7 +35,14 @@ export function navTarget() {
     const d = NPCS.find(n => n.id === id); return d && d.pos ? d.pos : null;
   };
   let p = null, label = '';
-  if (t.t === 'talk') { p = npcPos(t.npc); label = (NPCS.find(n => n.id === t.npc) || {}).name || ''; }
+  // ちがう 時代で 起きる イベント（過去の 人・過去の 場所）のときは、まず 時の扉へ
+  const needEra = t.era || (t.npc && (NPCS.find(n => n.id === t.npc) || {}).era);
+  if (needEra && G.save.era && (needEra === 'past') === !!ERA.ruin) {
+    const P = OW.player; let b = null, bd = 1e9; for (const g of TIME_GATES) { const d = P ? Math.hypot(g.pos[0] - P.x, g.pos[1] - P.z) : 0; if (d < bd) { bd = d; b = g; } }
+    if (b) return { x: b.pos[0], z: b.pos[1], label: needEra === 'past' ? '時の扉（過去へ）' : '時の扉（現在へ）', kind: 'story' };
+  }
+  if (t.t === 'talk' || (t.t === 'deliver' && t.npc)) { p = npcPos(t.npc); label = (NPCS.find(n => n.id === t.npc) || {}).name || ''; }
+  else if (t.t === 'era') { const P = OW.player; let b = null, bd = 1e9; for (const g of TIME_GATES) { const d = P ? Math.hypot(g.pos[0] - P.x, g.pos[1] - P.z) : 0; if (d < bd) { bd = d; b = g; } } if (b) { p = b.pos; label = '時の扉'; } }
   else if (t.t === 'reach') { p = t.pos; }
   else if (t.t === 'region') { const tw = TOWNS.find(x => x.region === t.region); p = tw ? tw.pos : null; label = REGIONS[t.region]?.name || ''; }
   else if (t.t === 'guardian') {
@@ -42,6 +50,7 @@ export function navTarget() {
     const door = OW.trig.find(d => d.kind === 'door' && d.type === 'hall' && d.town === tw?.id);
     p = door ? [door.x, door.z] : tw?.pos; label = '守護者の館';
   }
+  if (st.id === 'end' && !G.save.era && G.save.story.step >= STEP_INDEX.end) { p = [-34, 506]; label = '流れ星の かけら'; }
   if (p && (t.t === 'reach' || t.t === 'region')) p = openSpot(p);
   if (p) return { x: p[0], z: p[1], label: label || st.obj.replace(/（.*?）/g, '').slice(0, 14), kind: 'story' };
   // ストーリーの行き先がないときは、進行中のサイドストーリー
@@ -96,7 +105,7 @@ export function storyInfo() {
   const P = OW.player;
   const p = nav && nav.kind === 'story' ? [nav.x, nav.z] : null;
   const t = st.trig, pl = p ? placeName(p) : '';
-  const dest = !p ? '' : t.t === 'talk' ? `${pl}（${nav.label}）` : t.t === 'guardian' ? `${pl}の 守護者の館` : pl;
+  const dest = !p ? '' : (t.t === 'talk' || t.t === 'deliver') ? `${pl}（${nav.label}）` : t.t === 'guardian' ? `${pl}の 守護者の館` : pl;
   return { ch: st.ch, chName: CHAPTERS[st.ch] || '', obj: st.obj, pos: p, dest, dist: p && P ? Math.round(Math.hypot(p[0] - P.x, p[1] - P.z)) : null, end: t.t === 'none' };
 }
 export { CHAPTERS, QUESTS };
@@ -258,6 +267,39 @@ async function doAction(c) {
       for (const sp of [1, 4, 7]) { if (sp === [1, 4, 7][S.starter]) continue; giveMon(createMon(sp, 5, { ot: G.save.name, metAt: 'はじまりの町' }), true); }
       break;
     }
+    // ===== 第2部 =====
+    case 'p2Sky': OW.movieSky = { bg: [0.22, 0.08, 0.12], fog: [0.36, 0.14, 0.14] }; OW.movieTheme = 'volcano'; break;
+    case 'meteorIn': FX.meteorIn(); break;
+    case 'legendsRise': FX.legendsRise(); break;
+    case 'beams': FX.beams(); break;
+    case 'meteorBreak': FX.meteorBreak(); break;
+    case 'p2Impact': await p2Impact(); break;
+    case 'view': await FX.view(c.at); break;
+    case 'mutants': FX.mutants(); break;
+    case 'mutantsGone': FX.mutantsGone(); break;
+    case 'gatesOpen': S.flags.gates = true; save(); { const ov = await import('./overworld.js'); ov.rebuildP2Objects(); } break;
+    case 'meteorOpen': S.flags.meteorOpen = true; save(); break;
+    case 'legendCorrupt': FX.legendCorrupt(otherLegend()); break;
+    case 'legendCalm': FX.legendCalm(); break;
+    case 'giveOtherLegend': {
+      if (S.legend2Uid && [...G.save.party, ...G.save.box].some(m => m.uid === S.legend2Uid)) break;
+      const sp = otherLegend();
+      const L = legendIv();
+      const mon = createMon(sp, 99, { ot: G.save.name, metAt: 'メテオクレーター', iv: { ...L } });
+      const where = giveMon(mon); S.legend2Uid = mon.uid; registerDex(sp, true); audio.sfx('catch');
+      save();
+      await sayLine('', `${SPECIES[sp].name} が 仲間に なった！` + (where === 'box' ? '（ボックスへ）' : ''));
+      break;
+    }
+    case 'giveToki': {
+      if (S.tokiUid && [...G.save.party, ...G.save.box].some(m => m.uid === S.tokiUid)) break;
+      const mon = createMon(BY_NAME['トキワタリ'].id, 90, { ot: G.save.name, metAt: 'みなとまち跡', iv: { hp: 12, atk: 12, def: 12, spe: 12 } });
+      const where = giveMon(mon); S.tokiUid = mon.uid; registerDex(mon.sp, true); audio.sfx('catch');
+      await sayLine('トキワタリ', '……チク、タク。これからも いっしょ。');
+      await sayLine('', `トキワタリ が 仲間に なった！` + (where === 'box' ? '（ボックスへ）' : ''));
+      break;
+    }
+    case 'p2Clear': { S.flags.p2clear = true; S.flags.meteorOpen = true; save(); break; }
     case 'postGame': {
       G.save.postGame = true;
       await grantCrown('g');
@@ -279,6 +321,8 @@ export async function runStep() {
       if (st.trig.t === 'none') break;
       if (st.scene) await runScene(st.scene);
       if (st.before) await runScene(st.before);
+      // 納品：条件に あう アニモンを わたす（わたさなければ 進まない）
+      if (st.trig.t === 'deliver' && !(await deliverMon(st.trig))) break;
       let won = true;
       if (st.battle) {
         const tr = TRAINERS[st.battle];
@@ -299,6 +343,13 @@ export async function runStep() {
         }
         if (!won && !st.allowLose) break;
       }
+      // 第2部 第9章：心を こわされた もう一匹の 伝説（野生の ぬしと 同じ。勝つまで 何度でも）
+      if (st.wildBoss) {
+        const mon = createMon(otherLegend(), 99, { iv: { hp: 15, atk: 15, def: 15, spe: 15 } });
+        const res = await startWildBattle(mon, { boss: true, noCatch: true, noRun: true });
+        won = res === 'win';
+        if (!won) { toast('伝説の 力に おされてしまった……。準備を して もう一度 挑もう', 3600); break; }
+      }
       if (st.after) await runScene(st.after, { won });
       G.save.story.step++;
       refreshActors();
@@ -315,6 +366,7 @@ export async function runStep() {
 let declined = -1, decAt = null, rearmed = false;
 const deepIn = (x, z, region) => [[6, 0], [-6, 0], [0, 6], [0, -6]].every(([dx, dz]) => G.world.regionAt(x + dx, z + dz) === region);
 function posHit(t, x, z, reg) {
+  if (t.era && (t.era === 'past') === !!ERA.ruin) return { near: 1e9, hit: false };   // その 時代で ないと 始まらない
   const near = t.t === 'reach' ? Math.hypot(x - t.pos[0], z - t.pos[1]) : 0;
   return { near, hit: (t.t === 'reach' && near < t.r) || (t.t === 'region' && reg === t.region && deepIn(x, z, t.region)) };
 }
@@ -347,7 +399,7 @@ export function checkPosition(x, z, reg) {
   } else if (hit) {
     const stepNow = G.save.story.step;
     runFlow(async () => {
-      const ch = st.ch <= 11 ? `第${st.ch}章「${CHAPTERS[st.ch]}」` : '';
+      const ch = st.ch <= 11 || (st.ch >= 13 && st.ch <= 21) ? chLabel(st.ch, true) : '';
       const k = await ask(`📖 ここから ストーリーの イベントが 始まります。${ch}\n目的：${UI.fmt(st.obj)}\n今 進めますか？（「あとで」でも、光の柱に 行くか 左上の 目的を 押せば いつでも 始められます）`, ['進める', 'あとで']);
       if (k === 0) { running = false; await runStep(); }
       else { declined = stepNow; decAt = [OW.player.x, OW.player.z]; rearmed = false; toast('準備が できたら 光の柱へ（左上の 目的からも 始められます）', 3500); }
@@ -376,7 +428,8 @@ export function onDungeonClear(id) {
 // ---------- 話しかけ ----------
 export function npcMark(n) {
   const st = currentStep();
-  if (st.trig.t === 'talk' && st.trig.npc === n.id) return '!';
+  if ((st.trig.t === 'talk' || st.trig.t === 'deliver') && st.trig.npc === n.id) return '!';
+  if (n.donate && !G.save.story.flags['don_' + n.donate]) return '…';
   if (n.kind === 'giver') {
     const s = G.save.quests[n.quest.id];
     if (!s) return '!';
@@ -389,7 +442,8 @@ export function npcMark(n) {
 }
 export async function talkNpc(n) {
   const st = currentStep();
-  if (st.trig.t === 'talk' && st.trig.npc === n.id) { running = false; return runStep(); }
+  if ((st.trig.t === 'talk' || st.trig.t === 'deliver') && st.trig.npc === n.id) { running = false; return runStep(); }
+  if (n.donate) return donateTalk(n);
   if (n.kind === 'trainer') {
     if (G.save.defeated[n.id]) return say([`${n.name}|また いつか 勝負しようね！`]);
     await say([`${n.name}|勝負だ！`]);
@@ -402,7 +456,7 @@ export async function talkNpc(n) {
   if (n.kind === 'spot') return spotTalk(n.quest);
   if (n.kind === 'questTrainer') {
     if (G.save.defeated[n.id]) return say([`${n.name}|まいったよ……。`]);
-    await say([`${n.name}|へっ、灯台守の じいさんに 頼まれたのか？ 勝負だ！`]);
+    await say([`${n.name}|${TRAINERS[n.id]?.intro || 'へっ、灯台守の じいさんに 頼まれたのか？ 勝負だ！'}`]);
     const res = await startTrainerBattle(n.id, {});
     if (res === 'win') checkQuestBattles();
     return;
@@ -447,7 +501,8 @@ async function giverTalk(q) {
   if (s.done) return say([`${q.giver.name}|この前は ありがとう！`]);
   const step = q.steps[s.stage];
   if (step.trig.t === 'talk') return questAdvance(q);
-  return say([`${q.giver.name}|${step.obj}……おねがいね！`]);
+  if (step.trig.t === 'deliver') { if (await deliverMon(step.trig, q.giver.name)) return questAdvance(q); return; }
+  return say([`${q.giver.name}|${step.obj.replace(/^【\d\/\d】/, '')}……おねがいね！`]);
 }
 async function spotTalk(q) {
   const s = G.save.quests[q.id]; if (!s || s.done) return;
@@ -478,11 +533,18 @@ export async function questAdvance(q) {
     const lines = [];
     if (r.money) { addMoney(r.money); lines.push(`|${r.money}円 を もらった！`); }
     for (const [id, n] of (r.items || [])) { addItem(id, n); lines.push(`|${itemName(id)} を ${n}個 もらった！`); }
+    if (r.skyDragon) {
+      // 隠しミッションの ごほうび：スカイドラゴン（個体値は すべて 12以上）
+      const R = () => 12 + Math.floor(Math.random() * 4);
+      const mon = createMon(BY_NAME['スカイドラゴン'].id, 80, { ot: G.save.name, metAt: '新大地の岬', iv: { hp: R(), atk: R(), def: R(), spe: R() } });
+      const where = giveMon(mon); registerDex(mon.sp, true); audio.sfx('catch');
+      lines.push(`|伝説の アニモン スカイドラゴン が 仲間になった！` + (where === 'box' ? '（ボックスへ）' : ''));
+    }
     if (r.mon) { const [nm, lv] = r.mon; const mon = createMon(BY_NAME[nm].id, lv, { ot: G.save.name, gift: true }); const where = giveMon(mon); lines.push(`|${nm} を もらった！` + (where === 'box' ? '（ボックスへ）' : '')); }
     audio.sfx('lvup');
-    lines.push(`|サイドストーリー「${q.name}」クリア！`);
+    lines.push(q.hidden ? `|${q.name} 3/3 クリア！` : `|サイドストーリー「${q.name}」クリア！`);
     await say(lines);
-  } else toast(`サイドストーリー「${q.name}」が 進んだ！`);
+  } else toast(q.hidden ? `${q.name} ${s.stage + 1}/${q.steps.length} が 始まった！` : `サイドストーリー「${q.name}」が 進んだ！`);
   refreshActors(); save();
 }
 export function checkQuestBattles() {
@@ -493,3 +555,111 @@ export function checkQuestBattles() {
   }
 }
 export { activeQuest, NPCS };
+
+// =============================================================
+//  第2部：はじまり・時の扉・納品・寄付
+// =============================================================
+export function otherLegend() { const S = G.save.story; return S.legend === BY_NAME['ナルメクシア'].id ? BY_NAME['エンテイオウ'].id : BY_NAME['ナルメクシア'].id; }
+// 読みこみ なおし（時代を 切りかえる・第2部の はじまり）。セーブして クラウドにも 送ってから
+async function reloadInto(era, pos, scene) {
+  const S = G.save;
+  S.era = era; if (pos) S.pos = pos; S.ry = 0;
+  if (scene) S.pendingScene = scene;
+  G.capturePos = null;
+  save();
+  try { const ON = await import('../online.js'); if (ON.isConfigured() && S.pid) await Promise.race([ON.pushSave(true), new Promise(r => setTimeout(r, 5000))]); } catch (e) { /* */ }
+  try { sessionStorage.setItem('animon_fastcont', '1'); } catch (e) { /* */ }
+  location.reload();
+  await new Promise(() => { });   // 読みこみ なおすまで 待つ
+}
+// 流れ星の かけらに さわる → 第2部
+export async function startPart2() {
+  const S = G.save.story;
+  if (G.save.era) return;
+  if (!(await confirmBox('あやしい 流れ星の かけらが 光っている……\nさわってみますか？\n（第2部が 始まります。大陸の 姿が 大きく 変わります）', 'さわる', 'やめる'))) return;
+  try { const ON = await import('../online.js'); if (ON.inWorld && ON.inWorld()) { await say(['|フレンドと いっしょの ワールドに いる あいだは さわれない。（ワールドを 出てから）']); return; } } catch (e) { /* */ }
+  await runScene('p2Meteor');
+}
+async function p2Impact() {
+  const S = G.save.story;
+  const f = $('#fade'); f.style.background = '#fff';
+  await fade(true, 900);
+  FX.cleanup();
+  S.step = STEP_INDEX.p2_1;
+  S.flags.p2 = true;
+  for (const r of ['crater', 'lavaland']) if (!G.save.unlocked.includes(r)) G.save.unlocked.push(r);
+  G.save.lastHospital = 't_start';
+  await reloadInto('now', [-6, 604], 'p2After');
+}
+// 時の扉
+export async function useGate(id) {
+  const g = TIME_GATES.find(x => x.id === id); if (!g) return;
+  const toPast = !!ERA.ruin;
+  try { const ON = await import('../online.js'); if (ON.inWorld && ON.inWorld()) { await say(['|フレンドと いっしょの ワールドに いる あいだは 時の扉を 使えない。（ワールドを 出てから）']); return; } } catch (e) { /* */ }
+  if (!(await confirmBox(toPast ? '時の扉が ゆらめいている……\n隕石が 落ちる 前の「過去」へ 行きますか？\n（もどるときは 過去の 同じ 場所の 扉から）' : '時の扉が ゆらめいている……\n「現在」へ もどりますか？', toPast ? '過去へ' : '現在へ', 'やめる'))) return;
+  audio.sfx('warp');
+  await flash(300);
+  const f = $('#fade'); f.style.background = toPast ? '#fff6dc' : '#dcf6ff';
+  await fade(true, 800);
+  await reloadInto(toPast ? 'past' : 'now', [g.pos[0], g.pos[1] + 5], toPast ? 'gateToPast' : 'gateToNow');
+}
+SCENES.gateToPast = ['|時を こえて…… 隕石が 落ちる 前の 大陸に 来た！', '|（現在に もどるときは、この 時の扉に 入ろう）'];
+SCENES.gateToNow = ['|時を こえて…… 現在の 大陸に もどってきた！'];
+// 時代に 着いた ときの ストーリー（era トリガー）
+export async function checkEraStep() {
+  const st = currentStep();
+  if (st.trig.t !== 'era') return false;
+  if ((st.trig.era === 'past') !== !ERA.ruin) return false;
+  running = false;
+  await runStep();
+  return true;
+}
+// 納品：条件に あう アニモンを 1匹 選んで わたす
+async function deliverMon(t, who = '') {
+  const ids = t.sp.map(n => BY_NAME[n]?.id).filter(Boolean);
+  const S = G.save.story;
+  const ok = (m) => ids.includes(m.sp) && ivTotal(m) >= t.iv && m.uid !== S.luluUid && !SPECIES[m.sp].legend;
+  const all = [...G.save.party, ...G.save.box];
+  if (!all.some(ok)) {
+    const near = all.filter(m => ids.includes(m.sp)).map(m => ivTotal(m)).sort((a, b) => b - a)[0];
+    await say([`${who ? who + '|' : '|'}${t.sp.join('か ')}で、個体値の 合計が ${t.iv}以上の 子を 連れてきてね。`, `|（ボックスの 子も わたせます。アニモンを 押すと 個体値を 確認できる${near != null ? `。今いる いちばん 高い 子は 合計 ${near}` : ''}）`]);
+    return false;
+  }
+  UI.skipping = false;
+  // 同じ 種類の 子を 1匹ずつ スライドして 見くらべ、わたす 子を 自分で 決める
+  const cand = all.filter(m => ids.includes(m.sp) && m.uid !== S.luluUid && !SPECIES[m.sp].legend);
+  const m = await MENU.slidePick({ title: '納品する アニモンを 選ぶ', mons: cand, okFn: ok, need: t.iv, cond: `${t.sp.join('／')}・個体値の 合計 ${t.iv}以上` });
+  if (!m) return false;
+  if (G.save.party.length === 1 && G.save.party[0] === m) { await say(['|パーティーが 0匹に なってしまう！ ほかの 子を パーティーに 入れてから わたそう。']); return false; }
+  if (!(await confirmBox(`${monName(m)}（Lv${m.lv}・個体値の 合計 ${ivTotal(m)}）を わたしますか？\nわたした アニモンは もどってきません。${m.item ? '\n（持たせている 道具は バッグに もどります）' : ''}`, 'わたす', 'やめる'))) return false;
+  if (m.item) { addItem(m.item, 1); m.item = null; }
+  for (const arr of [G.save.party, G.save.box]) { const i = arr.indexOf(m); if (i >= 0) arr.splice(i, 1); }
+  audio.sfx('item');
+  await sayLine('', `${monName(m)} を わたした！`);
+  refreshFollower(); save();
+  return true;
+}
+// ボロボロの 町の 2人（2万円ずつ 寄付すると 隠しミッション）
+const DONATE = {
+  gen: { ask: ['ゲン|……すまんが、少しばかり 恵んでは くれんか。', 'ゲン|隕石の 夜に、家も 相棒も なくしてしもうてな……'], thanks: ['ゲン|……なんと。こんな 大金を……！', 'ゲン|ありがたい。この 恩は わすれんぞ。'], after: ['ゲン|空を 見上げると、むかしを 思い出すわい……'] },
+  mitsu: { ask: ['ミツ|あんた、旅の 人かい？ この 町も すっかり 変わっちまってねえ。', 'ミツ|あたしゃ 港で 店を やってたんだけど、ぜんぶ 灰の 下さ。少しで いいから 助けて くれないかい？'], thanks: ['ミツ|まあ……！ あんた、なんて いい 子なんだい。', 'ミツ|これで しばらく 食べていけるよ。ありがとうねえ。'], after: ['ミツ|となりの ゲン じいさんはね、むかしは えらい 人だったらしいよ。'] },
+};
+async function donateTalk(n) {
+  const F = G.save.story.flags, key = 'don_' + n.donate, D = DONATE[n.donate];
+  if (F[key]) return say(D.after);
+  await say(D.ask);
+  const k = await ask('2万円 寄付しますか？', ['2万円 寄付する', 'やめておく']);
+  if (k !== 0) return say([`${n.name.replace(/^ホームレスの/, '')}|……そうかい。気に しないで おくれ。`]);
+  if (G.save.money < 20000) return say(['|お金が 足りない……（2万円 必要）']);
+  addMoney(-20000); F[key] = true; audio.sfx('item');
+  await say(D.thanks);
+  if (F.don_gen && F.don_mitsu && !G.save.quests.q_skydragon) {
+    await say(['|……ゲンが ゆっくりと 立ち上がった。', 'ゲン|ふたりに 寄付を してくれたのは、おまえさんが はじめてじゃ。', 'ゲン|実は わしは、むかし「竜使い」と よばれておった。', 'ゲン|空の 果てに すむ 伝説の 竜…… スカイドラゴンを 知っておるか？', 'ゲン|あの 竜に 会う 資格が あるか、3つの 試練で ためさせて もらおう。']);
+    F.skyq = true;
+    G.save.quests.q_skydragon = { stage: 0, t: Date.now() };
+    audio.sfx('kiran');
+    toast('隠しミッション 1/3 が 始まった！', 3600);
+    refreshActors();
+  }
+  save();
+}

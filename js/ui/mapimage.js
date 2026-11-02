@@ -1,10 +1,13 @@
 // 大陸の地図画像（マップ・ミニマップ共通）。地形の高さと地域から1度だけ作る
 import { G } from '../game/state.js';
-import { WORLD } from '../data/world.js';
+import { WORLD, ERA, RUINED } from '../data/world.js';
+import { lavaFlow } from '../render/world.js';
+// 第2部（隕石の あと）の 色
+const RCOLS = { forest: [78, 62, 54], lake: [176, 150, 112], swamp: [96, 78, 112], highland: [150, 150, 152], volcano: [72, 52, 50], crater: [74, 54, 112], lavaland: [46, 40, 42] };
 
 let img = null;
 const COLS = { start: [140, 200, 110], plains: [130, 200, 100], forest: [60, 140, 60], lake: [120, 190, 110], desert: [230, 205, 140], canyon: [200, 120, 80], snow: [235, 240, 250], swamp: [100, 115, 75], highland: [150, 210, 120], volcano: [90, 75, 75], sanctuary: [210, 200, 150], inner: [200, 185, 235], sea: [60, 120, 200] };
-const RID = ['start', 'plains', 'forest', 'lake', 'desert', 'canyon', 'snow', 'swamp', 'highland', 'volcano', 'sanctuary', 'inner', 'sea'];
+const RID = ['start', 'plains', 'forest', 'lake', 'desert', 'canyon', 'snow', 'swamp', 'highland', 'volcano', 'sanctuary', 'inner', 'sea', 'crater', 'lavaland'];
 
 export function getMapImage() {
   if (img) return img;
@@ -15,7 +18,9 @@ export function getMapImage() {
   for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
     const k = j * N + i;
     const h = W.H[j * (N + 1) + i];
-    let c = COLS[RID[W.REG[k]]] || [0, 0, 0];
+    const rid = RID[W.REG[k]];
+    let c = (ERA.ruin && RCOLS[rid]) || COLS[rid] || [0, 0, 0];
+    if (ERA.ruin && h >= -0.4) { const x = (i + 0.5) * WORLD.cell - WORLD.half, z = (j + 0.5) * WORLD.cell - WORLD.half; if (lavaFlow(x, z) > 0.5) c = [240, 110, 40]; }
     if (h < -0.4) c = h < -5 ? [40, 90, 170] : [70, 140, 215];
     else {
       // 東西方向の傾きで陰影をつけて、起伏が見えるように

@@ -329,6 +329,8 @@ export async function openRanking() {
 }
 // ストーリーの 進み具合（ランキング・記録の画面用）
 const chText = (r, long = false) => {
+  if (r.ch >= 22) return long ? '第2部 クリア！' : '第2部 クリア';
+  if (r.ch >= 13) return long ? `第2部 第${r.ch - 12}章「${CHAPTERS[r.ch] || ''}」` : `第2部 第${r.ch - 12}章`;
   if (r.clear || r.ch >= 12) return long ? 'ストーリー クリア！' : 'クリア';
   if (!r.ch) return '―';
   return long ? `第${r.ch}章「${CHAPTERS[r.ch] || ''}」` : `第${r.ch}章`;

@@ -4,12 +4,12 @@
 import { Node, GeoBuilder, PRIM, initPrims, M4, hexToRgb, mixRgb, MAT } from '../engine/gl3d.js';
 import { fbm, ridge, vnoise, smooth, clamp, lerp, mulberry32 } from '../engine/util.js';
 import { getFlora, getSmallFlora, stamp } from './flora.js';
-import { WORLD, REGIONS, RING, TOWNS, STONES, DUNGEONS, ITEM_BALLS, START_POS, SANCT_R, INNER_R, COAST_R, VOLCANO_C, LAKE_C, ringAt, regionAt, polar, angDeg, angDist } from '../data/world.js';
+import { WORLD, REGIONS, RING, TOWNS, STONES, DUNGEONS, ITEM_BALLS, START_POS, SANCT_R, INNER_R, COAST_R, VOLCANO_C, LAKE_C, ringAt, regionAt, polar, angDeg, angDist, ERA, IMPACT, CRATER_R, BLAST_R, lavaExt, ruinKind } from '../data/world.js';
 
 const N = WORLD.n, CELL = WORLD.cell, HALF = WORLD.half, CH = 32; // チャンク = 32セル
 const MAT_GLOSS = null;
 export const NCH = N / CH;
-const RID = ['start', 'plains', 'forest', 'lake', 'desert', 'canyon', 'snow', 'swamp', 'highland', 'volcano', 'sanctuary', 'inner', 'sea'];
+const RID = ['start', 'plains', 'forest', 'lake', 'desert', 'canyon', 'snow', 'swamp', 'highland', 'volcano', 'sanctuary', 'inner', 'sea', 'crater', 'lavaland'];
 export const REGION_INDEX = Object.fromEntries(RID.map((r, i) => [r, i]));
 
 // ---------- 地形の高さ ----------
@@ -21,6 +21,7 @@ function biomeH(b, x, z) {
     case 'lake': {
       const d = Math.hypot(x - LAKE_C[0], z - LAKE_C[1]) + (fbm(x / 30, z / 30, 2, 9) - 0.5) * 40;
       const base = 2.5 + fbm(x / 60, z / 60, 3, 4) * 5;
+      if (ERA.ruin) return lerp(-2.4, base * 0.7, smooth(28, 92, d));   // 第2部：干上がって 小さな 水たまりだけ
       return lerp(-7, base, smooth(75, 135, d));
     }
     case 'desert': return 3 + ridge(x / 55, z / 55, 3, 5) * 11 + fbm(x / 200, z / 200, 2, 6) * 5;
@@ -62,10 +63,42 @@ function rawHeight(x, z) {
   h = lerp(4 + fbm(x / 60, z / 60, 3, 18) * 3, h, smooth(110, 170, ds));
   // 起伏を強調（立体感）
   if (h > 3) h = 3 + (h - 3) * 1.32;
+  // 第2部：隕石の クレーターと 溶岩の新大地
+  let ext = 0;
+  if (ERA.ruin) {
+    const dc = Math.hypot(x - IMPACT[0], z - IMPACT[1]), t = dc / CRATER_R;
+    if (t < 1.7) {
+      const floor = 0.9 + fbm(x / 18, z / 18, 2, 61) * 1.4 + (t < 0.2 ? (0.2 - t) * 26 : 0);
+      const rim = 15 * Math.exp(-(((dc - CRATER_R) / 15) ** 2)) * (0.75 + fbm(x / 20, z / 20, 2, 62) * 0.6);
+      h = lerp(floor, h, smooth(0.72, 1.18, t)) + rim;
+    }
+    ext = lavaExt(x, z);
+    if (ext > 1) {
+      const hl = 3.2 + fbm(x / 42, z / 42, 3, 63) * 7 + ridge(x / 30, z / 30, 2, 64) * 4;
+      h = lerp(h, hl, smooth(COAST_R - 80, COAST_R - 15, r) * smooth(0, 50, ext));
+    }
+  }
   // 海岸
-  const coast = COAST_R + (fbm(x / 120, z / 120, 3, 19) - 0.5) * 90;
+  const coast = COAST_R + (fbm(x / 120, z / 120, 3, 19) - 0.5) * 90 + ext;
   h = lerp(h, -9, smooth(coast - 45, coast + 25, r));
   return h;
+}
+
+// 第2部：火山から 流れ出た 溶岩の 川（0〜1）
+export function lavaFlow(x, z) {
+  if (!ERA.ruin) return 0;
+  const dx = x - VOLCANO_C[0], dz = z - VOLCANO_C[1], d = Math.hypot(dx, dz);
+  if (d < 26 || d > 620) return 0;
+  let a = Math.atan2(dz, dx) * 180 / Math.PI; if (a < 0) a += 360;
+  let best = 0;
+  for (const [ca, len] of [[50, 620], [18, 330], [86, 360], [122, 230]]) {
+    const wig = (fbm(d / 70, ca * 0.13, 2, 70) - 0.5) * 34;
+    const ad = angDist(a, (ca + wig + 360) % 360) / 57.3 * d;
+    const wd = 4 + d * 0.012;
+    const v = Math.exp(-((ad / wd) ** 2)) * smooth(len, len * 0.75, d);
+    if (v > best) best = v;
+  }
+  return best;
 }
 
 // 台地（がけで囲まれた高台）：地形に立体感を出す
@@ -73,6 +106,7 @@ function mesaH(x, z) {
   const ring = ringAt(x, z);
   const B = REGIONS[ring.id]?.biome;
   if (!['plains', 'highland', 'desert', 'forest', 'lake', 'swamp'].includes(B)) return 0;
+  if (ERA.ruin && (Math.hypot(x - IMPACT[0], z - IMPACT[1]) < CRATER_R * 1.4 || lavaExt(x, z) > 1)) return 0;
   if (Math.hypot(x - START_POS[0], z - START_POS[1]) < 150) return 0;
   const m = fbm(x / 62, z / 62, 3, 41);
   const t1 = B === 'desert' ? 0.6 : B === 'highland' ? 0.6 : 0.63;
@@ -106,11 +140,13 @@ export class World {
   toCell(x) { return Math.floor((x + HALF) / CELL); }
 
   _roads() {
-    const pts = [START_POS, [0, 400], ...RING.slice(1).map(id => TOWNS.find(t => t.region === id).pos), polar(50, 240), TOWNS.find(t => t.id === 'sanctuary').pos];
+    // 第2部：消えた 町（もりの村・ほむらの里）の 道は もとの 場所の あたりまで（クレーターの 中は 道が 消える）
+    const tpos = (id) => (TOWNS.find(t => t.region === id) || { pos: id === 'forest' ? polar(130, 450) : id === 'volcano' ? polar(52, 570) : polar(REGIONS[id].ang, 450) }).pos;
+    const pts = [START_POS, [0, 400], ...RING.slice(1).map(id => tpos(id)), polar(50, 240), TOWNS.find(t => t.id === 'sanctuary').pos];
     const segs = [];
     for (let i = 0; i < pts.length - 1; i++) segs.push([pts[i], pts[i + 1]]);
     // 平原から火山の里へ（近道）
-    segs.push([[0, 400], TOWNS.find(t => t.id === 'volcano').pos]);
+    segs.push([[0, 400], tpos('volcano')]);
     // ダンジョンへの小道
     for (const d of Object.values(DUNGEONS)) { const t = TOWNS.find(tt => tt.region === d.region); if (t) segs.push([t.pos, d.pos]); }
     return segs;
@@ -157,6 +193,7 @@ export class World {
       this.REG[k] = REGION_INDEX[reg];
       let road = 0;
       for (const [a, b] of segs) { if (distSeg(x, z, a, b) < 4.5) { road = 1; break; } }
+      if (road && ERA.ruin && (Math.hypot(x - IMPACT[0], z - IMPACT[1]) < CRATER_R * 1.15 || lavaFlow(x, z) > 0.5)) road = 0;
       this.ROAD[k] = road;
       let flat = 0;
       for (const f of flatSpots) if (Math.hypot(x - f.x, z - f.z) < f.r + 4) { flat = 1; break; }
@@ -216,11 +253,145 @@ export class World {
     // 町の広場
     for (const t of this.townsFlat) { const d = Math.hypot(x - t.x, z - t.z); if (d < t.r * 0.42) { c = mixRgb([0.9, 0.84, 0.74], [0.8, 0.74, 0.66], n2); break; } if (d < t.r + 4 && !road) { c = mixRgb(c, [0.5, 0.8, 0.36], 0.25); } }
     { const gi = Math.floor((x + HALF) / CELL), gj = Math.floor((z + HALF) / CELL); if (gi >= 0 && gj >= 0 && gi < N && gj < N && this.GRASS && this.GRASS[gj * N + gi]) c = mixRgb(c, [0.1, 0.36, 0.1], 0.35); }
+    // 第2部：こわれた 大地の 色（焼けた 森・干上がった 湖・灰・毒の 沼・クレーター・溶岩）
+    if (ERA.ruin) {
+      const rk = ruinKind(reg, x, z);
+      if (rk) c = this._ruinColor(rk, c, x, z, h, n, n2);
+      const lf = lavaFlow(x, z);
+      if (lf > 0.05) c = mixRgb(c, lf > 0.55 ? [1, 0.48, 0.12] : [0.2, 0.12, 0.1], Math.min(1, lf * 1.6));
+      if (rk && road) { c = mixRgb([0.42, 0.38, 0.36], [0.3, 0.27, 0.26], n2); const v = 0.92 + n2 * 0.12; return [c[0] * v, c[1] * v, c[2] * v]; }
+    }
     if (road) c = B === 'snow' ? [0.8, 0.82, 0.88] : B === 'desert' ? [0.86, 0.72, 0.48] : B === 'volcano' ? [0.42, 0.36, 0.33] : B === 'inner' || B === 'sanctuary' ? [0.9, 0.88, 0.8] : [0.8, 0.66, 0.44];
     const v = 0.92 + n2 * 0.12;
     return [c[0] * v, c[1] * v, c[2] * v];
   }
 
+  _ruinColor(rk, c, x, z, h, n, n2) {
+    const dc = Math.hypot(x - IMPACT[0], z - IMPACT[1]);
+    // ひび割れの 線（ノイズの 等高線を 細い すじに 使う）
+    const crack = (sc, seed, w) => { const v = fbm(x / sc, z / sc, 2, seed); return clamp(1 - Math.abs(v - 0.5) / w, 0, 1); };
+    let o;
+    switch (rk) {
+      case 'r_forest': {
+        o = mixRgb([0.19, 0.16, 0.14], [0.32, 0.26, 0.2], n);
+        const ash = fbm(x / 20, z / 20, 2, 81); if (ash > 0.58) o = mixRgb(o, [0.56, 0.54, 0.52], Math.min(0.75, (ash - 0.58) * 4));
+        o = mixRgb(o, [0.08, 0.06, 0.06], crack(16, 82, 0.035) * 0.7);
+        break;
+      }
+      case 'r_lake': {
+        o = mixRgb([0.64, 0.54, 0.41], [0.52, 0.44, 0.33], n);
+        if (fbm(x / 30, z / 30, 2, 83) > 0.62) o = mixRgb(o, [0.86, 0.84, 0.78], 0.55);
+        o = mixRgb(o, [0.3, 0.23, 0.17], Math.max(crack(7, 84, 0.04), crack(13, 85, 0.03)) * 0.8);
+        if (h < 0.6) o = mixRgb(o, [0.38, 0.34, 0.26], 0.5);
+        break;
+      }
+      case 'r_swamp': {
+        o = mixRgb([0.25, 0.2, 0.29], [0.36, 0.3, 0.36], n);
+        const t = fbm(x / 22, z / 22, 2, 66); if (t > 0.58) o = mixRgb(o, t > 0.66 ? [0.62, 0.86, 0.22] : [0.38, 0.5, 0.18], Math.min(0.85, (t - 0.58) * 6));
+        o = mixRgb(o, [0.55, 0.3, 0.62], crack(18, 86, 0.03) * 0.5);
+        break;
+      }
+      case 'r_highland': {
+        const band = Math.sin((x * 0.7 + z) / 7 + fbm(x / 40, z / 40, 2, 87) * 7) * 0.5 + 0.5;
+        o = mixRgb(mixRgb([0.5, 0.5, 0.52], [0.7, 0.69, 0.68], n), [0.82, 0.8, 0.78], band * 0.35);
+        o = mixRgb(o, [0.42, 0.62, 0.32], 0.1 * smooth(0.6, 0.8, fbm(x / 35, z / 35, 2, 88)));
+        break;
+      }
+      case 'r_volcano': o = mixRgb(c, [0.15, 0.11, 0.11], 0.5); o = mixRgb(o, [1, 0.42, 0.1], crack(14, 89, 0.025) * 0.85); break;
+      case 'crater': {
+        o = mixRgb([0.16, 0.14, 0.2], [0.3, 0.25, 0.36], n);
+        o = mixRgb(o, [0.1, 0.08, 0.13], (Math.sin(dc * 0.22) * 0.5 + 0.5) * 0.35);
+        const v = fbm(x / 7, z / 7, 2, 67); if (v > 0.66) o = mixRgb(o, [0.7, 0.4, 0.98], Math.min(1, (v - 0.66) * 14));
+        o = mixRgb(o, [0.78, 0.5, 1], crack(11, 90, 0.025) * 0.8);
+        break;
+      }
+      case 'lavaland': {
+        o = mixRgb([0.11, 0.09, 0.1], [0.23, 0.19, 0.19], n);
+        const v = fbm(x / 26, z / 26, 2, 65); if (v > 0.68 && h > 1) o = mixRgb(o, [0.98, 0.4, 0.1], Math.min(1, (v - 0.68) * 18)); else if (h < 1.3) o = mixRgb(o, [0.3, 0.28, 0.3], 0.5);
+        o = mixRgb(o, [1, 0.42, 0.08], crack(12, 91, 0.022) * 0.9);
+        o = mixRgb(o, [0.4, 0.12, 0.06], crack(5, 92, 0.03) * 0.5);
+        break;
+      }
+      case 'r_blast': {
+        // 隕石から 放射状に のびる 焼けあと（すじ）
+        const a = Math.atan2(z - IMPACT[1], x - IMPACT[0]);
+        const ray = Math.max(0, Math.sin(a * 23 + fbm(dc / 60, a * 3, 2, 93) * 5)) ** 3 * smooth(BLAST_R, BLAST_R * 0.5, dc);
+        o = mixRgb(c, [0.32, 0.26, 0.22], 0.6 * smooth(BLAST_R, BLAST_R * 0.62, dc));
+        o = mixRgb(o, [0.16, 0.13, 0.13], ray * 0.6);
+        o = mixRgb(o, [0.1, 0.08, 0.08], crack(15, 94, 0.03) * 0.5 * smooth(BLAST_R, BLAST_R * 0.6, dc));
+        break;
+      }
+      default: o = c;
+    }
+    // クレーターの まわりは 隕石の 光で むらさきがかる
+    if (dc < CRATER_R * 1.6 && rk !== 'crater') o = mixRgb(o, [0.4, 0.28, 0.55], 0.55 * smooth(CRATER_R * 1.6, CRATER_R * 0.9, dc));
+    return o;
+  }
+  // 第2部の 草木（焦げた 木・倒木・切りかぶ・がれき・隕石の かけら・結晶・溶岩の 割れ目）
+  _ruinFlora(rk, gb, gr, x, h, z, s, roll, r) {
+    const F = this.flora;
+    const dead = (tint) => this._stampProto(gb, F.dead, x, h, z, s * (0.9 + r() * 0.5), r, 0.5, null, tint);
+    const dc = Math.hypot(x - IMPACT[0], z - IMPACT[1]);
+    switch (rk) {
+      case 'r_forest':
+        if (roll < 0.07) dead([0.3, 0.25, 0.23]); else if (roll < 0.095) this._log(gb, x, h, z, r, [0.22, 0.17, 0.15]); else if (roll < 0.115) this._stump(gb, x, h, z, r, [0.26, 0.2, 0.17]);
+        else if (roll < 0.13) this._stampRock(gb, x, h, z, s * 0.8, 'volcano', r); else if (roll < 0.14) this._stampProto(gb, F.purplecrystal, x, h, z, s * 0.8, r, 0.8);
+        else if (roll < 0.16) this._embers(x, h, z, r); else if (roll < 0.18) this._deadbush(gb, x, h, z, r); else if (roll < 0.2) this._ashPile(gb, x, h, z, r);
+        else if (dc < BLAST_R * 0.8 && roll < 0.21) this._meteorite(gb, x, h, z, r, 0.6);
+        break;
+      case 'r_lake': if (roll < 0.014) dead([0.6, 0.5, 0.42]); else if (roll < 0.04) this._deadbush(gb, x, h, z, r); else if (roll < 0.06) this._stampRock(gb, x, h, z, s * 0.8, 'desert', r); else if (roll < 0.064 && h < 1.5) this._boat(gb, x, h, z, r); else if (roll < 0.07) this._log(gb, x, h, z, r, [0.62, 0.52, 0.4]); break;
+      case 'r_swamp': if (roll < 0.035) dead([0.5, 0.42, 0.55]); else if (roll < 0.07) this._stampProto(gb, F.glowmush, x, h, z, 0.9 + r() * 0.7, r, 0.4); else if (roll < 0.085) this._stampProto(gb, F.purplecrystal, x, h, z, s * 0.7, r, 0.8); else if (roll < 0.1) this._toxicPool(x, h, z, r); else if (roll < 0.11) this._log(gb, x, h, z, r, [0.36, 0.3, 0.34]); break;
+      case 'r_highland': if (roll < 0.03) this._stampRock(gb, x, h, z, s * 0.8, 'volcano', r); else if (roll < 0.05) dead([0.6, 0.6, 0.6]); else if (roll < 0.07) this._deadbush(gb, x, h, z, r); else if (roll < 0.085) this._ashPile(gb, x, h, z, r); else if (roll < 0.092) this._stump(gb, x, h, z, r, [0.5, 0.48, 0.47]); break;
+      case 'r_volcano': if (roll < 0.035) this._stampRock(gb, x, h, z, s, 'volcano', r); else if (roll < 0.06) this._lavaCrack(gb, x, h, z, r); else if (roll < 0.07) dead([0.4, 0.32, 0.3]); else if (roll < 0.085) this._obsidian(gb, x, h, z, r); else if (roll < 0.1) this._embers(x, h, z, r); break;
+      case 'crater': if (roll < 0.05) this._stampProto(gb, F.purplecrystal, x, h, z, s * (1 + r()), r, 0.9); else if (roll < 0.08) this._meteorite(gb, x, h, z, r, 1 + r() * 0.8); else if (roll < 0.1) this._stampRock(gb, x, h, z, s, 'volcano', r); else if (roll < 0.11) this._lavaCrack(gb, x, h, z, r); break;
+      case 'lavaland': if (roll < 0.03) this._stampRock(gb, x, h, z, s, 'volcano', r); else if (roll < 0.075) this._lavaCrack(gb, x, h, z, r); else if (roll < 0.09) this._basalt(gb, x, h, z, r); else if (roll < 0.1) this._obsidian(gb, x, h, z, r); else if (roll < 0.105) dead([0.3, 0.26, 0.26]); break;
+      case 'r_blast': if (roll < 0.025) dead([0.42, 0.35, 0.3]); else if (roll < 0.035) this._stampRock(gb, x, h, z, s * 0.8, 'volcano', r); else if (roll < 0.05) this._deadbush(gb, x, h, z, r); else if (roll < 0.065) this._rubble(gb, x, h, z, r); else if (roll < 0.075) this._log(gb, x, h, z, r, [0.3, 0.24, 0.2]); else if (roll < 0.082) this._meteorite(gb, x, h, z, r, 0.5 + r() * 0.5); else if (roll < 0.09) this._embers(x, h, z, r); break;
+    }
+  }
+  // 光る ものは 別の 形に まとめて、ライトの 影響を 受けずに 明るく 描く
+  _gl() { return this._glow || (this._glow = new GeoBuilder()); }
+  // 倒れた 木
+  _log(gb, x, h, z, r, c) {
+    const ry = r() * 6.28, L = 3 + r() * 3, rad = 0.3 + r() * 0.2;
+    gb.setMatrix(M4.fromTRS([x, h + rad * 0.7, z], [0, ry, Math.PI / 2], [1, 1, 1])).cylinder(rad, rad * 1.1, L, c, 0, -L / 2, 0, 7, true, mixRgb(c, [0.75, 0.6, 0.42], 0.5)).setMatrix(null);
+    gb.setMatrix(M4.fromTRS([x + Math.cos(ry) * L * 0.2, h + rad, z - Math.sin(ry) * L * 0.2], [0.9, ry + 1.2, 0], [1, 1, 1])).cylinder(0.05, 0.1, 1.1, c, 0, 0, 0, 4, false).setMatrix(null);
+    this._addObst(x, z, 0.9);
+  }
+  // 焦げた 切りかぶ（ぎざぎざの 上）
+  _stump(gb, x, h, z, r, c) {
+    const rad = 0.45 + r() * 0.25, hh = 0.6 + r() * 0.5;
+    gb.cylinder(rad, rad * 1.25, hh, c, x, h - 0.1, z, 8, true, [0.12, 0.09, 0.08]);
+    for (let k = 0; k < 4; k++) { const a = k / 4 * 6.28 + r(); gb.setMatrix(M4.fromTRS([x + Math.cos(a) * rad * 0.55, h + hh - 0.12, z + Math.sin(a) * rad * 0.55], [0, a, 0], [1, 1, 1])).cone(rad * 0.4, 0.3 + r() * 0.4, c, 0, 0, 0, 4).setMatrix(null); }
+    this._addObst(x, z, rad);
+  }
+  // 灰の 山
+  _ashPile(gb, x, h, z, r) { const s = 0.8 + r() * 0.9; gb.sphere(s, [0.5, 0.48, 0.47], x, h - s * 0.55, z, 7, 4, 0.45); gb.sphere(s * 0.6, [0.6, 0.58, 0.56], x + s * 0.4, h - s * 0.3, z + s * 0.2, 6, 4, 0.5); }
+  // 地面で くすぶる 火の粉
+  _embers(x, h, z, r) { const g = this._gl(); for (let k = 0; k < 5; k++) { const ox = (r() - 0.5) * 2.2, oz = (r() - 0.5) * 2.2; g.sphere(0.07 + r() * 0.08, r() < 0.5 ? [1, 0.55, 0.15] : [1, 0.8, 0.3], x + ox, this.heightAt(x + ox, z + oz) + 0.04, z + oz, 5, 3, 0.6); } }
+  // 毒の 水たまり（光る）
+  _toxicPool(x, h, z, r) { const g = this._gl(); const s = 1 + r() * 1.4; g.setMatrix(M4.fromTRS([x, h + 0.06, z], [0, r() * 6, 0], [s, 1, s * (0.6 + r() * 0.4)])).disc(1, [0.55, 0.95, 0.25], 0, 0, 0, 10).setMatrix(null); for (let k = 0; k < 3; k++) g.sphere(0.12 + r() * 0.1, [0.75, 1, 0.45], x + (r() - 0.5) * s, h + 0.12, z + (r() - 0.5) * s, 6, 4, 0.7); }
+  // くずれた 家の がれき（石・板・屋根がわら）
+  _rubble(gb, x, h, z, r) {
+    const cols = [[0.62, 0.58, 0.54], [0.5, 0.36, 0.24], [0.72, 0.34, 0.28], [0.46, 0.44, 0.42]];
+    for (let k = 0; k < 6; k++) { const c = cols[Math.floor(r() * cols.length)], ox = (r() - 0.5) * 3, oz = (r() - 0.5) * 3, w = 0.4 + r() * 1.2;
+      gb.setMatrix(M4.fromTRS([x + ox, this.heightAt(x + ox, z + oz) + 0.1, z + oz], [r() * 0.8, r() * 6, r() * 0.8], [1, 1, 1])).box(w, 0.15 + r() * 0.35, 0.3 + r() * 0.5, c).setMatrix(null); }
+    if (r() < 0.5) gb.setMatrix(M4.fromTRS([x, h + 0.7, z], [0, r() * 6, 0.25], [1, 1, 1])).box(2.2, 1.6, 0.35, [0.82, 0.78, 0.7]).setMatrix(null);
+    this._addObst(x, z, 1.2);
+  }
+  // 隕石の かけら（光る むらさきの 結晶つき）
+  _meteorite(gb, x, h, z, r, s) {
+    gb.sphere(0.9 * s, [0.2, 0.17, 0.22], x, h + 0.3 * s, z, 6, 4, 0.8);
+    gb.sphere(0.6 * s, [0.26, 0.22, 0.28], x + 0.5 * s, h + 0.2 * s, z - 0.3 * s, 5, 4, 0.8);
+    const g = this._gl();
+    for (let k = 0; k < 3; k++) { const a = k * 2.1 + r(); g.setMatrix(M4.fromTRS([x + Math.cos(a) * 0.5 * s, h + 0.6 * s, z + Math.sin(a) * 0.5 * s], [0.5 * Math.sin(a), a, 0.5 * Math.cos(a)], [1, 1, 1])).cone(0.18 * s, (0.8 + r() * 0.6) * s, [0.8, 0.5, 1], 0, 0, 0, 4).setMatrix(null); }
+    this._addObst(x, z, 0.9 * s);
+  }
+  // 黒曜石の とがった 岩
+  _obsidian(gb, x, h, z, r) { for (let k = 0; k < 3; k++) { const a = k * 2.1 + r(); gb.setMatrix(M4.fromTRS([x + Math.cos(a) * 0.5, h - 0.2, z + Math.sin(a) * 0.5], [0.3 * Math.sin(a), a, 0.3 * Math.cos(a)], [1, 1, 1])).cone(0.35 + r() * 0.2, 1.4 + r() * 1.4, [0.12, 0.1, 0.16], 0, 0, 0, 5).setMatrix(null); } this._addObst(x, z, 0.8); }
+  // 玄武岩の 六角の 柱
+  _basalt(gb, x, h, z, r) { for (let k = 0; k < 5; k++) { const ox = (r() - 0.5) * 2.4, oz = (r() - 0.5) * 2.4, hh = 0.8 + r() * 2.2; gb.cylinder(0.5, 0.52, hh, [0.2, 0.19, 0.22], x + ox, this.heightAt(x + ox, z + oz) - 0.2, z + oz, 6, true, r() < 0.3 ? [0.9, 0.4, 0.12] : [0.3, 0.28, 0.3]); } this._addObst(x, z, 1.3); }
+  // 干上がった 湖に とりのこされた 小舟
+  _boat(gb, x, h, z, r) { const ry = r() * 6; gb.setMatrix(M4.fromTRS([x, h + 0.3, z], [0.25, ry, 0.18], [1, 1, 1])).box(1.4, 0.6, 3.2, [0.55, 0.38, 0.26]).box(1.1, 0.3, 2.8, [0.38, 0.26, 0.18], 0, 0.25, 0).setMatrix(null); this._addObst(x, z, 1.4); }
   // 水面の深さ計算用の高さマップ（0〜255 = -12〜+4）
   hmapInfo() {
     if (this._hm) return this._hm;
@@ -300,12 +471,13 @@ export class World {
       if (this.ROAD[k] || this.FLAT[k]) continue;
       if (this.clear.length && this.clear.some(c => Math.abs(c[0] - x) < 7 && Math.abs(c[1] - z) < 7)) continue;
       const B = REGIONS[reg]?.biome;
+      const RK = ERA.ruin ? ruinKind(reg, x, z) : null;
       // 草むら（エンカウント）
-      if (this.GRASS[k]) this._grass(gr, (gi) * CELL - HALF, (gj) * CELL - HALF, B, r);
+      if (this.GRASS[k]) this._grass(gr, (gi) * CELL - HALF, (gj) * CELL - HALF, RK ? 'volcano' : B, r);
       if (h < 0.4) { if (B === 'swamp' && h < -0.2 && h > -2.5 && r() < 0.08 * dens) { gb.setMatrix(M4.fromTRS([x, 0.05, z], [0, r() * 6, 0], [1, 1, 1])).disc(1.1, [0.3, 0.66, 0.25]).setMatrix(null); if (r() < 0.4) gb.sphere(0.2, [1, 0.7, 0.85], x + 0.3, 0.15, z, 6, 4, 0.6); } continue; }
       if (this.GRASS[k] && r() < 0.7) continue;
       // 地面をおおう短い草（草原・森・湖畔・高原）
-      if ((B === 'plains' || B === 'forest' || B === 'lake' || B === 'highland' || reg === 'start') && !this.GRASS[k]) {
+      if (!RK && (B === 'plains' || B === 'forest' || B === 'lake' || B === 'highland' || reg === 'start') && !this.GRASS[k]) {
         const gc = this._color(x, z, h, reg, 0, 0);
         const nC = this.light ? 1 : 2;
         for (let c = 0; c < nC; c++) { const tx = (gi + r()) * CELL - HALF, tz = (gj + r()) * CELL - HALF; this._put(this.small.tuft[Math.floor(r() * 2)], tx, this.heightAt(tx, tz), tz, r() * 6.28, 0.55 + r() * 0.35, [gc[0] * 1.15, gc[1] * 1.12, gc[2] * 1.05], { outline: 0, cast: false }); }
@@ -314,6 +486,7 @@ export class World {
       const s = 0.8 + r() * 0.6;
       const sl = Math.abs(this.heightAt(x + 2, z) - this.heightAt(x - 2, z)) + Math.abs(this.heightAt(x, z + 2) - this.heightAt(x, z - 2));
       if (sl > 7) { if (sl > 9 && roll < 0.05 && B !== 'snow') this._stampRock(gb, x, h, z, s * 0.8, B, r); continue; }
+      if (RK) { this._ruinFlora(RK, gb, gr, x, h, z, s, roll, r); continue; }
       const F = this.flora;
       const nearStart = Math.hypot(x - START_POS[0], z - START_POS[1]) < 260;
       // 木立（木が集まる場所）と ひらけた野原 をノイズで分ける
@@ -334,8 +507,31 @@ export class World {
     }
     const terrain = new Node(tb.build(), { mat: MAT.terrain, outline: 0, kind: 4, castShadow: false });
     node.add(terrain);
+    // 第2部：溶岩の 川・溶岩だまりは 光る 面を 重ねる（暗い 中でも 赤く かがやく）
+    if (ERA.ruin) {
+      // 頂点ごとの 溶岩の 強さ（ふちは 暗い 赤へ なめらかに）
+      const lv = new Float32Array((CH + 1) * (CH + 1)); let any = false;
+      for (let j = 0; j <= CH; j++) for (let i = 0; i <= CH; i++) {
+        const gi = i0 + i, gj = j0 + j, x = gi * CELL - HALF, z = gj * CELL - HALF;
+        let v = lavaFlow(x, z);
+        const k = Math.min(N - 1, gj) * N + Math.min(N - 1, gi);
+        if (RID[this.REG[k]] === 'lavaland') { const f = fbm(x / 26, z / 26, 2, 65); if (f > 0.66 && this.H[this.idx(gi, gj)] > 0.6) v = Math.max(v, Math.min(1, (f - 0.66) * 12)); }
+        lv[j * (CH + 1) + i] = v; if (v > 0.45) any = true;
+      }
+      if (any) {
+        const g = this._gl(), e = 0.09, dark = [0.2, 0.07, 0.04];
+        const colAt = (v, x, z) => mixRgb(dark, mixRgb([1, 0.38, 0.06], [1, 0.78, 0.32], clamp((v - 0.6) * 2.5, 0, 1) * (0.55 + 0.45 * fbm(x / 9, z / 9, 2, 95))), smooth(0.42, 0.62, v));
+        for (let j = 0; j < CH; j++) for (let i = 0; i < CH; i++) {
+          const idx = [j * (CH + 1) + i, j * (CH + 1) + i + 1, (j + 1) * (CH + 1) + i + 1, (j + 1) * (CH + 1) + i];
+          if (Math.max(lv[idx[0]], lv[idx[1]], lv[idx[2]], lv[idx[3]]) < 0.45) continue;
+          const vs = idx.map((q, m) => { const gi = i0 + i + (m === 1 || m === 2 ? 1 : 0), gj = j0 + j + (m >= 2 ? 1 : 0); const x = gi * CELL - HALF, z = gj * CELL - HALF; return g._push(x, this.H[this.idx(gi, gj)] + e, z, 0, 1, 0, colAt(lv[q], x, z)); });
+          g.tri(vs[0], vs[3], vs[1]); g.tri(vs[1], vs[3], vs[2]);
+        }
+      }
+    }
     if (gb.vcount) node.add(new Node(gb.build(), { mat: MAT.decor }));
     if (gr.vcount) node.add(new Node(gr.build(), { mat: MAT.decor, outline: 0, castShadow: false }));
+    if (this._glow) { if (this._glow.vcount) { const gn = new Node(this._glow.build(), { unlit: true, outline: 0, castShadow: false, receiveShadow: false }); gn.cloudShadow = 0; node.add(gn); } this._glow = null; }
     // インスタンス（同じ形をまとめて描く）
     for (const [geo, g] of this._ib) {
       const a = g.arr, n = a.length / 8;
@@ -420,7 +616,17 @@ export class World {
     this._put(this.small.tuft[Math.floor(r() * 2)], x, h, z, r() * 6.28, 0.9 + r() * 0.4, base, { outline: 0, cast: false });
   }
   _reed(gr, x, h, z, r) { for (let k = 0; k < 5; k++) { const ox = (r() - 0.5) * 0.9, oz = (r() - 0.5) * 0.9, hh = 1.4 + r() * 0.7; gr.sw = 0; gr.swTop = 0.9; gr.cylinder(0.03, 0.05, hh, [0.45, 0.64, 0.3], x + ox, h - 0.2, z + oz, 3, false); gr.swTop = undefined; gr.sway(0.95); gr.cylinder(0.08, 0.08, 0.35, [0.55, 0.36, 0.2], x + ox, h + hh - 0.4, z + oz, 4, true); gr.sway(0); } }
-  _lavaCrack(gb, x, h, z, r) { gb.setMatrix(M4.fromTRS([x, h + 0.08, z], [0, r() * 6, 0], [1.6, 1, 0.5])).disc(1, [1, 0.45, 0.1], 0, 0, 0, 8).setMatrix(null); }
+  _lavaCrack(gb, x, h, z, r) {
+    const g = this._gl();
+    let a = r() * 6.28, px = x, pz = z;
+    for (let k = 0; k < 5; k++) {
+      a += (r() - 0.5) * 1.2; const L = 0.8 + r() * 0.8, nx = px + Math.cos(a) * L, nz = pz + Math.sin(a) * L, w = 0.22 - k * 0.03;
+      const y0 = this.heightAt(px, pz) + 0.07, y1 = this.heightAt(nx, nz) + 0.07, ox = -Math.sin(a) * w, oz = Math.cos(a) * w;
+      g.quad([px - ox, y0, pz - oz], [nx - ox * 0.6, y1, nz - oz * 0.6], [nx + ox * 0.6, y1, nz + oz * 0.6], [px + ox, y0, pz + oz], k < 2 ? [1, 0.75, 0.3] : [1, 0.45, 0.1]);
+      gb.quad([px - ox * 2, y0 - 0.02, pz - oz * 2], [nx - ox * 1.6, y1 - 0.02, nz - oz * 1.6], [nx + ox * 1.6, y1 - 0.02, nz + oz * 1.6], [px + ox * 2, y0 - 0.02, pz + oz * 2], [0.12, 0.08, 0.08]);
+      px = nx; pz = nz;
+    }
+  }
   // 草むら（エンカウント）：根元が暗く先が明るい、しなる葉の束（ぎっしり）
   _grass(gr, x0, z0, B, r) {
     const base = B === 'desert' ? [0.82, 0.72, 0.32] : B === 'snow' ? [0.55, 0.8, 0.82] : B === 'volcano' ? [0.5, 0.38, 0.3] : B === 'swamp' ? [0.26, 0.48, 0.2] : B === 'canyon' ? [0.72, 0.6, 0.28] : B === 'sanctuary' ? [0.95, 0.85, 0.4] : B === 'highland' ? [0.3, 0.72, 0.24] : [0.2, 0.6, 0.18];
@@ -584,6 +790,13 @@ export function buildBuilding(type, seed = 0, regionColor = '#c8643c') {
 }
 
 // 地域ごとの空・霧（アニメ調の空のテーマ）
+// 第2部：こわれた 地域の 空（灰・噴煙・隕石の 光）
+export const SKY_RUIN = {
+  forest: { bg: [0.42, 0.34, 0.42], fog: [0.5, 0.4, 0.46], theme: 'volcano' }, lake: { bg: [0.66, 0.56, 0.48], fog: [0.72, 0.6, 0.5], theme: 'desert' },
+  swamp: { bg: [0.36, 0.3, 0.44], fog: [0.44, 0.36, 0.5], theme: 'swamp' }, highland: { bg: [0.58, 0.58, 0.62], fog: [0.66, 0.66, 0.68], theme: 'swamp' },
+  volcano: { bg: [0.42, 0.18, 0.14], fog: [0.52, 0.22, 0.16], theme: 'volcano' }, crater: { bg: [0.3, 0.2, 0.44], fog: [0.4, 0.27, 0.52], theme: 'inner' },
+  lavaland: { bg: [0.38, 0.16, 0.12], fog: [0.48, 0.2, 0.14], theme: 'volcano' },
+};
 export const SKY = {
   plains: { bg: [0.6, 0.82, 1], fog: [0.74, 0.88, 1], theme: 'day' }, start: { bg: [0.6, 0.82, 1], fog: [0.74, 0.88, 1], theme: 'day' },
   forest: { bg: [0.5, 0.74, 0.86], fog: [0.6, 0.8, 0.78], theme: 'day' }, lake: { bg: [0.6, 0.84, 1], fog: [0.74, 0.9, 1], theme: 'day' },

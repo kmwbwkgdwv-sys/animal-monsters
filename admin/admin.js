@@ -147,14 +147,14 @@ $('.reload').onclick = () => loadList();
 // 選んだ 章の 中身（紋章・手持ち・場所）を 先に 見せる
 async function mkPreview() {
   const n = +$('.mkch').value;
-  $('.mklgrow').classList.toggle('hidden', n !== 11);
+  $('.mklgrow').classList.toggle('hidden', n < 11);
   try {
     const [{ buildStorySave }, { SPECIES }, { STONES }] = await Promise.all([import('../js/game/devsave.js'), import('../js/data/species.js'), import('../js/data/world.js')]);
     const S = buildStorySave('preview', n, { starter: +$('.mkst').value, legend: +$('.mklg').value });
     if (+$('.mkch').value !== n) return;
     const lvs = S.party.map(m => m.lv), town = STONES.find(x => x.id === S.lastHospital)?.name || '';
     const lulu = S.story.lulu ? '（ルルは クロギリ団に さらわれ中）' : S.story.luluUid ? '・ルルあり' : '';
-    $('.mkinfo').innerHTML = `${n >= 11 ? 'ストーリー 全クリア（クリア後の 世界）' : `第${n + 1}章が 始まる ところ`}・紋章 ${S.story.crests}個・手持ち ${S.party.length}匹 Lv${Math.min(...lvs)}〜${Math.max(...lvs)}・ボックス ${S.box.length}匹${lulu}<br>スタート：${esc(town)}　手持ち：${S.party.map(m => esc(m.nick || SPECIES[m.sp].name)).join('・')}`;
+    $('.mkinfo').innerHTML = `${n >= 21 ? '第2部 全クリア' : n >= 12 ? `第2部（隕石の あとの 大陸）・${n === 12 ? '第2部 第1章から' : `第2部 第${n - 11}章が 始まる ところ`}` : n >= 11 ? 'ストーリー 全クリア（クリア後の 世界）' : `第${n + 1}章が 始まる ところ`}・紋章 ${S.story.crests}個・手持ち ${S.party.length}匹 Lv${Math.min(...lvs)}〜${Math.max(...lvs)}・ボックス ${S.box.length}匹${lulu}<br>スタート：${esc(town)}　手持ち：${S.party.map(m => esc(m.nick || SPECIES[m.sp].name)).join('・')}`;
   } catch (e) { $('.mkinfo').textContent = ''; console.error(e); }
 }
 const onSetting = () => { mkPreview(); if (draft) { buildDraft(); toast('設定を 変えたので 中身を 作りなおしました'); } };
@@ -167,7 +167,7 @@ const loadME = async () => (ME ||= await import('./moneditor.js'));
 async function buildDraft() {
   const [{ buildStorySave, chapterPool }] = await Promise.all([import('../js/game/devsave.js'), loadME()]);
   const name = $('.mkname').value.trim() || 'nekojita';
-  const ch = Math.max(1, Math.min(11, +$('.mkch').value || 4));
+  const ch = Math.max(1, Math.min(21, +$('.mkch').value || 4));
   draft = buildStorySave(name, ch, { starter: +$('.mkst').value, legend: +$('.mklg').value });
   draftPool = chapterPool(ch, +$('.mkst').value);
   $('.dmoney').value = draft.money;
@@ -220,9 +220,9 @@ $('.dapply').onclick = () => { if (!draft) return; const r = applyDex(); toast(`
 $('.domake').onclick = async () => {
   if (!isAdmin) return;
   const name = $('.mkname').value.trim() || 'nekojita';
-  const ch = Math.max(1, Math.min(11, +$('.mkch').value || 4));
+  const ch = Math.max(1, Math.min(21, +$('.mkch').value || 4));
   const out = $('.mkout');
-  if (!confirm(`「${name}」の アカウント（${ch >= 11 ? 'ストーリー 全クリア' : `第${ch}章まで クリア／第${ch + 1}章の はじめ`}）を 作りますか？`)) return;
+  if (!confirm(`「${name}」の アカウント（${ch >= 12 ? (ch >= 21 ? '第2部 全クリア' : ch === 12 ? '第2部の はじめ' : `第2部 第${ch - 12}章まで クリア`) : ch >= 11 ? 'ストーリー 全クリア' : `第${ch}章まで クリア／第${ch + 1}章の はじめ`}）を 作りますか？`)) return;
   $('.domake').disabled = true; out.innerHTML = '<p class="muted">作成中……（サーバーに 接続しています）</p>';
   const KEY = 'animon_save_v1', keep = localStorage.getItem(KEY);
   try {
@@ -284,7 +284,7 @@ function onMode() {
   if (all || giftPid) { ensureGiftList(); loadPending(); }
 }
 document.querySelectorAll('input[name="gmode"]').forEach(r => r.onchange = onMode);
-$('.gch').onchange = () => $('.glg').classList.toggle('hidden', $('.gch').value !== '11');
+$('.gch').onchange = () => $('.glg').classList.toggle('hidden', !(+$('.gch').value >= 11));
 const fmtDay = (t) => { const d = new Date(+t); return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`; };
 async function loadPending() {
   const el = $('.gpend');
@@ -301,7 +301,7 @@ async function loadPending() {
       const g = v[id]; let n = 0; try { n = JSON.parse(g.mons || '[]').length; } catch (e) { /* */ }
       const end = +g.until && Date.now() > +g.until;
       const row = document.createElement('div'); row.className = 'gpitem';
-      row.innerHTML = `<span class="grow">${g.money ? '¥' + (+g.money).toLocaleString() + ' ' : ''}${itemText(g.items)}${n ? 'アニモン ' + n + '匹 ' : ''}${g.story ? `📖第${g.story.cleared}章まで クリアに 直す ` : ''}${g.note ? '「' + esc(g.note) + '」' : ''}${all ? `<br><small class="muted">${g.at ? fmtDay(g.at) + ' 送信' : ''}${+g.until ? '・' + fmtDay(g.until) + ' まで' : ''}${g.newOk === false ? '・送った 時点の プレイヤーだけ' : ''}${end ? '・<b class="ng">期限切れ</b>' : ''}</small>` : ''}</span><button class="sm red">${all ? '終わらせる' : '取り消す'}</button>`;
+      row.innerHTML = `<span class="grow">${g.money ? '¥' + (+g.money).toLocaleString() + ' ' : ''}${itemText(g.items)}${n ? 'アニモン ' + n + '匹 ' : ''}${g.story ? `📖${+g.story.cleared >= 12 ? (+g.story.cleared === 12 ? '第2部の はじめ' : `第2部 第${g.story.cleared - 12}章まで クリア`) : `第${g.story.cleared}章まで クリア`}に 直す ` : ''}${g.note ? '「' + esc(g.note) + '」' : ''}${all ? `<br><small class="muted">${g.at ? fmtDay(g.at) + ' 送信' : ''}${+g.until ? '・' + fmtDay(g.until) + ' まで' : ''}${g.newOk === false ? '・送った 時点の プレイヤーだけ' : ''}${end ? '・<b class="ng">期限切れ</b>' : ''}</small>` : ''}</span><button class="sm red">${all ? '終わらせる' : '取り消す'}</button>`;
       row.querySelector('button').onclick = async () => {
         if (!confirm(all ? 'この プレゼントを 終わらせますか？（まだ 受け取っていない 人は 受け取れなく なります）' : 'この プレゼントを 取り消しますか？')) return;
         await D.remove(D.ref(db, `${path}/${id}`)); toast(all ? '終わらせました' : '取り消しました'); loadPending();

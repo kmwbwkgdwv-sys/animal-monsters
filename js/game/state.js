@@ -62,4 +62,4 @@ export function canRelease(m) { const S = G.save.story || {}; return m.uid !== S
 export function save() { if (G.save) { try { if (G.state === 'world') { const mv = fixPartyDup(); if (mv.length && G.onDupFixed) G.onDupFixed(mv); } } catch (e) { /* */ } try { if (G.capturePos) G.capturePos(); } catch (e) { /* */ } if (G.save.pid) G.save.cloudDirty = true; writeGame(G.save); if (G.onSaved) G.onSaved(); } }
 export function itemName(id) { return ITEMS[id]?.name || id; }
 export function speciesName(id) { return SPECIES[id]?.name || '？'; }
-export function isUnlocked(region) { if (region === 'sea') return true; return G.save.unlocked.includes(region); }
+export function isUnlocked(region) { if (region === 'sea' || region === 'crater' || region === 'lavaland') return true; return G.save.unlocked.includes(region); }
