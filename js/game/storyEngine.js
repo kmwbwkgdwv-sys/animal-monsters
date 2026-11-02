@@ -57,7 +57,8 @@ export function navTarget() {
   const act = activeQuest();
   if (act) {
     const qs = act.q.steps[act.st.stage], qt = qs.trig;
-    let qp = qt.pos || (qt.t === 'talk' ? act.q.giver.pos : null);
+    const selfBattle = qt.t === 'battle' && qt.trainers.some(t => TRAINERS[t]?.name === act.q.giver.name && !G.save.defeated[t]);
+    let qp = qt.pos || ((qt.t === 'talk' || qt.t === 'deliver' || selfBattle) ? (act.q._hostPos || act.q.giver.pos) : null);
     if (qt.t === 'dungeon' && DUNGEONS[qt.id]) qp = DUNGEONS[qt.id].pos;
     if (qp) return { x: qp[0], z: qp[1], label: act.q.name, kind: 'quest' };
   }
@@ -91,12 +92,13 @@ export function questInfo(q) {
   if (st && st.done) return { state: 'done', obj: 'クリア済み' };
   if (!st) {
     if (!avail) return { state: 'locked', obj: 'ストーリーを 進めると 見つかるかも……' };
-    return { state: 'new', obj: `${placeName(q.giver.pos)}の ${q.giver.name}に 話しかけよう`, pos: q.giver.pos, dest: `${placeName(q.giver.pos)}（${q.giver.name}）` };
+    const gp = q._hostPos || q.giver.pos;
+    return { state: 'new', obj: `${placeName(gp)}の ${q.giver.name}に 話しかけよう`, pos: gp, dest: `${placeName(gp)}（${q.giver.name}）` };
   }
   const step = q.steps[st.stage], t = step.trig;
-  let pos = t.pos || (t.t === 'talk' ? q.giver.pos : null);
+  let pos = t.pos || ((t.t === 'talk' || t.t === 'deliver') ? (q._hostPos || q.giver.pos) : null);
   if (t.t === 'dungeon' && DUNGEONS[t.id]) pos = DUNGEONS[t.id].pos;
-  if (t.t === 'battle') pos = TOWNS.find(x => x.id === 'lake')?.pos;
+  if (t.t === 'battle') pos = t.trainers.some(x => TRAINERS[x]?.name === q.giver.name) ? (q._hostPos || q.giver.pos) : TOWNS.find(x => x.id === 'lake')?.pos;
   const dest = t.t === 'talk' ? `${placeName(pos)}（${q.giver.name}）` : t.t === 'dungeon' ? DUNGEONS[t.id]?.name : placeName(pos);
   return { state: 'active', obj: step.obj, pos, dest, stage: st.stage, total: q.steps.length };
 }
@@ -433,7 +435,9 @@ export function npcMark(n) {
   if (n.kind === 'giver' || n.mergedQuest) {
     const q = n.kind === 'giver' ? n.quest : n.mergedQuest, s = G.save.quests[q.id];
     if (!s) return '!';
-    if (!s.done && ['talk', 'deliver'].includes(q.steps[s.stage].trig.t)) return '?';
+    const tg = !s.done && q.steps[s.stage].trig;
+    if (tg && ['talk', 'deliver'].includes(tg.t)) return '?';
+    if (tg && tg.t === 'battle' && tg.trainers.some(t => TRAINERS[t]?.name === q.giver.name && !G.save.defeated[t])) return '!';
   }
   if (n.kind === 'spot') return '!';
   if (n.kind === 'questTrainer' && !G.save.defeated[n.id]) return '!';
@@ -445,7 +449,7 @@ export async function talkNpc(n) {
   if ((st.trig.t === 'talk' || st.trig.t === 'deliver') && st.trig.npc === n.id) { running = false; return runStep(); }
   if (n.donate) return donateTalk(n);
   // 同じ 人が 受けもつ サイドストーリー（始める とき・話して 進む ときだけ）
-  if (n.mergedQuest) { const q = n.mergedQuest, s = G.save.quests[q.id], stp = s && !s.done ? q.steps[s.stage] : null; if (!s || (stp && ['talk', 'deliver'].includes(stp.trig.t))) return giverTalk(q); }
+  if (n.mergedQuest) { const q = n.mergedQuest, s = G.save.quests[q.id], stp = s && !s.done ? q.steps[s.stage] : null; if (!s || (stp && (['talk', 'deliver'].includes(stp.trig.t) || (stp.trig.t === 'battle' && stp.trig.trainers.some(t => TRAINERS[t]?.name === q.giver.name && !G.save.defeated[t]))))) return giverTalk(q); }
   if (n.kind === 'trainer') {
     if (G.save.defeated[n.id]) return say([`${n.name}|また いつか 勝負しようね！`]);
     await say([`${n.name}|勝負だ！`]);
@@ -504,6 +508,17 @@ async function giverTalk(q) {
   const step = q.steps[s.stage];
   if (step.trig.t === 'talk') return questAdvance(q);
   if (step.trig.t === 'deliver') { if (await deliverMon(step.trig, q.giver.name)) return questAdvance(q); return; }
+  // 依頼人 本人が 相手の 試練（隠しミッションの ゲンなど）：話しかけると 勝負
+  if (step.trig.t === 'battle') {
+    const tid = step.trig.trainers.find(t => TRAINERS[t]?.name === q.giver.name && !G.save.defeated[t]);
+    if (tid) {
+      await say([`${q.giver.name}|${TRAINERS[tid].intro || '勝負だ！'}`]);
+      if (!(await confirmBox(`${q.giver.name}と 勝負しますか？`, '勝負する', 'あとで'))) return say([`${q.giver.name}|準備が できたら また 来なさい。`]);
+      const res = await startTrainerBattle(tid, {});
+      if (res === 'win') checkQuestBattles();
+      return;
+    }
+  }
   return say([`${q.giver.name}|${step.obj.replace(/^【\d\/\d】/, '')}……おねがいね！`]);
 }
 async function spotTalk(q) {

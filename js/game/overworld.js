@@ -309,9 +309,17 @@ export function refreshActors() {
   OW.npcs = [];
   const si = G.save.story.step;
   const idx = (id) => id === null || id === undefined ? null : STEPS.findIndex(s => s.id === id);
+  const shown = [];
   for (const d of NPCS) {
     if (d.show) { const a = idx(d.show[0]), b = idx(d.show[1]); if (a !== null && si < a) continue; if (b !== null && si >= b) continue; }
+    if (d.hideIf && G.save.story.flags[d.hideIf]) continue;
     if (!eraOk(d)) continue;
+    shown.push(d);
+  }
+  // 同じ 人（同じ 名前）が 同時に 2か所に いる ときは、あとから 決まった 出番（より 新しい 場所）の ほうだけ 出す
+  const startOf = (d) => (d.show && idx(d.show[0]) != null ? idx(d.show[0]) : -1);
+  for (const d of shown) {
+    if (shown.some(o => o !== d && o.name === d.name && (startOf(o) > startOf(d) || (startOf(o) === startOf(d) && shown.indexOf(o) > shown.indexOf(d))))) continue;
     OW.npcs.push(makeNpc({ ...d, kind: 'npc' }, d.look));
   }
   // 道ばたのトレーナー
@@ -329,7 +337,8 @@ export function refreshActors() {
     if (q.hidden && !st) continue;   // 隠しミッションは 見つけるまで 出ない
     if (!eraOk({ era: q.era, pos: q.giver.pos })) continue;
     // 同じ 人（同じ 名前）が すぐ 近くに もう 立っている ときは、2人に ならないように その 人が サイドストーリーも 受けもつ
-    const host = OW.npcs.find(n => n.kind === 'npc' && n.name === q.giver.name && Math.hypot(n.x - q.giver.pos[0], n.z - q.giver.pos[1]) < 14);
+    const host = OW.npcs.find(n => n.kind === 'npc' && n.name === q.giver.name && Math.hypot(n.x - q.giver.pos[0], n.z - q.giver.pos[1]) < 60);
+    q._hostPos = host ? [host.x, host.z] : null;
     if (host) host.mergedQuest = q;
     else OW.npcs.push(makeNpc({ id: 'giver_' + q.id, name: q.giver.name, pos: q.giver.pos, ry: 0, kind: 'giver', quest: q }, q.giver.look));
     if (st && !st.done) {
@@ -350,6 +359,7 @@ export function refreshActors() {
         const pos = [[-14, 30], [-2, 36], [10, 40]];
         step.trig.trainers.forEach((tid, k) => {
           if (G.save.defeated[tid]) return;
+          if (TRAINERS[tid]?.name === q.giver.name) return;   // 依頼人 本人（話しかけると 勝負）
           const tp = TOWNS.find(t => t.id === 'lake').pos;
           OW.npcs.push(makeNpc({ id: tid, name: TRAINERS[tid].name, pos: [tp[0] + pos[k][0], tp[1] + pos[k][1]], ry: Math.PI, kind: 'questTrainer', quest: q, tr: { id: tid } }, TRAINERS[tid].look));
         });
@@ -367,6 +377,36 @@ export function refreshActors() {
   }
   // シーンで出したもの
   for (const k in OW.spawned) { const sp = OW.spawned[k]; if (!sp.root.parent) OW.scene.add(sp.root); }
+  declutterNpcs();
+}
+// 人どうし・入口・落とし物・岩などと 話しかける 範囲が 重ならないように、少し ずらして 立たせる
+function moveNpc(n, x, z) {
+  const W = G.world, y = W.groundAt(x, z);
+  n.x = x; n.z = z;
+  if (n.H) n.H.root.setPos(x, y, z);
+  if (n.M) n.M.root.setPos(x, y, z);
+  if (n.shadow) n.shadow.setPos(x, y + 0.05, z);
+  if (n.marker) n.marker.setPos(x, y + 1.4, z);
+}
+function declutterNpcs() {
+  const W = G.world;
+  const trig = OW.trig.filter(t => (t.r || 0) > 0.5 && !(t.kind === 'item' && G.save.items[t.id]));
+  const prio = (n) => n.kind === 'npc' ? 0 : (n.kind === 'giver' || n.kind === 'spot') ? 1 : n.kind === 'questTrainer' ? 2 : n.kind === 'trainer' ? 3 : 4;
+  const list = OW.npcs.filter(n => n.x != null).sort((a, b) => prio(a) - prio(b));
+  const placed = [];
+  const bad = (x, z, story) => trig.some(t => Math.hypot(t.x - x, t.z - z) < t.r + (story ? 0.8 : 1.6)) || placed.some(o => Math.hypot(o.x - x, o.z - z) < 3.4);
+  for (const n of list) {
+    const story = n.kind === 'npc';
+    if (n.path || !bad(n.x, n.z, story)) { placed.push(n); continue; }
+    let found = null;
+    for (let r = 2.5; r <= 14 && !found; r += 1.5) for (let k = 0; k < 12; k++) {
+      const a = k / 12 * Math.PI * 2 + r * 0.7, x = n.x + Math.cos(a) * r, z = n.z + Math.sin(a) * r;
+      if (bad(x, z, story) || W.heightAt(x, z) < -0.3 || (W.blockedByObst && W.blockedByObst(x, z, 0.9))) continue;
+      found = [x, z]; break;
+    }
+    if (found) moveNpc(n, found[0], found[1]);
+    placed.push(n);
+  }
 }
 
 // 住民の立つ場所・通行人の散歩道を 町の中から さがす（建物・入口・ほかの人と 重ならない）

@@ -631,6 +631,7 @@ export function pickFromAll(title, filterFn, multi = 0, pre = [], opts = {}) {
         else {
           if (sel.length >= multi) { toast(`${multi}匹 まで！（外したい 子を 押してください）`); return; }
           if (sel.some(x => x.sp === m.sp)) { toast('同じアニモンは 1匹まで！'); return; }
+          const ng = opts.canAdd && opts.canAdd(sel, m); if (ng) { toast(ng); return; }
           sel.push(m);
         }
         audio.sfx('select'); upd();
@@ -638,7 +639,7 @@ export function pickFromAll(title, filterFn, multi = 0, pre = [], opts = {}) {
       grid.appendChild(c);
     }
     // 保存した パーティーから 選んだ ときは、その 子たちを 先に 選んでおく
-    for (const m of pre || []) { if (multi && sel.length < multi && all.includes(m) && !sel.some(x => x.sp === m.sp)) sel.push(m); }
+    for (const m of pre || []) { if (multi && sel.length < multi && all.includes(m) && !sel.some(x => x.sp === m.sp) && !(opts.canAdd && opts.canAdd(sel, m))) sel.push(m); }
     upd();
     const clr = s.body.querySelector('.clr'); if (clr) clr.onclick = () => { sel.length = 0; upd(); };
     if (okB) okB.onclick = () => { s.onClose = null; s.close(); res(sel.slice()); };

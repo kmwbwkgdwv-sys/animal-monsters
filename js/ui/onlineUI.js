@@ -99,12 +99,16 @@ async function battleSettings() {
   const f = await ask('対戦の形式は？', ['シングル（1対1）', 'ダブル（2対2）', 'やめる']); if (f === 2) return null;
   const c = await ask('何匹で 戦う？', ['3匹', '6匹', 'やめる']); if (c === 2) return null;
   const l = await ask('レベルは？', ['そのままのレベル', '全員レベル50に固定', '全員レベル99に固定', 'やめる']); if (l === 3) return null;
-  const g = await ask('伝説の アニモン（エンテイオウ・ナルメクシア）は？', ['伝説あり（使ってよい）', '伝説なし（使えない）', 'やめる']); if (g === 2) return null;
-  return { format: f === 1 ? 'double' : 'single', count: c === 0 ? 3 : 6, lv99: l === 2, lvFix: l === 1 ? 50 : l === 2 ? 99 : 0, noLegend: g === 1 };
+  const g = await ask('伝説の アニモンは？', ['伝説あり（何体でも）', '伝説は 1体まで', '伝説なし（使えない）', 'やめる']); if (g === 3) return null;
+  return { format: f === 1 ? 'double' : 'single', count: c === 0 ? 3 : 6, lv99: l === 2, lvFix: l === 1 ? 50 : l === 2 ? 99 : 0, noLegend: g === 2, legendMax: g === 1 ? 1 : g === 2 ? 0 : null };
 }
 // 対戦の レベルの 決まり（古い 招待は lv99 だけ）
 export const battleLv = (set) => (set && (+set.lvFix || (set.lv99 ? 99 : 0))) || null;
-const lvText = (set) => { const L = battleLv(set); return (L ? `レベル${L}固定` : 'レベルそのまま') + (set && set.noLegend ? '・伝説なし' : '・伝説あり'); };
+// 伝説の 数の 決まり（null：何体でも・1：1体まで・0：なし）
+const legendMax = (set) => (set && set.noLegend) ? 0 : (set && set.legendMax === 1 ? 1 : null);
+const isLegend = (m) => !!SPECIES[m.sp]?.legend;
+const legendText = (set) => { const L = legendMax(set); return L === 0 ? '伝説なし' : L === 1 ? '伝説1体まで' : '伝説あり'; };
+const lvText = (set) => { const L = battleLv(set); return (L ? `レベル${L}固定` : 'レベルそのまま') + '・' + legendText(set); };
 function waitingScreen(title, text) {
   const s = openScreen(title, { noClose: true, extra: '<button class="btn sm red leave">やめる</button>' });
   s.body.innerHTML = `<div class="card" style="margin:2em auto;max-width:30em;text-align:center"><p class="st2">${esc(text)}</p><p class="muted">⏳</p></div>`;
@@ -134,11 +138,15 @@ async function battleRoom(id, role) {
     if (!await until(r => r.status === 'select' || r.status === 'ready')) { if (!leave) { w.close(); await say(['|相手が 参加しなかったようだ……']); } return; }
     const set = room.settings;
     w.body.querySelector('.st2').textContent = `${set.format === 'double' ? 'ダブル' : 'シングル'}・${set.count}匹・${lvText(set)}　チームを 選んでください`;
-    // 伝説なしの 対戦では 伝説の アニモンを 選べない
-    const okMon = (m) => !(set.noLegend && SPECIES[m.sp]?.legend);
+    // 伝説なしの 対戦では 伝説の アニモンを 選べない・1体までの 対戦では 2体目は 選べない
+    const LM = legendMax(set);
+    const okMon = (m) => !(LM === 0 && isLegend(m));
     const all = [...G.save.party, ...G.save.box].filter(okMon);
-    const uniq = new Set(all.map(m => m.sp));
-    if (uniq.size < set.count) { await say([`|${set.count}種類 以上の アニモンが 必要です。${set.noLegend ? '（伝説なしの 対戦です）' : ''}`]); ON.closeRoom(id, 'abandoned'); w.close(); return; }
+    const uniq = new Set(all.filter(m => !isLegend(m)).map(m => m.sp));
+    const legSp = new Set(all.filter(isLegend).map(m => m.sp));
+    const usable = uniq.size + (LM === 1 ? Math.min(1, legSp.size) : legSp.size);
+    if (usable < set.count) { await say([`|${set.count}種類 以上の アニモンが 必要です。${LM === 0 ? '（伝説なしの 対戦です）' : LM === 1 ? '（伝説は 1体までの 対戦です）' : ''}`]); ON.closeRoom(id, 'abandoned'); w.close(); return; }
+    const tooMany = (team) => LM !== null && team.filter(isLegend).length > LM;
     // 保存した パーティーが あれば、そこから 選べる（選んだ あと 出す 子を 確認・変更 できる）
     let pre = [], preP = null;
     if (presets().some(p => presetMons(p).length)) {
@@ -146,16 +154,17 @@ async function battleRoom(id, role) {
       if (how === 2) { ON.closeRoom(id, 'abandoned'); w.close(); return; }
       if (how === 0) { const p = await openPresets({ pick: true }); if (p) { pre = presetMons(p); preP = p; } }
     }
-    const team = await pickFromAll(`対戦に 出す ${set.count}匹を 選ぶ${set.noLegend ? '（伝説なし）' : ''}`, okMon, set.count, pre.filter(okMon));
-    if (team && set.noLegend && team.some(m => SPECIES[m.sp]?.legend)) { ON.closeRoom(id, 'abandoned'); w.close(); return; }
+    const team = await pickFromAll(`対戦に 出す ${set.count}匹を 選ぶ${LM === 0 ? '（伝説なし）' : LM === 1 ? '（伝説は 1体まで）' : ''}`, okMon, set.count, pre.filter(okMon),
+      { canAdd: (sel, m) => (LM === 1 && isLegend(m) && sel.some(isLegend)) ? '伝説の アニモンは 1体まで！（外したい 子を 押してください）' : null });
+    if (team && tooMany(team)) { ON.closeRoom(id, 'abandoned'); w.close(); return; }
     if (!team) { ON.closeRoom(id, 'abandoned'); w.close(); return; }
     await ON.updateRoom(id, { [role + 'Team']: JSON.stringify(teamPayload(team, preP)) });
     w.body.querySelector('.st2').textContent = '相手の チーム選びを 待っています……';
     if (!await until(r => r.hostTeam && r.guestTeam)) { if (!leave) { w.close(); await say(['|対戦が 中止されました。']); } return; }
     w.onClose = null; w.close();
     const hostTeam = JSON.parse(room.hostTeam), guestTeam = JSON.parse(room.guestTeam);
-    // 伝説なしの 決まりなのに 伝説が いる（古い 版の ゲームなど）ときは 中止
-    if (set.noLegend && [...hostTeam, ...guestTeam].some(m => SPECIES[m.sp]?.legend)) { ON.closeRoom(id, 'abandoned'); await say(['|伝説なしの 対戦なのに 伝説の アニモンが いたので 中止しました。（相手の ゲームを 最新の 版に してください）']); return; }
+    // 伝説の 決まりを 守れて いない（古い 版の ゲームなど）ときは 中止
+    if (tooMany(hostTeam) || tooMany(guestTeam)) { ON.closeRoom(id, 'abandoned'); await say([`|${LM === 0 ? '伝説なしの 対戦なのに 伝説の アニモンが いた' : '伝説は 1体までの 対戦なのに 2体 以上 いた'}ので 中止しました。（相手の ゲームを 最新の 版に してください）`]); return; }
     const lvo = battleLv(set);
     for (const m of [...hostTeam, ...guestTeam]) { m.hp = calcStats(m, lvo).hp; registerDex(m.sp, false); }
     const mySide = role === 'host' ? 0 : 1;

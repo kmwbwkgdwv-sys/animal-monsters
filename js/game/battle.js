@@ -69,6 +69,9 @@ export class Battle {
     return '相手の ' + base;
   }
 
+  // フレンド対戦：相手の アニモンの 持ち物は 名前を 出さない（試合中も あとも ずっと 見せない）
+  hideIt(b) { return this.kind === 'pvp' && this.sides[b.side].ai === 'remote'; }
+  itn(b, name) { return this.hideIt(b) ? '持ち物' : name; }
   // 共闘：左の 枠は 自分の アニモン、右の 枠は 味方の アニモン
   owns(s, slot, b) { if (s.allyFrom == null) return true; return slot === 1 ? b.idx >= s.allyFrom : b.idx < s.allyFrom; }
   isAllySlot(sideI, slot) { const s = this.sides[sideI]; return s.allyFrom != null && slot === 1; }
@@ -233,7 +236,7 @@ export class Battle {
     for (const a of order) {
       if (this.over) return;
       if (!a.b.alive || this.sides[a.side].active[a.slot] !== a.b) continue;
-      if (a.claw) this.msg(`${this.nm(a.b)} は はやわざのツメで 先に動いた！`);
+      if (a.claw) this.msg(`${this.nm(a.b)} は ${this.itn(a.b, 'はやわざのツメ')}で 先に動いた！`);
       this._execMove(a);
       a.b.acted = true;
       this._checkFaints();
@@ -348,11 +351,11 @@ export class Battle {
     let endured = false;
     if (dmg >= t.m.hp && full && t.maxhp > 1) {
       if (ta === 'sturdy') { dmg = t.m.hp - 1; endured = 'ふんばり'; }
-      else if (t.item === 'h_charm') { dmg = t.m.hp - 1; endured = 'いのちのお守り'; t.m.item = null; }
+      else if (t.item === 'h_charm') { dmg = t.m.hp - 1; endured = this.itn(t, 'いのちのお守り'); t.m.item = null; }
     }
     // ふんばりのハチマキ：12%で HP1で 耐える（何度でも）
-    if (!endured && dmg >= t.m.hp && t.m.hp > 1 && t.item === 'h_band2' && this.r() < 0.12) { dmg = t.m.hp - 1; endured = 'ふんばりのハチマキ'; }
-    if (weakB) this.msg(`${this.nm(t)} は ばつぐんよけの実で ダメージを へらした！`);
+    if (!endured && dmg >= t.m.hp && t.m.hp > 1 && t.item === 'h_band2' && this.r() < 0.12) { dmg = t.m.hp - 1; endured = this.itn(t, 'ふんばりのハチマキ'); }
+    if (weakB) this.msg(`${this.nm(t)} は ${this.itn(t, 'ばつぐんよけの実')}で ダメージを へらした！`);
     const hpBefore = t.m.hp;
     t.m.hp = Math.max(0, t.m.hp - dmg);
     this.emit({ t: 'dmg', side: t.side, slot: t.slot, hp: t.m.hp, max: t.maxhp, eff, crit, amount: hpBefore - t.m.hp });
@@ -362,8 +365,8 @@ export class Battle {
     // 吸収・反動
     if (mv.drain && dmg > 0) this._healAmt(b, Math.max(1, Math.floor(dmg * mv.drain)), `${this.nm(t)} から 体力を 吸い取った！`);
     if (mv.recoil && dmg > 0 && b.ab !== 'rockhead' && b.ab !== 'magicguard') this._hurt(b, Math.max(1, Math.floor(dmg * mv.recoil)), `${this.nm(b)} は 反動を 受けた！`);
-    if (b.item === 'h_orb' && b.ab !== 'magicguard') this._hurt(b, Math.max(1, Math.floor(b.maxhp / 10)), `${this.nm(b)} は ちからの宝珠で 体力が 削られた！`);
-    if (b.item === 'h_shell' && dmg > 0 && b.alive) this._healAmt(b, Math.max(1, Math.floor(dmg / 8)), `${this.nm(b)} は かいがらの鈴で 少し 回復した！`);
+    if (b.item === 'h_orb' && b.ab !== 'magicguard') this._hurt(b, Math.max(1, Math.floor(b.maxhp / 10)), `${this.nm(b)} は ${this.itn(b, 'ちからの宝珠')}で 体力が 削られた！`);
+    if (b.item === 'h_shell' && dmg > 0 && b.alive) this._healAmt(b, Math.max(1, Math.floor(dmg / 8)), `${this.nm(b)} は ${this.itn(b, 'かいがらの鈴')}で 少し 回復した！`);
     // 追加効果（ぼうごのマントを 持っていると 受けない）
     if (t.alive && ta !== 'shielddust' && t.item !== 'h_covert') {
       for (const e of mv.e) {
@@ -381,11 +384,11 @@ export class Battle {
       if (ta === 'staticbody' && this.r() < 0.3) this._status(b, 'par', t);
       if (ta === 'flamebody' && this.r() < 0.3) this._status(b, 'brn', t);
       if (ta === 'icebody' && this.r() < 0.1) this._status(b, 'frz', t);
-      if (t.item === 'h_spike' && b.ab !== 'magicguard') this._hurt(b, Math.max(1, Math.floor(b.maxhp / 6)), `${this.nm(b)} は トゲトゲよろいで 傷ついた！`);
+      if (t.item === 'h_spike' && b.ab !== 'magicguard') this._hurt(b, Math.max(1, Math.floor(b.maxhp / 6)), `${this.nm(b)} は ${this.hideIt(t) ? '相手の 持ち物' : 'トゲトゲよろい'}で 傷ついた！`);
     }
     // ふっかつの実
-    if (t.alive && t.item === 'h_berry' && t.m.hp <= t.maxhp / 2) { t.m.item = null; this._healAmt(t, Math.floor(t.maxhp / 4), `${this.nm(t)} は ふっかつの実を 食べて 回復した！`); }
-    if (t.alive && t.item === 'h_sitrus2' && t.m.hp <= t.maxhp / 4) { t.m.item = null; this._healAmt(t, Math.floor(t.maxhp / 3), `${this.nm(t)} は まんぷくの実を 食べて 回復した！`); }
+    if (t.alive && t.item === 'h_berry' && t.m.hp <= t.maxhp / 2) { t.m.item = null; this._healAmt(t, Math.floor(t.maxhp / 4), `${this.nm(t)} は ${this.hideIt(t) ? '持ち物で' : 'ふっかつの実を 食べて'} 回復した！`); }
+    if (t.alive && t.item === 'h_sitrus2' && t.m.hp <= t.maxhp / 4) { t.m.item = null; this._healAmt(t, Math.floor(t.maxhp / 3), `${this.nm(t)} は ${this.hideIt(t) ? '持ち物で' : 'まんぷくの実を 食べて'} 回復した！`); }
     if (!t.alive && b.alive && b.ab === 'moxie') { t._moxie = b; }
   }
 
@@ -455,7 +458,7 @@ export class Battle {
   _stat(b, stat, delta, src) {
     if (!b || !b.alive) return false;
     if (delta < 0 && src && src.side !== b.side && b.ab === 'clearbody') { this.msg(`${this.nm(b)} の クリアボディで 能力は 下がらない！`); return false; }
-    if (delta < 0 && src && src.side !== b.side && b.item === 'h_clearamulet') { this.msg(`${this.nm(b)} は クリアのお守りで 能力が 下がらない！`); return false; }
+    if (delta < 0 && src && src.side !== b.side && b.item === 'h_clearamulet') { this.msg(`${this.nm(b)} は ${this.itn(b, 'クリアのお守り')}で 能力が 下がらない！`); return false; }
     const old = b.st[stat];
     b.st[stat] = Math.max(-6, Math.min(6, old + delta));
     const d = b.st[stat] - old;
@@ -480,7 +483,7 @@ export class Battle {
     const txt = { brn: 'やけどを 負った', psn: '毒を あびた', par: 'まひして 技が 出にくくなった', slp: '眠って しまった', frz: 'こおりついた' }[st];
     this.msg(`${this.nm(t)} は ${txt}！`);
     this.emit({ t: 'status', side: t.side, slot: t.slot, status: st });
-    if (t.item === 'h_clear') { t.m.item = null; t.m.status = null; this.msg(`${this.nm(t)} は すっきりの実で 状態異常が 治った！`); this.emit({ t: 'status', side: t.side, slot: t.slot, status: null }); return true; }
+    if (t.item === 'h_clear') { t.m.item = null; t.m.status = null; this.msg(`${this.nm(t)} は ${this.itn(t, 'すっきりの実')}で 状態異常が 治った！`); this.emit({ t: 'status', side: t.side, slot: t.slot, status: null }); return true; }
     if (src && src.side !== t.side && t.ab === 'synchro' && ['brn', 'psn', 'par'].includes(st)) this._status(src, st, null);
     return true;
   }
@@ -563,14 +566,14 @@ export class Battle {
         else if (!mg && !goggle) this._hurt(b, Math.max(1, Math.floor(b.maxhp / 8)), `${this.nm(b)} は 毒の ダメージを 受けている！`);
       }
       if (!b.alive) continue;
-      if (b.item === 'h_bread') this._healAmt(b, Math.max(1, Math.floor(b.maxhp / 16)), `${this.nm(b)} は めぐみのパンで 少し 回復した。`);
+      if (b.item === 'h_bread') this._healAmt(b, Math.max(1, Math.floor(b.maxhp / 16)), `${this.nm(b)} は ${this.itn(b, 'めぐみのパン')}で 少し 回復した。`);
       if (b.ab === 'sunbask') this._healAmt(b, Math.max(1, Math.floor(b.maxhp / 16)), `${this.nm(b)} は ひなたぼっこで 少し 回復した。`);
       if (b.ab === 'soten') this._healAmt(b, Math.max(1, Math.floor(b.maxhp / TUNE.sotenRegen)), `${this.nm(b)} は 蒼天の守護で 回復した。`);
       if (b.ab === 'speedboost') this._stat(b, 'spe', 1, b);
       if (b.ab === 'shedskin' && b.m.status && this.r() < 0.3) { b.m.status = null; this.msg(`${this.nm(b)} は だっぴして 状態異常が 治った！`); this.emit({ t: 'status', side: b.side, slot: b.slot, status: null }); }
-      if (b.alive && b.item === 'h_berry' && b.m.hp <= b.maxhp / 2) { b.m.item = null; this._healAmt(b, Math.floor(b.maxhp / 4), `${this.nm(b)} は ふっかつの実を 食べて 回復した！`); }
-      if (b.alive && b.item === 'h_sitrus2' && b.m.hp <= b.maxhp / 4) { b.m.item = null; this._healAmt(b, Math.floor(b.maxhp / 3), `${this.nm(b)} は まんぷくの実を 食べて 回復した！`); }
-      if (b.alive && b.item === 'h_regen' && b.m.status && this.r() < 0.25) { b.m.status = null; b.m.slp = 0; this.msg(`${this.nm(b)} は いやしのすずの 音色で 状態異常が 治った！`); this.emit({ t: 'status', side: b.side, slot: b.slot, status: null }); }
+      if (b.alive && b.item === 'h_berry' && b.m.hp <= b.maxhp / 2) { b.m.item = null; this._healAmt(b, Math.floor(b.maxhp / 4), `${this.nm(b)} は ${this.hideIt(b) ? '持ち物で' : 'ふっかつの実を 食べて'} 回復した！`); }
+      if (b.alive && b.item === 'h_sitrus2' && b.m.hp <= b.maxhp / 4) { b.m.item = null; this._healAmt(b, Math.floor(b.maxhp / 3), `${this.nm(b)} は ${this.hideIt(b) ? '持ち物で' : 'まんぷくの実を 食べて'} 回復した！`); }
+      if (b.alive && b.item === 'h_regen' && b.m.status && this.r() < 0.25) { b.m.status = null; b.m.slp = 0; this.msg(`${this.nm(b)} は ${this.hideIt(b) ? '持ち物で' : 'いやしのすずの 音色で'} 状態異常が 治った！`); this.emit({ t: 'status', side: b.side, slot: b.slot, status: null }); }
     }
     this._checkFaints();
     for (const s of this.sides) for (const b of s.team) { b.protecting = false; b.flinch = false; b.redirect = false; b.helped = false; b.acted = false; }
