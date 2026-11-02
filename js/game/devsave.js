@@ -107,6 +107,11 @@ export function chapterPool(cleared, starter = 0) {
 
 // opts: { starter: 0|1|2, legend: 199|200, look }
 export function buildStorySave(name = 'nekojita', cleared = 4, opts = {}) {
+  const S = buildStorySave0(name, cleared, opts);
+  if (opts.hidden) applyHidden(S, opts.hidden);
+  return S;
+}
+function buildStorySave0(name = 'nekojita', cleared = 4, opts = {}) {
   if (+cleared >= 12) return buildPart2Save(name, Math.min(21, Math.round(+cleared)), opts);
   cleared = Math.max(1, Math.min(11, Math.round(+cleared || 4)));
   const look = opts.look || { skin: 1, hair: 'short', hairCol: 1, shirt: 4, pants: 5, shoes: 6, hat: 'cap', hatCol: 8, bottom: 'pants' };
@@ -290,10 +295,43 @@ export function progressText(S) {
   return `第${step.ch}章「${CHAPTERS[step.ch]}」：${step.obj}`;
 }
 
+// ---------- 隠しミッション（スカイドラゴン）の 進み具合 ----------
+//  0：未開始　1〜3：その 段階の とちゅう　4：クリア（スカイドラゴンを もらった）
+//  1〜3 は ストーリーが 第2部 第2章（みなとまち跡）まで 進んでいないと ゲームの 中で 見えない
+export const HIDDEN_JA = ['未開始', '1/3（灰の高原の 岩山で うろこを さがす）', '2/3（元竜使いのゲンの 試練）', '3/3（新大地の 岬へ）', 'クリア（スカイドラゴン 入手）'];
+export const HIDDEN_REQ = 13;   // 1〜3 に するには 第2部 第1章まで クリア して いること
+export function hiddenStage(S) { const q = S?.quests?.q_skydragon; return !q ? 0 : q.done ? 4 : Math.min(3, (+q.stage || 0) + 1); }
+export function hiddenOk(S) { return (S?.story?.step ?? 0) >= STEPS.findIndex(x => x.id === 'p2_4'); }
+export function applyHidden(S, stage) {
+  stage = Math.max(0, Math.min(4, Math.round(+stage || 0)));
+  const st = S.story; st.flags = st.flags || {};
+  S.quests = S.quests || {}; S.defeated = S.defeated || {};
+  if (stage === 0) {
+    delete S.quests.q_skydragon; delete S.defeated.genDragon;
+    for (const k of ['don_gen', 'don_mitsu', 'skyq']) delete st.flags[k];
+    return { stage, mon: null };
+  }
+  // 2人への 寄付は すんだ ことに する（ゲンが 試練の 人に なる）
+  st.flags.don_gen = st.flags.don_mitsu = st.flags.skyq = true;
+  if (stage >= 3) S.defeated.genDragon = true; else delete S.defeated.genDragon;
+  if (stage <= 3) { S.quests.q_skydragon = { stage: stage - 1, t: Date.now() }; return { stage, mon: null }; }
+  S.quests.q_skydragon = { stage: 3, done: true, t: Date.now() };
+  // ごほうびの スカイドラゴン（もう 持っていれば あげない）
+  const all = [...S.party, ...S.box], skyId = id('スカイドラゴン');
+  if (all.some(m => m.uid === st.skyUid || (m.sp === skyId && m.metAt === '新大地の岬'))) return { stage, mon: null };
+  const R = () => 12 + Math.floor(Math.random() * 4);
+  const m = createMon(skyId, 80, { ot: S.name, metAt: '新大地の岬', iv: { hp: R(), atk: R(), def: R(), spe: R() } });
+  st.skyUid = m.uid;
+  let where = 'party';
+  if (S.party.length < 6 && !S.party.some(x => x.sp === m.sp)) S.party.push(m); else { S.box.unshift(m); where = 'box'; }
+  S.dex.caught[m.sp] = S.dex.seen[m.sp] = true;
+  return { stage, mon: m, where };
+}
+
 // 第2部の 章まで すすめた アカウント（第1部 クリアの データ ＋ 第2部の 新しい アニモン・レベル）
 const LV2 = { 12: 82, 13: 84, 14: 86, 15: 88, 16: 90, 17: 95, 18: 98, 19: 99, 20: 99, 21: 99 };
 function buildPart2Save(name, cleared, opts) {
-  const S = buildStorySave(name, 11, opts);
+  const S = buildStorySave0(name, 11, opts);
   applyProgress(S, cleared, opts);
   const lv = LV2[cleared];
   for (const m of S.party) { if (m.lv < lv) { const nm = createMon(grown(m.sp, lv), lv, { ot: m.ot, metAt: m.metAt, iv: m.iv, shiny: m.shiny, nick: m.nick, gift: m.gift }); nm.uid = m.uid; nm.caughtAt = m.caughtAt; Object.assign(m, nm); } }

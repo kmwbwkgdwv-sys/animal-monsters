@@ -550,10 +550,13 @@ export async function questAdvance(q) {
     const lines = [];
     if (r.money) { addMoney(r.money); lines.push(`|${r.money}円 を もらった！`); }
     for (const [id, n] of (r.items || [])) { addItem(id, n); lines.push(`|${itemName(id)} を ${n}個 もらった！`); }
-    if (r.skyDragon) {
+    const haveSky = r.skyDragon && G.save.story.skyUid && [...G.save.party, ...G.save.box].some(m => m.uid === G.save.story.skyUid);
+    if (haveSky) lines.push('|スカイドラゴンは もう 仲間に いる。大空の 竜は うれしそうに ないた！');
+    else if (r.skyDragon) {
       // 隠しミッションの ごほうび：スカイドラゴン（個体値は すべて 12以上）
       const R = () => 12 + Math.floor(Math.random() * 4);
       const mon = createMon(BY_NAME['スカイドラゴン'].id, 80, { ot: G.save.name, metAt: '新大地の岬', iv: { hp: R(), atk: R(), def: R(), spe: R() } });
+      G.save.story.skyUid = mon.uid;
       const where = giveMon(mon); registerDex(mon.sp, true); audio.sfx('catch');
       lines.push(`|伝説の アニモン スカイドラゴン が 仲間になった！` + (where === 'box' ? '（ボックスへ）' : ''));
     }

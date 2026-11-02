@@ -334,6 +334,15 @@ export async function checkGifts() {
           storyFix = DS.progressText(G.save);
           lines.push(`|📖 ストーリーの 進み具合が 直された！\n${storyFix}`);
         }
+        // 隠しミッション（スカイドラゴン）の 進み具合を 直す（自分あての プレゼント だけ）
+        if (g.hidden != null && g.hidden !== '' && !g.all) {
+          const DS = await import('../game/devsave.js');
+          const r = DS.applyHidden(G.save, +g.hidden);
+          lines.push(`|🐉 隠しミッションが「${DS.HIDDEN_JA[r.stage]}」に 直された！`);
+          if (r.mon) lines.push(`|伝説の アニモン スカイドラゴン（Lv${r.mon.lv}）が 仲間になった！${r.where === 'box' ? '（ボックスへ）' : ''}`);
+          if (r.stage >= 1 && r.stage <= 3 && !DS.hiddenOk(G.save)) lines.push('|（ストーリーを 第2部 第2章まで 進めると 見えるように なります）');
+          storyFix = storyFix || 'hidden';   // 読みこみなおして ゲンや クエストの 表示を そろえる
+        }
         got[g.id] = Date.now();
         save();
         audio.sfx('kiran');

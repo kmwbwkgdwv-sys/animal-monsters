@@ -149,16 +149,19 @@ async function mkPreview() {
   const n = +$('.mkch').value;
   $('.mklgrow').classList.toggle('hidden', n < 11);
   try {
-    const [{ buildStorySave }, { SPECIES }, { STONES }] = await Promise.all([import('../js/game/devsave.js'), import('../js/data/species.js'), import('../js/data/world.js')]);
-    const S = buildStorySave('preview', n, { starter: +$('.mkst').value, legend: +$('.mklg').value });
+    const [{ buildStorySave, HIDDEN_REQ, HIDDEN_JA }, { SPECIES }, { STONES }] = await Promise.all([import('../js/game/devsave.js'), import('../js/data/species.js'), import('../js/data/world.js')]);
+    // 隠しミッションの 1/3〜3/3 は 第2部 第1章クリア から（それより 前だと ゲームで 見えない）
+    $('.mkhid').querySelectorAll('option').forEach(o => { const v = +o.value; o.disabled = v >= 1 && v <= 3 && n < HIDDEN_REQ; });
+    if ($('.mkhid').selectedOptions[0]?.disabled) $('.mkhid').value = '0';
+    const S = buildStorySave('preview', n, { starter: +$('.mkst').value, legend: +$('.mklg').value, hidden: +$('.mkhid').value });
     if (+$('.mkch').value !== n) return;
     const lvs = S.party.map(m => m.lv), town = STONES.find(x => x.id === S.lastHospital)?.name || '';
     const lulu = S.story.lulu ? '（ルルは クロギリ団に さらわれ中）' : S.story.luluUid ? '・ルルあり' : '';
-    $('.mkinfo').innerHTML = `${n >= 21 ? '第2部 全クリア' : n >= 12 ? `第2部（隕石の あとの 大陸）・${n === 12 ? '第2部 第1章から' : `第2部 第${n - 11}章が 始まる ところ`}` : n >= 11 ? 'ストーリー 全クリア（クリア後の 世界）' : `第${n + 1}章が 始まる ところ`}・紋章 ${S.story.crests}個・手持ち ${S.party.length}匹 Lv${Math.min(...lvs)}〜${Math.max(...lvs)}・ボックス ${S.box.length}匹${lulu}<br>スタート：${esc(town)}　手持ち：${S.party.map(m => esc(m.nick || SPECIES[m.sp].name)).join('・')}`;
+    $('.mkinfo').innerHTML = `${n >= 21 ? '第2部 全クリア' : n >= 12 ? `第2部（隕石の あとの 大陸）・${n === 12 ? '第2部 第1章から' : `第2部 第${n - 11}章が 始まる ところ`}` : n >= 11 ? 'ストーリー 全クリア（クリア後の 世界）' : `第${n + 1}章が 始まる ところ`}・紋章 ${S.story.crests}個・手持ち ${S.party.length}匹 Lv${Math.min(...lvs)}〜${Math.max(...lvs)}・ボックス ${S.box.length}匹${lulu}<br>スタート：${esc(town)}　手持ち：${S.party.map(m => esc(m.nick || SPECIES[m.sp].name)).join('・')}${+$('.mkhid').value ? `<br>🐉 隠しミッション：${esc(HIDDEN_JA[+$('.mkhid').value])}` : ''}`;
   } catch (e) { $('.mkinfo').textContent = ''; console.error(e); }
 }
 const onSetting = () => { mkPreview(); if (draft) { buildDraft(); toast('設定を 変えたので 中身を 作りなおしました'); } };
-$('.mkch').onchange = onSetting; $('.mkst').onchange = onSetting; $('.mklg').onchange = onSetting;
+$('.mkch').onchange = onSetting; $('.mkst').onchange = onSetting; $('.mklg').onchange = onSetting; $('.mkhid').onchange = onSetting;
 mkPreview();
 
 // ---------- 中身を 調整する（お金・図鑑・アニモン） ----------
@@ -168,7 +171,7 @@ async function buildDraft() {
   const [{ buildStorySave, chapterPool }] = await Promise.all([import('../js/game/devsave.js'), loadME()]);
   const name = $('.mkname').value.trim() || 'nekojita';
   const ch = Math.max(1, Math.min(21, +$('.mkch').value || 4));
-  draft = buildStorySave(name, ch, { starter: +$('.mkst').value, legend: +$('.mklg').value });
+  draft = buildStorySave(name, ch, { starter: +$('.mkst').value, legend: +$('.mklg').value, hidden: +$('.mkhid').value });
   draftPool = chapterPool(ch, +$('.mkst').value);
   $('.dmoney').value = draft.money;
   const L = ME.dexLimits(draft, draftPool);
@@ -222,11 +225,11 @@ $('.domake').onclick = async () => {
   const name = $('.mkname').value.trim() || 'nekojita';
   const ch = Math.max(1, Math.min(21, +$('.mkch').value || 4));
   const out = $('.mkout');
-  if (!confirm(`「${name}」の アカウント（${ch >= 12 ? (ch >= 21 ? '第2部 全クリア' : ch === 12 ? '第2部の はじめ' : `第2部 第${ch - 12}章まで クリア`) : ch >= 11 ? 'ストーリー 全クリア' : `第${ch}章まで クリア／第${ch + 1}章の はじめ`}）を 作りますか？`)) return;
+  if (!confirm(`「${name}」の アカウント（${ch >= 12 ? (ch >= 21 ? '第2部 全クリア' : ch === 12 ? '第2部の はじめ' : `第2部 第${ch - 12}章まで クリア`) : ch >= 11 ? 'ストーリー 全クリア' : `第${ch}章まで クリア／第${ch + 1}章の はじめ`}${+$('.mkhid').value ? '・隠しミッション ' + ['', '1/3', '2/3', '3/3', 'クリア'][+$('.mkhid').value] : ''}）を 作りますか？`)) return;
   $('.domake').disabled = true; out.innerHTML = '<p class="muted">作成中……（サーバーに 接続しています）</p>';
   const KEY = 'animon_save_v1', keep = localStorage.getItem(KEY);
   try {
-    const [{ G }, SV, { buildStorySave, CLEAR_JA }, ON] = await Promise.all([import('../js/game/state.js'), import('../js/game/save.js'), import('../js/game/devsave.js'), import('../js/online.js')]);
+    const [{ G }, SV, { buildStorySave, CLEAR_JA, hiddenStage, HIDDEN_JA }, ON] = await Promise.all([import('../js/game/state.js'), import('../js/game/save.js'), import('../js/game/devsave.js'), import('../js/online.js')]);
     G.settings = SV.loadSettings();
     if (draft) {
       // 調整した 中身を 使う（なまえを 変えていたら 合わせる）
@@ -238,11 +241,11 @@ $('.domake').onclick = async () => {
       ME.stripGen(draft);
       draft.created = Date.now() - 86400000; draft.saved = Date.now();
       G.save = JSON.parse(JSON.stringify(draft));
-    } else G.save = buildStorySave(name, ch, { starter: +$('.mkst').value, legend: +$('.mklg').value });
+    } else G.save = buildStorySave(name, ch, { starter: +$('.mkst').value, legend: +$('.mklg').value, hidden: +$('.mkhid').value });
     const code = await ON.issueTransferCode();
     try { await ON.publishRanking(true); } catch (e) { /* */ }
     const S = G.save;
-    out.innerHTML = `<p class="okc">✅ アカウント「${esc(S.name)}」を 作りました。</p><p class="muted">${esc(CLEAR_JA(ch))}</p><p>引き継ぎコード：</p>
+    out.innerHTML = `<p class="okc">✅ アカウント「${esc(S.name)}」を 作りました。</p><p class="muted">${esc(CLEAR_JA(ch))}${hiddenStage(S) ? '<br>🐉 隠しミッション：' + esc(HIDDEN_JA[hiddenStage(S)]) : ''}</p><p>引き継ぎコード：</p>
       <p style="font-size:1.9em;font-weight:900;letter-spacing:.1em;color:var(--acc);user-select:all;margin:.2em 0">${esc(code)}</p>
       <div class="row"><button class="sm cpc">📋 コピー</button></div>
       <p class="muted">ゲームの タイトル画面 →「🔑 引き継ぎコードの発行・アカウント引き継ぎ」→「コードを入力して 連携する」に 入力すると、この データで 遊べます。<br>パーティー ${S.party.length}匹・ボックス ${S.box.length}匹・所持金 ¥${S.money.toLocaleString()}・紋章 ${S.story.crests}個・図鑑登録 ${Object.keys(S.dex.seen).length}・捕まえた ${Object.keys(S.dex.caught).length}</p>
@@ -301,7 +304,7 @@ async function loadPending() {
       const g = v[id]; let n = 0; try { n = JSON.parse(g.mons || '[]').length; } catch (e) { /* */ }
       const end = +g.until && Date.now() > +g.until;
       const row = document.createElement('div'); row.className = 'gpitem';
-      row.innerHTML = `<span class="grow">${g.money ? '¥' + (+g.money).toLocaleString() + ' ' : ''}${itemText(g.items)}${n ? 'アニモン ' + n + '匹 ' : ''}${g.story ? `📖${+g.story.cleared >= 12 ? (+g.story.cleared === 12 ? '第2部の はじめ' : `第2部 第${g.story.cleared - 12}章まで クリア`) : `第${g.story.cleared}章まで クリア`}に 直す ` : ''}${g.note ? '「' + esc(g.note) + '」' : ''}${all ? `<br><small class="muted">${g.at ? fmtDay(g.at) + ' 送信' : ''}${+g.until ? '・' + fmtDay(g.until) + ' まで' : ''}${g.newOk === false ? '・送った 時点の プレイヤーだけ' : ''}${end ? '・<b class="ng">期限切れ</b>' : ''}</small>` : ''}</span><button class="sm red">${all ? '終わらせる' : '取り消す'}</button>`;
+      row.innerHTML = `<span class="grow">${g.money ? '¥' + (+g.money).toLocaleString() + ' ' : ''}${itemText(g.items)}${n ? 'アニモン ' + n + '匹 ' : ''}${g.story ? `📖${+g.story.cleared >= 12 ? (+g.story.cleared === 12 ? '第2部の はじめ' : `第2部 第${g.story.cleared - 12}章まで クリア`) : `第${g.story.cleared}章まで クリア`}に 直す ` : ''}${g.hidden != null && !all ? `🐉隠しミッションを ${['未開始', '1/3', '2/3', '3/3', 'クリア'][+g.hidden] || '?'}に 直す ` : ''}${g.note ? '「' + esc(g.note) + '」' : ''}${all ? `<br><small class="muted">${g.at ? fmtDay(g.at) + ' 送信' : ''}${+g.until ? '・' + fmtDay(g.until) + ' まで' : ''}${g.newOk === false ? '・送った 時点の プレイヤーだけ' : ''}${end ? '・<b class="ng">期限切れ</b>' : ''}</small>` : ''}</span><button class="sm red">${all ? '終わらせる' : '取り消す'}</button>`;
       row.querySelector('button').onclick = async () => {
         if (!confirm(all ? 'この プレゼントを 終わらせますか？（まだ 受け取っていない 人は 受け取れなく なります）' : 'この プレゼントを 取り消しますか？')) return;
         await D.remove(D.ref(db, `${path}/${id}`)); toast(all ? '終わらせました' : '取り消しました'); loadPending();
@@ -323,8 +326,10 @@ $('.gfind').onclick = async () => {
     giftPid = pid; giftName = pl.name || '';
     w.innerHTML = `<span class="okc">✅ 見つかりました：${esc(giftName || '（なまえ なし）')}</span> <span class="muted">${esc(sum)}</span>`;
     // いまの ストーリーの 進み具合
-    $('.gnow').textContent = '';
-    try { const sv = await D.get(D.ref(db, 'saves/' + pid)); if (sv.exists() && sv.val().data) { const S = JSON.parse(sv.val().data); const { progressText } = await import('../js/game/devsave.js'); $('.gnow').textContent = 'いま：' + progressText(S) + `（紋章 ${S.story?.crests ?? 0}個${S.story?.lulu ? '・ルルは さらわれ中' : ''}）`; } } catch (e) { $('.gnow').textContent = '（いまの 進み具合は 新しい ルールを 公開すると 見られます）'; }
+    $('.gnow').textContent = ''; $('.ghnow').textContent = '';
+    try { const sv = await D.get(D.ref(db, 'saves/' + pid)); if (sv.exists() && sv.val().data) { const S = JSON.parse(sv.val().data); const { progressText, hiddenStage, hiddenOk, HIDDEN_JA } = await import('../js/game/devsave.js'); $('.gnow').textContent = 'いま：' + progressText(S) + `（紋章 ${S.story?.crests ?? 0}個${S.story?.lulu ? '・ルルは さらわれ中' : ''}）`;
+      const F = S.story?.flags || {}, hs = hiddenStage(S);
+      $('.ghnow').textContent = 'いま：' + HIDDEN_JA[hs] + (hs ? '' : `（寄付：ゲン ${F.don_gen ? '済' : 'まだ'}・ミツ ${F.don_mitsu ? '済' : 'まだ'}）`) + (hs >= 1 && hs <= 3 && !hiddenOk(S) ? '（ストーリーが 第2部 第2章 前なので まだ 見えません）' : ''); } } catch (e) { $('.gnow').textContent = '（いまの 進み具合は 新しい ルールを 公開すると 見られます）'; }
     onMode();
   } catch (e) { w.innerHTML = `<span class="ng">${esc(errText(e))}</span>`; }
 };
@@ -334,15 +339,16 @@ $('.gsend').onclick = async () => {
   if (!all && !giftPid) return;
   const money = Math.round(+$('.gmoney').value || 0), note = $('.gnote').value.trim().slice(0, 200), toBox = $('.gtobox').checked;
   const storyCh = all ? 0 : +$('.gch').value || 0;
+  const hidden = all || $('.ghid').value === '' ? null : +$('.ghid').value;
   const items = {}; document.querySelectorAll('.gi').forEach(i => { const n = Math.max(0, Math.min(99, Math.round(+i.value || 0))); if (n) items[i.dataset.id] = n; });
-  if (!money && !giftMons.length && !Object.keys(items).length && !storyCh) { alert('お金・道具・アニモン・ストーリーの 進み具合の どれかを 入れてください'); return; }
+  if (!money && !giftMons.length && !Object.keys(items).length && !storyCh && hidden == null) { alert('お金・道具・アニモン・ストーリーや 隠しミッションの 進み具合の どれかを 入れてください'); return; }
   let until = 0;
   if (all) {
     const v = $('.guntil').value;
     until = v ? new Date(v + 'T23:59:59').getTime() : 0;
     if (until && until < Date.now()) { alert('期限が もう すぎています'); return; }
   }
-  const what = `${money ? '¥' + money.toLocaleString() + ' ' : ''}${itemText(items)}${giftMons.length ? 'アニモン ' + giftMons.length + '匹 ' : ''}${storyCh ? `ストーリーを 第${storyCh}章まで クリアに 直す ` : ''}`;
+  const what = `${money ? '¥' + money.toLocaleString() + ' ' : ''}${itemText(items)}${giftMons.length ? 'アニモン ' + giftMons.length + '匹 ' : ''}${storyCh ? `ストーリーを 第${storyCh}章まで クリアに 直す ` : ''}${hidden != null ? `隠しミッションを「${['未開始', '1/3', '2/3', '3/3', 'クリア'][hidden]}」に 直す ` : ''}`;
   if (!confirm(all ? `【全員】すべての プレイヤーに ${what}を 送りますか？${until ? `\n（${fmtDay(until)} まで 受け取れます）` : ''}` : `${giftName || 'この人'} に ${what}を 送りますか？`)) return;
   $('.gsend').disabled = true;
   try {
@@ -351,10 +357,11 @@ $('.gsend').onclick = async () => {
     const data = { at: D.serverTimestamp(), by: user.uid, money, note, mons: JSON.stringify(mons) };
     if (Object.keys(items).length) data.items = items;
     if (storyCh) data.story = { cleared: storyCh, legend: +$('.glg').value || 199 };
+    if (hidden != null) data.hidden = hidden;
     if (all) { if (until) data.until = until; data.newOk = $('.gnew').checked; }
     await D.set(D.ref(db, all ? `giftsAll/${gid}` : `gifts/${giftPid}/${gid}`), data);
     toast(all ? '🎁 全員に 送りました！ ゲームを 開いた 人から 順に 届きます' : '🎁 送りました！ その人が ゲームを 開くと 届きます');
-    giftMons.length = 0; giftL && giftL.redraw(); $('.gmoney').value = 0; $('.gnote').value = ''; document.querySelectorAll('.gi').forEach(i => { i.value = 0; }); $('.gch').value = ''; $('.glg').classList.add('hidden');
+    giftMons.length = 0; giftL && giftL.redraw(); $('.gmoney').value = 0; $('.gnote').value = ''; document.querySelectorAll('.gi').forEach(i => { i.value = 0; }); $('.gch').value = ''; $('.ghid').value = ''; $('.glg').classList.add('hidden');
     loadPending();
   } catch (e) { alert('送れませんでした：' + errText(e) + '\n（新しい ルールを 公開してください）'); }
   $('.gsend').disabled = false;
