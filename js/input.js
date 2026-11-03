@@ -1,10 +1,12 @@
 // 入力（キーボード・タッチ）
-import { $ } from './ui/ui.js';
+import { $, toast } from './ui/ui.js';
 
 export const Input = {
   mx: 0, mz: 0, run: false, runToggle: false, keys: new Set(), pressed: new Set(), touch: false,
   wheel: 0,
   camDX: 0, camDY: 0, // 視点を回す量（ドラッグした距離）
+  looking: false,   // PC：マウスで 視点モード（カーソルを かくして いる）
+  canLook: () => false, mouseLook: () => true,   // main.js が 入れる（いま 視点を 回せるか・設定が「動かすだけ」か）
   edge(k) { if (this.pressed.has(k)) { this.pressed.delete(k); return true; } return false; },
   clearEdges() { this.pressed.clear(); },
 };
@@ -18,7 +20,8 @@ export function resetInput() {
   keyDownAt.clear();
   if (stickReset) stickReset();
 }
-const keyDownAt = new Map();   // キー → 最後に 押された（くり返し入力を ふくむ）時刻
+const keyDownAt = new Map();
+let lookOffAt = -1e9;   // マウス視点を やめた 時刻   // キー → 最後に 押された（くり返し入力を ふくむ）時刻
 const MOVE_KEYS = new Set(['up', 'down', 'left', 'right', 'run', 'camL', 'camR', 'camUp', 'camDown']);
 const isField = (t) => t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA' || t.isContentEditable);
 export function initInput() {
@@ -29,6 +32,8 @@ export function initInput() {
     // Mac の ⌘ を 押しながらの キーは はなした合図が 来ないので 移動に 使わない
     if (e.metaKey || e.ctrlKey || e.altKey) { if (MAP[e.code] && MOVE_KEYS.has(MAP[e.code])) return; }
     const k = MAP[e.code]; if (!k) return;
+    // マウス視点を やめる Esc では メニューを 開かない
+    if (e.code === 'Escape' && (Input.looking || performance.now() - lookOffAt < 400)) return;
     if (!Input.keys.has(k)) Input.pressed.add(k);
     Input.keys.add(k); keyDownAt.set(k, performance.now());
     if (e.code === 'Tab' || e.code === 'Space' || e.code.startsWith('Arrow')) e.preventDefault();
@@ -64,6 +69,39 @@ export function initInput() {
   });
   window.addEventListener('pointerup', (e) => { if (e.pointerType === 'mouse') mDrag = null; });
   game.addEventListener('contextmenu', (e) => e.preventDefault());
+
+  // PC：マウスを 動かすだけで 視点を 回す（設定「マウスで 視点」＝動かすだけ）
+  //  フィールドの 画面を クリックすると カーソルが 消えて 視点モード。メニュー・会話・バトルの あいだは 自動で カーソルが もどり、
+  //  終わると また 視点モードに もどる。Esc で 自分で やめたら、もう一度 画面を クリックするまで もどらない。
+  const locked = () => document.pointerLockElement === game;
+  let autoOff = false, resume = false, hinted = false;
+  const tryLock = () => { try { const r = game.requestPointerLock(); if (r && r.catch) r.catch(() => { resume = false; }); } catch (e) { resume = false; } };
+  game.addEventListener('pointerdown', (e) => {
+    if (e.pointerType !== 'mouse' || e.button !== 0 || locked() || !Input.mouseLook() || !Input.canLook()) return;
+    tryLock();
+  });
+  document.addEventListener('mousemove', (e) => {
+    if (!locked()) return;
+    // ロックした 直後などの 大きな とび は けずる
+    const cl = (v) => Math.max(-120, Math.min(120, v || 0));
+    Input.camDX += cl(e.movementX) * 0.6; Input.camDY += cl(e.movementY) * 0.6;
+  });
+  document.addEventListener('pointerlockchange', () => {
+    if (locked()) {
+      Input.looking = true; resume = false;
+      if (!hinted) { hinted = true; toast('🖱 マウスを 動かすと 視点が 回ります（Esc で カーソルを 出す）', 3200); }
+    } else {
+      Input.looking = false; lookOffAt = performance.now();
+      resume = autoOff;   // 自動で 外した ときだけ あとで もどす
+      autoOff = false;
+    }
+  });
+  document.addEventListener('pointerlockerror', () => { resume = false; });
+  setInterval(() => {
+    const ok = Input.mouseLook() && Input.canLook();
+    if (locked() && !ok) { autoOff = true; document.exitPointerLock(); }
+    else if (!locked() && resume && ok && document.hasFocus()) { resume = false; tryLock(); }
+  }, 120);
 
   // タッチのジョイスティック
   const stick = $('#stick'), knob = $('#knob');

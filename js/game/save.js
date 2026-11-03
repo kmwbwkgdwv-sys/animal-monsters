@@ -4,8 +4,9 @@ import { START_POS } from '../data/world.js';
 export const SAVE_KEY = 'animon_save_v1';
 export const SETTINGS_KEY = 'animon_settings_v1';
 
+// mouseLook：PCの マウス視点（'move' 動かすだけ／'drag' ドラッグ）
 // 感度（1 = ふつう）：camSens 視点の左右・camSensY 視点の上下・stickSens スティック・zoomSens ズーム、camInvX/camInvY 反転
-export function defaultSettings() { return { bgm: true, sfx: true, light: false, autoSkip: false, textSpeed: 1, camSens: 1, camSensY: 1, camInvX: false, camInvY: false, stickSens: 1, zoomSens: 1 }; }
+export function defaultSettings() { return { bgm: true, sfx: true, light: false, autoSkip: false, textSpeed: 1, camSens: 1, camSensY: 1, camInvX: false, camInvY: false, stickSens: 1, zoomSens: 1, mouseLook: 'move' }; }
 export function loadSettings() {
   try { return { ...defaultSettings(), ...JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}') }; } catch (e) { return defaultSettings(); }
 }

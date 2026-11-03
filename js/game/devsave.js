@@ -307,21 +307,22 @@ export function applyHidden(S, stage) {
   const st = S.story; st.flags = st.flags || {};
   S.quests = S.quests || {}; S.defeated = S.defeated || {};
   if (stage === 0) {
-    delete S.quests.q_skydragon; delete S.defeated.genDragon;
+    delete S.quests.q_skydragon; delete S.defeated.genDragon; delete st.skyGot;
     for (const k of ['don_gen', 'don_mitsu', 'skyq']) delete st.flags[k];
     return { stage, mon: null };
   }
   // 2人への 寄付は すんだ ことに する（ゲンが 試練の 人に なる）
   st.flags.don_gen = st.flags.don_mitsu = st.flags.skyq = true;
   if (stage >= 3) S.defeated.genDragon = true; else delete S.defeated.genDragon;
-  if (stage <= 3) { S.quests.q_skydragon = { stage: stage - 1, t: Date.now() }; return { stage, mon: null }; }
+  if (stage <= 3) { S.quests.q_skydragon = { stage: stage - 1, t: Date.now() }; delete st.skyGot; return { stage, mon: null }; }
   S.quests.q_skydragon = { stage: 3, done: true, t: Date.now() };
   // ごほうびの スカイドラゴン（もう 持っていれば あげない）
   const all = [...S.party, ...S.box], skyId = id('スカイドラゴン');
-  if (all.some(m => m.uid === st.skyUid || (m.sp === skyId && m.metAt === '新大地の岬'))) return { stage, mon: null };
+  const had = all.find(m => (st.skyUid && m.uid === st.skyUid) || (m.sp === skyId && m.metAt === '新大地の岬'));
+  if (had) { st.skyUid = had.uid; st.skyGot = true; return { stage, mon: null }; }
   const R = () => 12 + Math.floor(Math.random() * 4);
   const m = createMon(skyId, 80, { ot: S.name, metAt: '新大地の岬', iv: { hp: R(), atk: R(), def: R(), spe: R() } });
-  st.skyUid = m.uid;
+  st.skyUid = m.uid; st.skyGot = true;
   let where = 'party';
   if (S.party.length < 6 && !S.party.some(x => x.sp === m.sp)) S.party.push(m); else { S.box.unshift(m); where = 'box'; }
   S.dex.caught[m.sp] = S.dex.seen[m.sp] = true;

@@ -550,22 +550,57 @@ export async function questAdvance(q) {
     const lines = [];
     if (r.money) { addMoney(r.money); lines.push(`|${r.money}円 を もらった！`); }
     for (const [id, n] of (r.items || [])) { addItem(id, n); lines.push(`|${itemName(id)} を ${n}個 もらった！`); }
-    const haveSky = r.skyDragon && G.save.story.skyUid && [...G.save.party, ...G.save.box].some(m => m.uid === G.save.story.skyUid);
-    if (haveSky) lines.push('|スカイドラゴンは もう 仲間に いる。大空の 竜は うれしそうに ないた！');
-    else if (r.skyDragon) {
-      // 隠しミッションの ごほうび：スカイドラゴン（個体値は すべて 12以上）
-      const R = () => 12 + Math.floor(Math.random() * 4);
-      const mon = createMon(BY_NAME['スカイドラゴン'].id, 80, { ot: G.save.name, metAt: '新大地の岬', iv: { hp: R(), atk: R(), def: R(), spe: R() } });
-      G.save.story.skyUid = mon.uid;
-      const where = giveMon(mon); registerDex(mon.sp, true); audio.sfx('catch');
-      lines.push(`|伝説の アニモン スカイドラゴン が 仲間になった！` + (where === 'box' ? '（ボックスへ）' : ''));
-    }
+    let sky = null;
+    if (r.skyDragon && ownsSky()) lines.push('|スカイドラゴンは もう 仲間に いる。大空の 竜は うれしそうに ないた！');
+    else if (r.skyDragon) sky = giveSkyDragon(lines);
     if (r.mon) { const [nm, lv] = r.mon; const mon = createMon(BY_NAME[nm].id, lv, { ot: G.save.name, gift: true }); const where = giveMon(mon); lines.push(`|${nm} を もらった！` + (where === 'box' ? '（ボックスへ）' : '')); }
     audio.sfx('lvup');
     lines.push(q.hidden ? `|${q.name} 3/3 クリア！` : `|サイドストーリー「${q.name}」クリア！`);
     await say(lines);
+    if (sky) await offerSkySwap(sky);
   } else toast(q.hidden ? `${q.name} ${s.stage + 1}/${q.steps.length} が 始まった！` : `サイドストーリー「${q.name}」が 進んだ！`);
   refreshActors(); save();
+}
+// ---------- 隠しミッションの ごほうび：スカイドラゴン ----------
+const skySp = () => BY_NAME['スカイドラゴン'].id;
+function ownsSky() {
+  const st = G.save.story;
+  return [...G.save.party, ...G.save.box].some(m => (st.skyUid && m.uid === st.skyUid) || (m.sp === skySp() && m.metAt === '新大地の岬'));
+}
+function giveSkyDragon(lines) {
+  // 個体値は すべて 12以上
+  const R = () => 12 + Math.floor(Math.random() * 4);
+  const mon = createMon(skySp(), 80, { ot: G.save.name, metAt: '新大地の岬', iv: { hp: R(), atk: R(), def: R(), spe: R() } });
+  G.save.story.skyUid = mon.uid; G.save.story.skyGot = true;
+  const where = giveMon(mon); registerDex(mon.sp, true); audio.sfx('catch');
+  lines.push(`|伝説の アニモン スカイドラゴン が 仲間になった！` + (where === 'box' ? '\n（手持ちが いっぱいなので ボックスに 送られた）' : '（手持ちに 入った）'));
+  return mon;
+}
+// 手持ちが いっぱいで ボックスに 行ったら、手持ちの 1匹と 入れかえるか きく
+async function offerSkySwap(mon) {
+  const P = G.save.party, Bx = G.save.box;
+  if (!Bx.includes(mon) || P.some(m => m.sp === mon.sp)) return;
+  const k = await ask('スカイドラゴンを 手持ちに 入れますか？（手持ちの 1匹と 入れかえます）', ['入れかえる', 'ボックスに 置いておく']);
+  const out = k === 0 ? await MENU.pickFromAll('ボックスに 送る 子を えらんでください', m => P.includes(m)) : null;
+  if (!out || !P.includes(out) || !Bx.includes(mon)) { toast('スカイドラゴンは ボックスに います（新しい順の いちばん 上）', 3600); return; }
+  P[P.indexOf(out)] = mon; Bx.splice(Bx.indexOf(mon), 1); Bx.unshift(out);
+  audio.sfx('select');
+  toast(`スカイドラゴンを 手持ちに 入れた！（${monName(out)}は ボックスへ）`, 3600);
+  try { refreshFollower(); } catch (e) { /* */ }
+  save();
+}
+// 隠しミッションを クリアしたのに スカイドラゴンを 受け取れて いない セーブ（前の 版）を 直す
+export async function fixSkyReward() {
+  const st = G.save?.story, q = G.save?.quests?.q_skydragon;
+  if (!st || !q || !q.done || st.skyGot) return false;
+  const have = [...G.save.party, ...G.save.box].find(m => (st.skyUid && m.uid === st.skyUid) || m.sp === skySp());
+  if (have) { st.skyGot = true; st.skyUid ||= have.uid; save(); return false; }
+  const lines = ['|……空から 大きな 影が おりてきた！', '|隠しミッションの ごほうびが まだ 届いて いなかったようだ。'];
+  const mon = giveSkyDragon(lines);
+  await say(lines);
+  await offerSkySwap(mon);
+  save();
+  return true;
 }
 export function checkQuestBattles() {
   for (const q of QUESTS) {

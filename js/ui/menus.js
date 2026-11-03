@@ -1286,7 +1286,8 @@ export async function openSettings(fromTitle) {
       row('ムービーを自動スキップ', 'autoSkip', 'ストーリーの会話・ムービーを自動で飛ばします（会話中の「スキップ」ボタンでも飛ばせます）。') +
       row('文字の速さ', 'textSpeed', 'メッセージを表示する速さ。', [['おそい', 0], ['ふつう', 1], ['はやい', 2]]) +
       `<h4 class="sethd">🎮 操作の感度</h4>` +
-      slider('視点を回す 速さ（左右）', 'camSens', '画面を なぞる（PCは ドラッグ・Q/E）ときの 回りやすさ。') +
+      (!Input.touch ? row('マウスで 視点（PC）', 'mouseLook', '「動かすだけ」：フィールドの 画面を クリックすると カーソルが 消えて、マウスを 動かすだけで 視点が 回ります（Esc で カーソルを 出す。会話・メニュー・バトルでは 自動で 出ます）。「ドラッグ」：ボタンを 押したまま 動かすと 回ります。', [['動かすだけ', 'move'], ['ドラッグ', 'drag']]) : '') +
+      slider('視点を回す 速さ（左右）', 'camSens', '画面を なぞる（PCは マウス・Q/E）ときの 回りやすさ。') +
       slider('視点を回す 速さ（上下）', 'camSensY', '見下ろす角度の 変わりやすさ。') +
       row('左右を 反転', 'camInvX', 'なぞった方向と 逆に 回します。') +
       row('上下を 反転', 'camInvY', '上下の 動きを 逆に します。') +
@@ -1296,7 +1297,7 @@ export async function openSettings(fromTitle) {
       (G.save && !fromTitle ? `<div class="itemrow"><div class="grow"><div class="nm">🐎 ライドの 登録</div><div class="ds">陸・水・空で 乗る 子を 1匹ずつ 登録します。ライドボタンを 押すと その 3匹だけが 大きく 出ます。（${RIDE_KINDS.map(k => { const m = rideMon(k); return `${RIDE_IC[k]}${m ? esc(monName(m)) : '未登録'}`; }).join('　')}）</div></div><button class="btn sm pri rideset">登録する</button></div>` : '') +
       `<div class="itemrow"><div class="grow"><div class="nm">📖 アニモン図鑑 まとめサイト</div><div class="ds">アニモンの 種類・入手場所・技・タイプ相性・道具を 画像つきで まとめた ページを 開きます（べつの タブ）。</div></div><a class="btn sm" href="wiki/" target="_blank" rel="noopener">開く</a></div>` +
       `<div class="itemrow"><div class="grow"><div class="nm">🎮 ボタンの 配置・大きさ</div><div class="ds">スティック・A・B（ダッシュ）・ライドの ボタンを、ドラッグで 好きな 位置に 動かしたり、大きさを 変えたり できます（スマホ・タブレット）。${st.touchLayout ? '<b style="color:var(--acc)">（変更中）</b>' : ''}</div></div><button class="btn sm pri tlayout">調整する</button></div>` +
-      `<div class="itemrow"><div class="grow"><div class="nm">操作方法</div><div class="ds">PC：移動 WASD/矢印　決定・話す Space/Enter　ダッシュ Shift　メニュー Esc　マップ M　ライド R　視点 ドラッグ・Q/E（C でもとに戻す）　ズーム マウスホイール<br>スマホ：左のスティックで移動、画面をなぞって視点を回す、A で決定、B でダッシュ切替、2本指でズーム</div></div></div>` +
+      `<div class="itemrow"><div class="grow"><div class="nm">操作方法</div><div class="ds">PC：移動 WASD/矢印　決定・話す Space/Enter　ダッシュ Shift　メニュー Esc　マップ M　ライド R　視点 マウス（画面を クリックで 開始・Esc で カーソル）・Q/E（C でもとに戻す）　ズーム マウスホイール<br>スマホ：左のスティックで移動、画面をなぞって視点を回す、A で決定、B でダッシュ切替、2本指でズーム</div></div></div>` +
       (fromTitle ? `<div class="itemrow"><div class="grow"><div class="nm" style="color:var(--ng)">セーブデータを消す</div><div class="ds">この端末のセーブデータを削除します。元に戻せません。</div></div><button class="btn sm red del">削除</button></div>` : '') +
       `<h4 class="sethd">👤 アカウント</h4><div class="itemrow"><div class="grow"><div class="nm" style="color:var(--ng)">🗑 アカウントを 削除する</div><div class="ds">この端末と クラウドの セーブデータ・ランキングの 記録・フレンド・連携コードを すべて 削除します（ランキングからも 消えます）。元に もどせません。</div></div><button class="btn sm red delacct">削除</button></div>` +
       `<p class="muted">アニマルモンスター ver 1.4</p>`;

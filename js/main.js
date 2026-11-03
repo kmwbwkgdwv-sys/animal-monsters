@@ -63,6 +63,9 @@ async function boot() {
   if (window.visualViewport) window.visualViewport.addEventListener('resize', () => requestAnimationFrame(resize));
   if (window.ResizeObserver) new ResizeObserver(() => resize()).observe(canvas);
   initInput();
+  // PC の マウス視点：設定が「動かすだけ」で、フィールドを 自由に 歩ける ときだけ（会話・メニュー・バトル・ムービー中は カーソルを 出す）
+  Input.mouseLook = () => G.settings?.mouseLook !== 'drag' && !Input.touch;
+  Input.canLook = () => G.state === 'world' && !G.busy && !OW.camOverride && !document.querySelector('#screens .screen') && $('#dialog').classList.contains('hidden') && !$('#hud').classList.contains('hidden') && !document.getElementById('loading');
   hookTouchLayout();   // ボタンの 配置・大きさ（設定で 変えたもの）
   // 最初の操作で音を有効化（iOSは ambient にして他の音楽を止めない）
   const unlock = () => { audio.unlock(); };
@@ -390,8 +393,8 @@ async function startGame(state, isNew) {
     audio.playBgm('field');
     // 第2部：時の扉・隕石の あとに 読みこみ なおした ときは その 続きの ムービー／ストーリー
     const pend = state.pendingScene; delete state.pendingScene;
-    if (pend) setTimeout(() => runFlow(async () => { await SE.runScene(pend); save(); if (!(await SE.checkEraStep())) { /* */ } }), 700);
-    else { toast(`おかえりなさい、${state.name}さん！`); setTimeout(() => runFlow(() => SE.checkEraStep()), 2000); }
+    if (pend) setTimeout(() => runFlow(async () => { await SE.runScene(pend); save(); if (!(await SE.checkEraStep())) await SE.fixSkyReward(); }), 700);
+    else { toast(`おかえりなさい、${state.name}さん！`); setTimeout(() => runFlow(async () => { if (!(await SE.checkEraStep())) await SE.fixSkyReward(); }), 2000); }
     // すでに 条件を 満たしている データには 王冠を あとから わたす（1つずつだけ）
     setTimeout(async () => {
       if ((state.story.crests || 0) >= SE.CROWN_SILVER_CRESTS) await SE.grantCrown('s', true);
@@ -399,8 +402,8 @@ async function startGame(state, isNew) {
     }, 2500);
   }
   // 視点操作の案内（最初の1回だけ）
-  if (!G.settings.camHint) {
-    const hint = () => { if (G.state !== 'world') return; if (G.busy) { setTimeout(hint, 3000); return; } toast(Input.touch ? '👆 画面を指で なぞると 視点を 回せます（2本指で ズーム）' : '🖱 マウスで ドラッグ（または Q / E キー）で 視点を 回せます　C：元に戻す'); G.settings.camHint = true; saveSettings(G.settings); };
+  if (!G.settings.camHint2) {
+    const hint = () => { if (G.state !== 'world') return; if (G.busy) { setTimeout(hint, 3000); return; } if (Input.looking) { G.settings.camHint2 = true; saveSettings(G.settings); return; } toast(Input.touch ? '👆 画面を指で なぞると 視点を 回せます（2本指で ズーム）' : Input.mouseLook() ? '🖱 画面を クリックすると、マウスを 動かすだけで 視点が 回ります（Esc で カーソルを 出す・Q / E キーでも OK）' : '🖱 マウスで ドラッグ（または Q / E キー）で 視点を 回せます　C：元に戻す', 4200); G.settings.camHint = G.settings.camHint2 = true; saveSettings(G.settings); };
     setTimeout(hint, 5000);
   }
   // オンラインが使える設定なら、裏でランキングに自分の成績を載せておく
